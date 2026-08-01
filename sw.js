@@ -2,7 +2,7 @@
 // Strategi: network-first (biar update selalu terambil saat online),
 // fallback ke cache saat offline. Precache file inti saat install.
 
-const CACHE_NAME = 'kw-cache-v1022';
+const CACHE_NAME = 'kw-cache-v1023';
 const PRECACHE_URLS = [
   './index.html',
   './app_production.html',
@@ -50,6 +50,21 @@ self.addEventListener('fetch', (event) => {
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        // FIX (patch sw-fetch-undefined-response): caches.match() resolve ke
+        // `undefined` kalau resource belum/tidak ada di cache. respondWith()
+        // TIDAK BOLEH menerima undefined -- browser lempar
+        // "TypeError: Failed to convert value to 'Response'" dan request
+        // jadi network error total. Kalau ini kena file inti (HTML/JS bundle)
+        // saat fetch pertama gagal, seluruh app gagal load tanpa error di UI
+        // (gejala: "semua tombol tidak berfungsi"). Selalu kembalikan Response
+        // asli, jangan pernah undefined.
+        const cached = await caches.match(event.request);
+        if (cached) return cached;
+        return new Response('Offline atau resource tidak tersedia', {
+          status: 503,
+          statusText: 'Service Unavailable'
+        });
+      })
   );
 });
