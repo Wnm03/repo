@@ -10,6 +10,7 @@
     "lint:fix": "eslint . --fix",
     "test": "node --test tests/*.test.js",
     "test:watch": "node --test --watch tests/*.test.js",
+    "verify-bundle": "node scripts/verify-bundle-freshness.js",
     "check": "npm run lint && npm test && npm run build",
     "release": "bash scripts/release.sh"
   },

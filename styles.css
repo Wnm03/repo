@@ -64,6 +64,18 @@
 .stat-val, .tx-amount, .shop-price-final, .shop-price-strike, .ldr-days, .ldr-fill, .money, .card-val { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+  /* BUGFIX (audit modal-not-visible, keluarga-w): memaksa animation-duration ke .01ms
+     di atas SUDAH cukup utk menonaktifkan gerakan overlayIn/slideUp secara visual, tapi
+     tetap membiarkan .overlay.open dkk MENJALANKAN keyframe overlayIn (from opacity:0 ->
+     to opacity:1) dalam jendela waktu ~0ms itu. Kalau kode lain sempat membaca
+     getComputedStyle(...).opacity tepat di frame itu (sebelum browser sempat
+     menyelesaikan animasi super-singkat ini), yang terbaca adalah opacity:0 dari
+     keyframe "from" -- modal jadi computed-invisible walau class .open & display:flex
+     sudah benar. Fix: matikan animasinya SAMA SEKALI (bukan cuma dipercepat) khusus utk
+     overlay/modal entrance, & pertahankan opacity:1 statis -- tidak ada lagi keyframe yg
+     bisa dibaca di tengah jalan, jadi modal langsung tampil penuh tanpa race, sekaligus
+     tetap menghormati preferensi reduced-motion (nol animasi, bukan animasi super-cepat). */
+  .overlay.open, .calc-overlay.open, .qs-modal-overlay.open { animation: none !important; opacity: 1 !important; }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html { scroll-behavior: smooth; touch-action: pan-y; height:100%; overflow:hidden; }
