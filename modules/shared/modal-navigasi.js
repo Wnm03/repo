@@ -162,6 +162,25 @@ function _pinPromptAnswer(val){
 _resolveDialog(_pinPromptStore,'pinPromptModalOverlay',val);
 }
 function showPage(name,el){
+// BUGFIX (audit "semua tombol di Car Notes tidak respon", laporan user, v1025):
+// root cause -- showPage() (dipanggil tiap pindah tab bawah) TIDAK PERNAH
+// membersihkan overlay/modal yang masih class="open" (mis. catalogModal
+// ditinggal terbuka krn user pindah tab lewat nav/gesture back, bukan lewat
+// tombol ✕ / closeModal() eksplisit). Overlay itu full-viewport & selalu di
+// atas konten halaman manapun -- dispatcher klik global
+// (features-helpers-global-security.js) resolve lewat
+// e.target.closest('[data-action]'); overlay yg nyangkut selalu jadi target
+// duluan & TIDAK match [data-action], jadi handler `return` diam-diam (nol
+// error, nol toast) utk SEMUA tombol di halaman manapun, bukan cuma tab yg
+// sedang dibuka. Fix: paksa tutup semua overlay yg masih 'open'/'closing'
+// tiap kali user pindah tab bawah -- pindah tab = keluar dari konteks modal
+// manapun, jadi aman ditutup paksa tanpa animasi (bukan closeModal() biasa,
+// supaya tidak nunggu 260ms/animationend & tidak konflik state modal lain).
+document.querySelectorAll('.overlay.open,.calc-overlay.open,.qs-modal-overlay.open').forEach(o=>{
+o.classList.remove('open');
+o.classList.remove('closing');
+});
+document.body.classList.remove('has-open-modal');
 document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
 document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active');n.setAttribute('aria-current','false');});
 const pageEl=document.getElementById('page-'+name);
