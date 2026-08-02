@@ -81,7 +81,7 @@ Object.keys(tabs).forEach(k=>{
 const btn=document.getElementById(tabs[k]);
 if(btn){btn.style.background=(k===tab)?'var(--accent)':'transparent';btn.style.color=(k===tab)?'#fff':'var(--text2)';}
 const wrap=document.getElementById(wraps[k]);
-if(wrap)wrap.classList.toggle('u-dnone',k!==tab);
+if(wrap){wrap.classList.toggle('u-dnone',k!==tab);wrap.style.display='';}
 });
 this.render();
 },

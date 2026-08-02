@@ -14,6 +14,29 @@
 // pertama manapun (chicken-egg deadlock). Fix: pengecekan itu dihapus dari semua scan* function;
 // biarkan ocrRecognize() yang coba muat modulnya, kegagalan (termasuk modul gagal dimuat) tetap
 // ditangani & dikasih pesan jelas lewat scanErrorMessage() di catch block masing2 fungsi.
+// FIX (audit: race condition async scan vs pindah record) — semua fungsi scan* di
+// bawah ini menulis hasil OCR ke ID field TETAP (mis. #billAmt, #bbmCost,
+// #servisCost) yang dipakai ulang oleh modal yang sama utk record APAPUN yang
+// sedang diedit (mis. billEditId di tagihan-kalender.js). ocrRecognize() (Tesseract)
+// makan waktu beberapa detik -- kalau user menutup modal & membuka record LAIN
+// (mis. Tagihan lain) SEBELUM OCR selesai, hasil scan yang telat itu dulu tetap
+// ditulis ke field yang sekarang sudah terikat ke record baru, diam-diam menimpa
+// nominal/tanggal/catatan record yang salah tanpa peringatan apa pun.
+// Fix: openModal() (modal-navigasi.js) menaikkan window._modalEpoch tiap kali
+// modal dibuka/dibuka-ulang (termasuk modal yang sama utk record berbeda, krn
+// openBillModal() dkk selalu memanggil ulang openModal() di akhir). Tiap scan*
+// menangkap epoch SEBELUM await OCR lewat _scanEpochNow(), lalu _scanEpochStale()
+// dipanggil PERSIS setelah OCR selesai -- kalau epoch sudah berubah (modal/record
+// sudah berpindah), penulisan hasil OCR dibatalkan & user diberi tahu lewat toast,
+// bukan ditulis diam-diam ke record yang salah.
+function _scanEpochNow(){return window._modalEpoch||0;}
+function _scanEpochStale(epoch){
+if(_scanEpochNow()!==epoch){
+toast('⚠️ Hasil scan dibatalkan — tab/form sudah berpindah sebelum scan selesai');
+return true;
+}
+return false;
+}
 let _ocrWorkerPromise=null;
 function getOcrWorker(){
 if(!_ocrWorkerPromise){
@@ -140,7 +163,9 @@ inp.onchange=async(e)=>{
 const file=e.target.files[0]; if(!file)return;
 toast('🔍 Memindai gambar, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const rawNums=text.match(/\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{4,}/g)||[];
 const nums=rawNums.map(s=>parseFloat(s.replace(/[.,](?=\d{3}(\D|$))/g,'').replace(',','.'))).filter(n=>n>=500&&n<500000000);
@@ -179,7 +204,9 @@ inp.onchange=async(e)=>{
 const file=e.target.files[0]; if(!file)return;
 toast('🔍 Memindai bukti transfer, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const rawNums=text.match(/\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{4,}/g)||[];
 const nums=rawNums.map(s=>parseFloat(s.replace(/[.,](?=\d{3}(\D|$))/g,'').replace(',','.'))).filter(n=>n>=1000&&n<500000000);
@@ -204,7 +231,9 @@ inp.onchange=async(e)=>{
 const file=e.target.files[0]; if(!file)return;
 toast('🔍 Memindai foto, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const iso=extractDateFromText(text);
 if(iso){
@@ -227,7 +256,9 @@ inp.onchange=async(e)=>{
 const file=e.target.files[0]; if(!file)return;
 toast('🔍 Memindai foto odometer, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const km=extractOdometerKm(text);
 if(km!=null){
@@ -357,7 +388,9 @@ const box=document.getElementById('assetScanCandidates');
 if(box){box.style.display='block';box.innerHTML='🔍 Memindai gambar, mohon tunggu...';}
 toast('🔍 Memindai gambar, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const filledMeta=[];
 const guessedJenis=guessAssetJenisFromText(text);
@@ -433,7 +466,9 @@ inp.onchange=async(e)=>{
 const file=e.target.files[0]; if(!file)return;
 toast('🔍 Memindai gambar, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const rawNums=text.match(/\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{4,}/g)||[];
 let nums=rawNums.map(s=>parseFloat(s.replace(/[.,](?=\d{3}(\D|$))/g,'').replace(',','.'))).filter(n=>n>=1000&&n<100000000000);
@@ -475,7 +510,9 @@ inp.onchange=async(e)=>{
 const file=e.target.files[0]; if(!file)return;
 toast('🔍 Memindai struk, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const rawNums=text.match(/\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{4,}/g)||[];
 const nums=rawNums.map(s=>parseFloat(s.replace(/[.,](?=\d{3}(\D|$))/g,'').replace(',','.'))).filter(n=>n>=500&&n<500000000);
@@ -777,7 +814,9 @@ inp.onchange=async(e)=>{
 const file=e.target.files[0]; if(!file)return;
 toast('🔍 Memindai screenshot checkout, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 const name=guessCheckoutItemName(text);
 const{hargaNormal,harga:hargaItem,diskonPct}=guessCheckoutPrices(text);
@@ -941,7 +980,9 @@ const box=document.getElementById('billMultiScanBody');
 if(box)box.innerHTML='🔍 Memindai gambar, mohon tunggu...';
 toast('🔍 Memindai gambar, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 this.items=parseBillMultiItems(text);
 this.render();
@@ -1438,7 +1479,9 @@ const box=document.getElementById('universalOcrBody');
 if(box)box.innerHTML='🔍 Memindai gambar, mohon tunggu...';
 toast('🔍 Memindai gambar, mohon tunggu...',6000);
 try{
+const _scanEpoch=_scanEpochNow();
 const result=await ocrRecognize(file);
+if(_scanEpochStale(_scanEpoch))return;
 const text=result&&result.data?result.data.text:'';
 // Batch 19: pakai detectScreenTypeWithConfidence() (bukan detectScreenType() polos)
 // supaya confidence keseluruhan-jenis-layar ikut kesimpan, lalu runUniversalScanParser()

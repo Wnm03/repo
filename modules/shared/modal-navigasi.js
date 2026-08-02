@@ -229,6 +229,13 @@ if(!el){
 console.warn(`Modal #${id} tidak ditemukan di DOM — cek document.write index (lihat modals.js MODAL_HTML[] vs document.write(MODAL_HTML[i]) di index.html/app_production.html, urutan/jumlahnya harus persis sama).`);
 return;
 }
+// FIX (audit: race condition scan-ocr.js async vs pindah record) — naikkan
+// epoch tiap modal dibuka (termasuk dibuka ULANG utk record berbeda, mis. edit
+// Tagihan A lalu edit Tagihan B, sama-sama lewat openBillModal->openModal
+// 'billModal'). scan-ocr.js pakai epoch ini utk tahu kalau OCR yang sedang
+// berjalan sudah "basi" krn modal/record sudah berpindah sebelum hasil scan
+// selesai -- lihat komentar lengkap di _scanEpochNow()/_scanEpochStale().
+window._modalEpoch=(window._modalEpoch||0)+1;
 el.classList.remove('closing');
 el.classList.add('open');
 _syncNavVisibilityForModals();

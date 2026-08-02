@@ -27,6 +27,7 @@ if(el) el.classList.add('active');
 else { const idx=SETTINGS_TAB_ORDER.indexOf(tab); const btn=settingsTabBtns[idx>=0?idx:0]; if(btn) btn.classList.add('active'); }
 document.querySelectorAll('#page-settings .stg-tabpanel').forEach(p=>{
 p.classList.toggle('u-dnone', p.dataset.tab!==tab);
+p.style.display='';
 });
 }
 function toggleStgGroup(id){
