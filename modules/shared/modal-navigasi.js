@@ -181,6 +181,24 @@ o.classList.remove('open');
 o.classList.remove('closing');
 });
 document.body.classList.remove('has-open-modal');
+// BUGFIX (audit "semua tombol Car Notes & Tagihan tidak respon, 0 toast",
+// laporan user): ScannerSession bisa nyangkut _scannerSessionActive=true
+// permanen kalau proses tutup kamera terputus (app di-minimize saat prompt
+// izin kamera, tab di-suspend, dll) -- lihat modules/shared/scanner-session.js.
+// Selama itu, body.scanner-session-active nempel & CSS
+// (_scannerSessionEnsureStyle) men-display:none SEMUA .overlay/.qs-modal-
+// overlay/.calc-overlay/.keu-fab/#toast SELAMANYA -- termasuk toast error
+// dispatcher sendiri, jadi tombol kelihatan "mati total" tanpa jejak apa pun.
+// Self-heal (_scannerSessionSelfHeal) sebelumnya CUMA jalan lewat
+// ScannerSession.enter()/isActive(), yang cuma dipanggil saat user coba buka
+// scanner LAGI -- kalau user cuma pindah tab (showPage(), seperti di laporan
+// ini), state nyangkut ini tidak pernah ke-heal. Fix: panggil isActive() di
+// sini juga -- pindah tab = titik aman utk self-heal (bukan lagi dalam
+// konteks scanner manapun), 0 perubahan API ScannerSession, 0 breaking
+// change ke pemanggil existing.
+if(typeof ScannerSession!=='undefined' && ScannerSession && typeof ScannerSession.isActive==='function'){
+ScannerSession.isActive();
+}
 document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
 document.querySelectorAll('.nav-item').forEach(n=>{n.classList.remove('active');n.setAttribute('aria-current','false');});
 const pageEl=document.getElementById('page-'+name);
