@@ -101,6 +101,13 @@ closeModal('filterTxModal');
 txListPage=1;
 renderKeuangan();
 }
+// BUGFIX (audit menyeluruh "tab nav tidak respon"): tombol ‹ › month-nav di kartu "📋 Semua
+// Transaksi" (index.html) sudah lama pakai data-action="changeTxListMonth", tapi fungsinya
+// TIDAK PERNAH ditulis di manapun -- tombol mati total, tanpa error (data-action dispatcher
+// diam-diam no-op kalau nama fungsinya tidak ada). txListMonthLabel sudah baca curMonth/curYear
+// yang SAMA dgn monthLabel (lihat renderKeuangan(), modules-render.js), jadi alias tipis ke
+// changeMonth() (0 logic baru) sudah cukup -- persis pola setCobekTab->setShopTab.
+function changeTxListMonth(dir){return changeMonth(dir);}
 let txListPeriode='bulan';
 function setTxListPeriode(p,el){
 txListPeriode=p;
@@ -235,8 +242,11 @@ lapSubtabBtns.forEach(b=>b.classList.remove('active'));
 if(el) el.classList.add('active');
 else { const idx=LAPORAN_SUBTAB_ORDER.indexOf(t); const btn=lapSubtabBtns[idx>=0?idx:0]; if(btn) btn.classList.add('active'); }
 document.getElementById('laporanTab-ringkasan').classList.toggle('u-dnone', t!=='ringkasan');
+document.getElementById('laporanTab-ringkasan').style.display='';
 document.getElementById('laporanTab-aruskas').classList.toggle('u-dnone', t!=='aruskas');
+document.getElementById('laporanTab-aruskas').style.display='';
 document.getElementById('laporanTab-transaksi').classList.toggle('u-dnone', t!=='transaksi');
+document.getElementById('laporanTab-transaksi').style.display='';
 const lapBc=document.getElementById('laporanBreadcrumbSub');
 if(lapBc)lapBc.textContent=LAPORAN_SUBTAB_LABEL[t]||t;
 }
@@ -254,8 +264,11 @@ kelSubtabBtns.forEach(b=>b.classList.remove('active'));
 if(el) el.classList.add('active');
 else { const idx=KELOLA_SUBTAB_ORDER.indexOf(t); const btn=kelSubtabBtns[idx>=0?idx:0]; if(btn) btn.classList.add('active'); }
 document.getElementById('kelolaTab-ringkasan').classList.toggle('u-dnone', t!=='ringkasan');
+document.getElementById('kelolaTab-ringkasan').style.display='';
 document.getElementById('kelolaTab-transaksi').classList.toggle('u-dnone', t!=='transaksi');
+document.getElementById('kelolaTab-transaksi').style.display='';
 document.getElementById('kelolaTab-pengaturan').classList.toggle('u-dnone', t!=='pengaturan');
+document.getElementById('kelolaTab-pengaturan').style.display='';
 const kelBc=document.getElementById('kelolaBreadcrumbSub');
 if(kelBc)kelBc.textContent=KELOLA_SUBTAB_LABEL[t]||t;
 }

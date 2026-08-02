@@ -1598,10 +1598,14 @@ asetTabBtns.forEach(b=>b.classList.remove('active'));
 if(el) el.classList.add('active');
 else { const idx=ASET_TAB_ORDER.indexOf(t); const btn=asetTabBtns[idx>=0?idx:0]; if(btn) btn.classList.add('active'); }
 document.getElementById('asetTab-ringkasan').classList.toggle('u-dnone', t!=='ringkasan');
+document.getElementById('asetTab-ringkasan').style.display='';
 document.getElementById('asetTab-buku').classList.toggle('u-dnone', t!=='buku');
+document.getElementById('asetTab-buku').style.display='';
 document.getElementById('asetTab-analisis').classList.toggle('u-dnone', t!=='analisis');
+document.getElementById('asetTab-analisis').style.display='';
 // Manajemen (dipindah dari Dashboard Hub) — pola sama 3 tab di atas.
 document.getElementById('asetTab-manajemen').classList.toggle('u-dnone', t!=='manajemen');
+document.getElementById('asetTab-manajemen').style.display='';
 }
 
 // (bukan module). Dispatcher data-action (mis. data-action="Aset.exportXLSX",

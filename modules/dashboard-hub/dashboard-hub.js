@@ -799,7 +799,7 @@ const DashboardHub = {
     Object.keys(SECTION_GROUPS).forEach((t) => {
       SECTION_GROUPS[t].forEach((id) => {
         const el = document.getElementById(id);
-        if (el) el.classList.toggle('u-dnone', t !== tab);
+        if (el) { el.classList.toggle('u-dnone', t !== tab); el.style.display = ''; }
       });
     });
 

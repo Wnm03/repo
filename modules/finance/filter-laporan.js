@@ -173,6 +173,12 @@ setTimeout(()=>el.classList.remove('flash-highlight'),1200);
 if(pageName){showPage(pageName,document.querySelectorAll('.nav-item')[navIdx]);jump();}
 else jump();
 }
+// BUGFIX (audit menyeluruh "tab nav tidak respon"): tombol "🏦 Akun → Keuangan" di Pengaturan
+// (stgGroup2, index.html) pakai data-action="goToKeuanganAkunTab", tapi fungsinya TIDAK PERNAH
+// ditulis -- mati total sejak awal, persis kelas bug yang sama dgn changeTxListMonth di atas.
+// Reuse goToList() apa adanya (0 logic baru): pindah ke #page-keuangan, buka tab "akun", scroll
+// + flash-highlight #accGrid supaya user langsung lihat kartu Akun & Metode Pembayaran.
+function goToKeuanganAkunTab(){goToList('accGrid','keuangan',null,null,null,'akun');}
 function showFilteredTx(scope, type, label, accId){
 let txs=[];
 if(scope==='dashboard'){
