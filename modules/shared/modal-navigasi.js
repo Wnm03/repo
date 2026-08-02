@@ -57,6 +57,16 @@ if(typeof ScannerSession!=='undefined' && ScannerSession && typeof ScannerSessio
 ScannerSession.isActive();
 }
 }
+// FIX (audit opacity-stuck-0): helper dipakai 5 dialog custom di bawah
+// (askConfirm/showPromptModal/showChoiceModal/showAlertModal/showPinPromptModal),
+// semuanya classList.add('open') langsung tanpa lewat openModal() -- pola identik
+// yg kena race "animation overlayIn gagal terinstansiasi, opacity macet 0
+// permanen" (lihat komentar lengkap di openModal()). Titik tunggal ini dipakai
+// supaya fix-nya otomatis cover semua 5 dialog sekaligus.
+function _openDialogOverlay(el){
+el.classList.add('open');
+void el.offsetWidth;
+}
 function _queueDialog(store,renderFn){
 return new Promise((resolve)=>{
 store.queue.push({resolve,renderFn});
@@ -80,7 +90,7 @@ const okBtn=document.getElementById('confirmModalOk');
 okBtn.textContent=opts.okText||'Ya, Lanjutkan';
 okBtn.className='btn btn-full '+(opts.danger===false?'btn-primary':'btn-danger');
 document.getElementById('confirmModalCancel').textContent=opts.cancelText||'Batal';
-document.getElementById('confirmModalOverlay').classList.add('open');
+_openDialogOverlay(document.getElementById('confirmModalOverlay'));
 });
 }
 function _confirmModalAnswer(val){
@@ -106,7 +116,7 @@ input.value=opts.defaultValue!=null?String(opts.defaultValue):'';
 document.getElementById('promptModalError').textContent='';
 document.getElementById('promptModalOkBtn').textContent=opts.okText||'Simpan';
 document.getElementById('promptModalCancelBtn').textContent=opts.cancelText||'Batal';
-overlay.classList.add('open');
+_openDialogOverlay(overlay);
 setTimeout(()=>{input.focus();input.select();},50);
 });
 }
@@ -142,7 +152,7 @@ msgEl.textContent=opts.message||'';
 msgEl.style.display=opts.message?'':'none';
 const list=document.getElementById('choiceModalList');
 list.innerHTML=choices.map((c,i)=>`<button class="btn btn-ghost btn-full" style="justify-content:flex-start;text-align:left" data-action="_choiceModalAnswer" data-args="${escapeHtml(JSON.stringify([i]))}">${escapeHtml(c.label)}</button>`).join('');
-document.getElementById('choiceModalOverlay').classList.add('open');
+_openDialogOverlay(document.getElementById('choiceModalOverlay'));
 });
 }
 function _choiceModalAnswer(idx){
@@ -158,7 +168,7 @@ document.getElementById('infoModalIcon').textContent=opts.icon||'⚠️';
 document.getElementById('infoModalTitle').textContent=opts.title||'Perhatian';
 document.getElementById('infoModalMsg').textContent=message;
 document.getElementById('infoModalOk').textContent=opts.okText||'Mengerti';
-overlay.classList.add('open');
+_openDialogOverlay(overlay);
 });
 }
 function _infoModalAnswer(){
@@ -175,7 +185,7 @@ document.getElementById('pinPromptModalMsg').textContent=opts.message||'Masukkan
 const input=document.getElementById('pinPromptInput');
 input.value='';
 document.getElementById('pinPromptError').textContent='';
-overlay.classList.add('open');
+_openDialogOverlay(overlay);
 setTimeout(()=>input.focus(),50);
 });
 }
@@ -282,6 +292,21 @@ ScannerSession.isActive();
 window._modalEpoch=(window._modalEpoch||0)+1;
 el.classList.remove('closing');
 el.classList.add('open');
+// FIX (audit opacity-stuck-0, laporan user "vehicleModal keluar tapi opacity 0
+// permanen walau display:flex & class .open benar, prefers-reduced-motion OFF"):
+// .overlay.open melakukan 2 perubahan sekaligus dlm 1 rule yg sama, dipicu 1
+// classList.add('open') ini -- display:none->flex DAN mulai animasi CSS overlayIn
+// (opacity 0->1). Kalau browser sempat menggabungkan 2 perubahan itu jadi 1 style
+// recalc (tanpa reflow di antaranya), instansiasi Animation utk overlayIn bisa
+// gagal total: computed style tetap "mengaku" animationName:overlayIn &
+// animationPlayState:running (krn itu cuma refleksi rule CSS yg match), TAPI
+// el.getAnimations() kosong & currentTime tidak pernah maju -- elemen macet
+// permanen di keyframe from{opacity:0}. Fix: paksa 1 synchronous reflow di
+// antara display berubah & animasi mulai, supaya browser tidak sempat
+// menggabungkan 2 perubahan itu. void sengaja dipakai supaya linter/minifier
+// tidak membuang baris ini krn dikira "unused expression" -- efek sampingnya
+// (memaksa reflow) yg memang dibutuhkan, bukan nilainya.
+void el.offsetWidth;
 _syncNavVisibilityForModals();
 }
 // CARD_COLLAPSE_DEFAULT_CLOSED (Sesi 156b, permintaan eksplisit user):
@@ -399,7 +424,13 @@ window.addEventListener('mouseup',onEnd);
 // BUGFIX (audit lanjutan v1026, sama persis kasus _queueDialog() di atas):
 // openQS() juga langsung classList.add('open') tanpa lewat openModal(),
 // jadi Quick Switcher kena celah self-heal ScannerSession yang sama.
-function openQS(id){_dialogSelfHeal();document.getElementById(id).classList.add('open');_syncNavVisibilityForModals();}
+function openQS(id){
+_dialogSelfHeal();
+const el=document.getElementById(id);
+el.classList.add('open');
+void el.offsetWidth; // FIX opacity-stuck-0: pola sama persis openModal(), lihat komentar lengkap di sana
+_syncNavVisibilityForModals();
+}
 function closeQS(id){document.getElementById(id).classList.remove('open');_syncNavVisibilityForModals();}
 
 // SARAN (dari review sebelumnya): dukung tombol Escape utk nutup modal, tidak cuma tap ✕/backdrop.
