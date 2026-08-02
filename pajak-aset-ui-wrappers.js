@@ -71,7 +71,9 @@ pjkSubtabBtns.forEach(b=>b.classList.remove('active'));
 if(el) el.classList.add('active');
 else { const idx=PJK_SUBTAB_ORDER.indexOf(t); const btn=pjkSubtabBtns[idx>=0?idx:0]; if(btn) btn.classList.add('active'); }
 document.getElementById('pjkTab-pph21').classList.toggle('u-dnone', t!=='pph21');
+document.getElementById('pjkTab-pph21').style.display='';
 document.getElementById('pjkTab-pbb').classList.toggle('u-dnone', t!=='pbb');
+document.getElementById('pjkTab-pbb').style.display='';
 const pjkBc=document.getElementById('pjkBreadcrumbSub');
 if(pjkBc)pjkBc.textContent=PJK_SUBTAB_LABEL[t]||t;
 }
