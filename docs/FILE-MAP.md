@@ -11,8 +11,8 @@
 > file tapi lupa `node build.js`), jalankan ulang generatornya, JANGAN diedit
 > tangan — editan manual bakal ketimpa lagi di build berikutnya.
 
-Terakhir digenerate: 2026-08-02T07:20:13.245Z
-Total file source: 278 · Total identifier global: 1946
+Terakhir digenerate: 2026-08-02T08:24:29.362Z
+Total file source: 278 · Total identifier global: 1953
 
 ## 1. Urutan load & ringkasan tiap file
 
@@ -65,7 +65,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 42 | `modules/shared/keamanan-pin.js` | 279 | Domain Keamanan: layar PIN (showPinScreen/checkPin/pinPress/pinBack/updatePinDots), Dipindah ke modules/shared/keamanan-pin.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama … |
 | 43 | `modules/home/refleksi-selfcare.js` | 264 | Domain Refleksi & Self-Care: Jurnal Syukur, Checklist Self-Care harian Dipindah ke modules/home/refleksi-selfcare.js (Sesi 13 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
 | 44 | `modules/shared/modal-navigasi.js` | 455 | Domain Modal Generik & Navigasi Halaman: modal konfirmasi/prompt/pilihan/info/pin Dipindah ke modules/shared/modal-navigasi.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama … |
-| 45 | `modules/shared/scanner-session.js` | 238 | modules/shared/scanner-session.js — ScannerSession (Tahap 5, docs/ PRODUCT_DECISIONS.md § "Scanner — Exclusive Scanner Mode via ScannerSession (FINAL — Sesi 316, PD-007)"). PD-007 — Scanner WAJIB berjalan lewat … |
+| 45 | `modules/shared/scanner-session.js` | 336 | modules/shared/scanner-session.js — ScannerSession (Tahap 5, docs/ PRODUCT_DECISIONS.md § "Scanner — Exclusive Scanner Mode via ScannerSession (FINAL — Sesi 316, PD-007)"). PD-007 — Scanner WAJIB berjalan lewat … |
 | 46 | `modules/business/reset-gaji-mingguan.js` | 115 | Domain Reset Gaji Mingguan: hitung rentang minggu berjalan (getWeekRange), Dipindah ke modules/business/reset-gaji-mingguan.js (Sesi 15 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file … |
 | 47 | `modules/shared/debug-console.js` | 50 | Domain Debug Console: toggle tombol status (updateDebugConsoleBtn) & aktifkan/matikan Dipindah ke modules/shared/debug-console.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama … |
 | 48 | `modules/shared/pengaturan-search.js` | 141 | Domain Pencarian Pengaturan: buka/tutup grup pengaturan (toggleStgGroup), cari Dipindah ke modules/shared/pengaturan-search.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama … |
@@ -442,9 +442,14 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `_scannerSessionActive` | `modules/shared/scanner-session.js` |
 | `_scannerSessionCount` | `modules/shared/scanner-session.js` |
 | `_scannerSessionEnsureStyle` | `modules/shared/scanner-session.js` |
+| `_scannerSessionEnteredAt` | `modules/shared/scanner-session.js` |
 | `_scannerSessionHasLiveOverlay` | `modules/shared/scanner-session.js` |
+| `_scannerSessionHideRecoveryBanner` | `modules/shared/scanner-session.js` |
 | `_scannerSessionPrevChrome` | `modules/shared/scanner-session.js` |
+| `_scannerSessionRecoveryEl` | `modules/shared/scanner-session.js` |
+| `_scannerSessionRecoveryTick` | `modules/shared/scanner-session.js` |
 | `_scannerSessionSelfHeal` | `modules/shared/scanner-session.js` |
+| `_scannerSessionShowRecoveryBanner` | `modules/shared/scanner-session.js` |
 | `_selfTestAssert` | `self-test.js` |
 | `_sendChatInner` | `ai-chat.js` |
 | `_sessionRawPin` | `modules/shared/keamanan-pin.js` |
@@ -1565,6 +1570,8 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `RecommendationService` | `economic-intelligence/services/recommendation-service.js` |
 | `recordBbmLog` | `modules/finance/tx-bbm.js` |
 | `recordShopSale` | `modules/shop/cobek-tx-cart.js` |
+| `RECOVERY_POLL_MS` | `modules/shared/scanner-session.js` |
+| `RECOVERY_STUCK_MS` | `modules/shared/scanner-session.js` |
 | `RefAI` | `modules/finance/pajak-pbb-zakat.js` |
 | `Refleksi` | `modules/home/refleksi-selfcare.js` |
 | `REFLEKSI_SELFCARE_ITEMS` | `modules/home/refleksi-selfcare.js` |
