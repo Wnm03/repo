@@ -235,3 +235,101 @@ const ScannerSession = {
 if (typeof window !== 'undefined') {
   window.ScannerSession = ScannerSession;
 }
+
+// WATCHDOG GLOBAL (audit lanjutan v1027 — rekomendasi tier-1, gap "whack-a-
+// mole"): fix v1026 (openModal()) & v1027 (_queueDialog()/openQS()) menutup
+// celah dengan menambahkan panggilan self-heal SATU PER SATU di titik masuk
+// overlay yang SUDAH DIKETAHUI. Pola ini rapuh — kalau ADA titik masuk baru
+// di masa depan (mis. modul fitur baru yang buka overlay-nya sendiri tanpa
+// lewat openModal()/_queueDialog()/openQS()), state nyangkut yang sama bisa
+// lolos lagi tanpa terdeteksi sampai ada laporan user berikutnya.
+//
+// Root cause aslinya adalah TIMING: proses tutup kamera terputus paling
+// sering terjadi persis saat app di-minimize/tab di-suspend (browser
+// mematikan halaman sebelum finally{} sempat jalan). Titik paling andal
+// untuk self-heal BUKAN "setiap fungsi yang buka overlay", tapi "setiap kali
+// app kembali terlihat/aktif" — karena itu momen paling mungkin state
+// nyangkut baru saja terjadi, TERLEPAS dari overlay/modul mana yang nanti
+// mau dibuka user. Guard ini mencakup SEMUA jalur (termasuk yang belum
+// ditulis) tanpa perlu tahu titik masuk spesifiknya.
+//
+// 0 perubahan API ScannerSession, 0 breaking change — cuma memanggil
+// isActive() (yang sudah idempotent & aman dipanggil kapan saja) di momen
+// tambahan. Tidak menggantikan guard yang sudah ada di openModal()/
+// _queueDialog()/openQS() (defense-in-depth, bukan pengganti).
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') scannerSessionIsActive();
+  });
+}
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pageshow', function () { scannerSessionIsActive(); });
+  window.addEventListener('focus', function () { scannerSessionIsActive(); });
+}
+
+// RECOVERY BANNER (tier-3, rekomendasi FIX-s362-scannersession-global-
+// watchdog.md yg belum dikerjakan sesi s363-s365): watchdog Tier-1 di atas
+// sudah mengurangi kemungkinan state nyangkut lolos, TAPI kalau user
+// kejadian PERSIS di celah kecil sebelum watchdog sempat jalan (mis.
+// browser sangat lawas tanpa visibilitychange/pageshow/focus), satu-satunya
+// jalan keluar user awam SEBELUMNYA adalah reload penuh atau trik console
+// manual (lihat "Unblock cepat" di FIX-s360). Elemen di bawah kasih jalan
+// keluar VISUAL yang TIDAK ikut disembunyikan CSS suppression
+// (body.scanner-session-active .overlay/.qs-modal-overlay/.calc-overlay/
+// #toast{display:none!important}) krn SENGAJA dibuat bukan .overlay/
+// .qs-modal-overlay/.calc-overlay/#toast — style-nya inline, bukan lewat
+// class apa pun.
+//
+// Poll ringan tiap RECOVERY_POLL_MS: tampil HANYA kalau _scannerSessionActive
+// sudah true LEBIH LAMA dari RECOVERY_STUCK_MS **dan** overlay scanner
+// sungguhan (.vehicle-scanner-fullscreen) sudah tidak ada di DOM (indikator
+// fisik sesi memang nyangkut, dipakai bareng _scannerSessionHasLiveOverlay()
+// yang sudah ada — 0 logic baru soal "apa itu nyangkut", REUSE penuh).
+// Sesi scanner yang BENERAN aktif (overlay masih hidup) TIDAK pernah
+// memicu banner ini, berapa lama pun durasinya.
+const RECOVERY_STUCK_MS = 10000; // 10 detik -- jauh di atas durasi wajar buka kamera/render overlay
+const RECOVERY_POLL_MS = 3000;
+let _scannerSessionEnteredAt = null;
+let _scannerSessionRecoveryEl = null;
+
+function _scannerSessionShowRecoveryBanner() {
+  if (typeof document === 'undefined' || _scannerSessionRecoveryEl) return;
+  const el = document.createElement('div');
+  el.id = '_scannerSessionRecoveryBanner';
+  el.textContent = '⚠️ Gangguan terdeteksi — ketuk untuk reset tampilan';
+  el.setAttribute('role', 'button');
+  // Inline style murni (BUKAN class .overlay/.qs-modal-overlay/.calc-overlay/
+  // #toast) -- itu SATU-SATUNYA alasan elemen ini lolos dari suppression
+  // CSS. Jangan ganti jadi class card/modal/toast apa pun yang sudah ada.
+  el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:16px;z-index:999999;' +
+    'background:#b91c1c;color:#fff;padding:12px 16px;border-radius:10px;' +
+    'font:14px/1.4 -apple-system,system-ui,sans-serif;text-align:center;' +
+    'box-shadow:0 4px 16px rgba(0,0,0,.3);cursor:pointer;';
+  el.onclick = function () {
+    _scannerSessionEnteredAt = null;
+    scannerSessionIsActive(); // trigger self-heal (overlay sudah tidak live -> pasti reset)
+    if (el.parentNode) el.parentNode.removeChild(el);
+    _scannerSessionRecoveryEl = null;
+  };
+  (document.body || document.documentElement).appendChild(el);
+  _scannerSessionRecoveryEl = el;
+}
+
+function _scannerSessionHideRecoveryBanner() {
+  if (_scannerSessionRecoveryEl && _scannerSessionRecoveryEl.parentNode) {
+    _scannerSessionRecoveryEl.parentNode.removeChild(_scannerSessionRecoveryEl);
+  }
+  _scannerSessionRecoveryEl = null;
+}
+
+function _scannerSessionRecoveryTick() {
+  if (!_scannerSessionActive) { _scannerSessionEnteredAt = null; _scannerSessionHideRecoveryBanner(); return; }
+  if (_scannerSessionEnteredAt === null) { _scannerSessionEnteredAt = Date.now(); return; }
+  const stuckLongEnough = (Date.now() - _scannerSessionEnteredAt) >= RECOVERY_STUCK_MS;
+  const overlayGone = !_scannerSessionHasLiveOverlay();
+  if (stuckLongEnough && overlayGone) _scannerSessionShowRecoveryBanner();
+}
+
+if (typeof window !== 'undefined' && typeof window.setInterval === 'function') {
+  window.setInterval(_scannerSessionRecoveryTick, RECOVERY_POLL_MS);
+}
