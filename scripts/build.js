@@ -63,6 +63,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { computeGroupHash, markerLine } = require('./bundle-hash');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -1058,7 +1059,18 @@ function buildBundle(group, outFile, oldVersion) {
   const { code, minified } = minify(combined);
   const header = `// ${outFile} — DIBUAT OTOMATIS oleh build.js dari: ${group.join(', ')}\n` +
                  `// JANGAN diedit manual — edit file source-nya lalu jalankan: node build.js\n`;
-  const finalCode = minified ? code : header + code;
+  // S365 (tier-2, lanjutan audit ScannerSession self-heal s360-s364): marker
+  // hash sumber SELALU ditulis di baris pertama bundle — juga saat
+  // diminify, dgn ditempel SETELAH minify() supaya tidak ikut kena
+  // strip komentar esbuild. Dipakai scripts/verify-bundle-freshness.js utk
+  // mendeteksi "source sudah berubah TAPI bundle belum di-rebuild" (pola
+  // bug s326->s328: openModal()/action-wrappers.js sempat di-fix di source,
+  // tapi bundle yang dipakai browser masih versi lama) TANPA perlu
+  // menjalankan build ulang — cukup baca 1 baris pertama bundle & bandingkan
+  // hash-nya dgn source saat ini. Cocok dipakai sbg pre-deploy/CI check yg
+  // ringan sebelum upload.
+  const hashLine = markerLine(computeGroupHash(group, readFile));
+  const finalCode = hashLine + (minified ? code : header + code);
   writeFile(outFile, finalCode);
   return { minified, size: Buffer.byteLength(finalCode, 'utf8'), backupName };
 }
@@ -1687,6 +1699,48 @@ function lintEmptyCatchGuard() {
   return problems;
 }
 
+// lintOverlayOpenBypassesGuard() — kodifikasi audit manual yang dilakukan
+// sesi s362 (rekomendasi tier-2 dari FIX-s362-scannersession-global-
+// watchdog.md): dulu grep -rn "classList.add('open')" modules/ dijalankan
+// MANUAL tiap ada laporan "tombol/dialog macet, 0 toast" (lihat FIX-s360,
+// FIX-s361). Root cause-nya SELALU sama: overlay yang buka dirinya sendiri
+// lewat classList.add('open') langsung, TANPA lewat openModal()/
+// _queueDialog()/openQS() (satu-satunya 3 jalur yang sudah dipasangi self-
+// heal ScannerSession — lihat modal-navigasi.js), bakal ke-tangkep CSS
+// body.scanner-session-active kalau state ScannerSession nyangkut, tanpa
+// jejak error apa pun.
+//
+// Lint ini menjalankan audit yang sama otomatis tiap build, supaya modul
+// fitur baru yang lupa lewat openModal()/_queueDialog()/openQS() ketahuan
+// SAAT BUILD, bukan lewat laporan user lagi.
+//
+// Whitelist sengaja SEMPIT (bukan per-file besar) supaya menambahkan overlay
+// bypass baru harus disengaja, bukan kebetulan lolos:
+// - modules/shared/modal-navigasi.js — implementasi guard itu sendiri
+//   (openModal()/_queueDialog()/openQS() MEMANG classList.add('open') di
+//   dalamnya, itu tempat _dialogSelfHeal()/isActive() dipanggil).
+// - self-test.js — harness diagnostik internal yang sengaja
+//   menambah/mengembalikan class 'open' SEMENTARA utk menguji renderer
+//   (simpan state asli, restore persis di finally) — bukan jalur UI yang
+//   dipicu tap user, jadi tidak relevan dgn bug "tombol macet, 0 toast".
+const OVERLAY_OPEN_BYPASS_ALLOWLIST = ['modules/shared/modal-navigasi.js', 'self-test.js'];
+
+function lintOverlayOpenBypassesGuard() {
+  const problems = [];
+  const OPEN_RE = /\.classList\.add\(\s*['"]open['"]\s*\)/g;
+  for (const f of ALL_SOURCE) {
+    if (OVERLAY_OPEN_BYPASS_ALLOWLIST.includes(f)) continue;
+    const content = readFile(f);
+    OPEN_RE.lastIndex = 0;
+    let m;
+    while ((m = OPEN_RE.exec(content))) {
+      const lineNo = content.slice(0, m.index).split('\n').length;
+      problems.push(`${f}:${lineNo} — overlay dibuka lewat classList.add('open') langsung, bukan lewat openModal()/_queueDialog()/openQS()`);
+    }
+  }
+  return problems;
+}
+
 function lintOversizedSourceFiles() {
   const skipDirs = new Set(['node_modules', '.git', 'backups', 'tests']);
   const results = [];
@@ -1824,6 +1878,23 @@ const LINT_REGISTRY = [
     run: lintDocsBaselineCountDrift,
     label: () => 'docs/AUDIT_MATRIX.md kemungkinan sudah usang (build TETAP LANJUT, ini cuma peringatan):',
     advice: '\nUpdate tabel "Coverage Baseline" di docs/AUDIT_MATRIX.md kalau perubahan ini disengaja.\n',
+  },
+  {
+    name: 'overlay-open-bypass-guard',
+    severity: 'blocking',
+    checkingMsg: 'Mengecek regresi "overlay classList.add(\'open\') tanpa lewat openModal()/_queueDialog()/openQS()" (tier-2 dari audit ScannerSession self-heal s360-s362)...',
+    successMsg: '✓ Semua overlay dibuka lewat jalur yang sudah dipasangi self-heal ScannerSession (openModal()/_queueDialog()/openQS())\n',
+    run: lintOverlayOpenBypassesGuard,
+    label: (n) => `ditemukan ${n} overlay yang classList.add('open') langsung, bypass self-heal ScannerSession:`,
+    advice:
+      "\nKalau body.scanner-session-active nyangkut (kamera scan terputus di tengah jalan — lihat\n" +
+      'FIX-s360-openmodal-scannersession-selfheal.md), overlay yang bypass ini akan ke-tangkep CSS\n' +
+      '`body.scanner-session-active .overlay.open{display:none!important}` TANPA jejak error/toast\n' +
+      'apa pun — persis gejala "tombol/dialog macet, 0 toast" yang berulang kali dilaporkan user.\n' +
+      'Perbaiki dengan memanggil openModal(id) (untuk modal biasa) atau reuse _queueDialog()/\n' +
+      'openQS() (untuk dialog custom baru) alih-alih classList.add(\'open\') langsung. Kalau baris\n' +
+      'di atas MEMANG bukan overlay yang dipicu tap user (mis. harness test internal), tambahkan\n' +
+      'file-nya ke OVERLAY_OPEN_BYPASS_ALLOWLIST di scripts/build.js.',
   },
   {
     name: 'oversized-source-files',
