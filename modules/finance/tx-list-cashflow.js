@@ -164,7 +164,7 @@ const result={incAvg,expAvg,saldoNow,billsDue,upcoming,projected,months,avail};
 _cashflowForecastCache=result;
 return result;
 }
-const KEU_TAB_ORDER=['kelola','tagihan','budget','utangpiutang','asetproyek','laporan'];
+const KEU_TAB_ORDER=['kelola','tagihan','budget','utangpiutang','asetproyek','laporan','akun'];
 function setKeuanganTab(t,el){
 const keuTabBtns=document.querySelectorAll('#page-keuangan .cn-tab');
 keuTabBtns.forEach(b=>b.classList.remove('active'));
@@ -182,10 +182,22 @@ document.getElementById('keuanganTab-asetproyek').classList.toggle('u-dnone', t!
 document.getElementById('keuanganTab-asetproyek').style.display='';
 document.getElementById('keuanganTab-laporan').classList.toggle('u-dnone', t!=='laporan');
 document.getElementById('keuanganTab-laporan').style.display='';
+// BUGFIX (audit "tombol 🏦 Akun di tab Keuangan tidak respon", laporan
+// user): tombol "🏦 Akun" (data-args=["akun"]) sudah ada di HTML sejak
+// awal, tapi panel #keuanganTab-akun & pemanggilan render-nya TIDAK PERNAH
+// ditambahkan ke sini -- akibatnya panel itu permanen ketutup class
+// u-dnone (default di HTML) berapa kali pun tombolnya ditap, kelihatan
+// persis seperti tombol "mati". Fix: toggle panel sama seperti tab lain +
+// panggil renderAccGrid() (modules-render.js) yang memang sudah ada &
+// dipakai listener onchange filter di panel ini, cuma belum pernah
+// dipanggil saat tab-nya dibuka pertama kali.
+document.getElementById('keuanganTab-akun').classList.toggle('u-dnone', t!=='akun');
+document.getElementById('keuanganTab-akun').style.display='';
 if(t==='kelola'){populateKeuFilters();loadKeuFilterPrefsIntoDOM();renderKeuangan();}
 if(t==='tagihan'){renderBillList();}
 if(t==='budget'){renderBudgets();if(typeof BudgetReko!=='undefined')BudgetReko.init();}
 if(t==='utangpiutang'){if(typeof Piutang!=='undefined')Piutang.renderList();if(typeof Debt!=='undefined')Debt.renderList();}
+if(t==='akun'){if(typeof renderAccGrid==='function')renderAccGrid();}
 if(t==='asetproyek'){
 if(typeof Pensiun!=='undefined')Pensiun.render();
 // Sesi 13 Tahap 1b: Renov (modules/home/renovasi.js) sekarang lazy-load --
