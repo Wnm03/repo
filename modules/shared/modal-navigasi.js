@@ -30,17 +30,44 @@
 // antrean per-jenis dialog; permintaan berikutnya BARU ditampilkan setelah yang sebelumnya
 // dijawab, jadi tidak ada satupun Promise yang hilang/orphan. 0 perubahan pada pemanggil
 // (askConfirm()/showPromptModal()/dst tetap 1 pemanggilan = 1 Promise seperti sebelumnya).
+// BUGFIX (audit lanjutan v1026 — celah ScannerSession self-heal, laporan
+// user "confirmModalOverlay tidak melewati openModal()"): v1026 memasang
+// self-heal ScannerSession (ScannerSession.isActive(), lihat komentar
+// lengkap di openModal() bawah) TAPI cuma di openModal(). 5 dialog custom
+// (askConfirm/showPromptModal/showChoiceModal/showAlertModal/
+// showPinPromptModal) semuanya TIDAK lewat openModal() -- overlay-nya
+// langsung di-classList.add('open') sendiri lewat _queueDialog() di bawah.
+// Kalau body.scanner-session-active nyangkut (skenario SAMA PERSIS spt
+// fix v1026: proses tutup kamera scan terputus), dialog2 ini kena gejala
+// identik -- classList 'open' sukses ditambahkan scr JS, tapi CSS
+// _scannerSessionEnsureStyle() men-display:none!important overlay-nya DAN
+// #toast, jadi dialog "macet total" tanpa jejak. Ini serius krn askConfirm()
+// dipakai di ~20 file utk konfirmasi aksi DESTRUKTIF (hapus transaksi/akun/
+// dll) -- user bisa kejebak tanpa jalan keluar selain reload penuh.
+// Fix: 1 titik guard (_dialogSelfHeal()) dipanggil dari _queueDialog() --
+// otomatis meng-cover SEMUA 5 dialog di atas krn semuanya lewat helper ini,
+// dipanggil lagi di _resolveDialog() saat dialog berikutnya di antrean
+// digilir (supaya self-heal juga jalan utk dialog yang sempat menunggu di
+// antrean, bukan cuma dialog pertama). Pola SAMA PERSIS openModal()/
+// showPage() (fix v1026) -- 0 perubahan API, 0 breaking change ke pemanggil
+// existing (askConfirm()/showPromptModal()/dst tetap 1 pemanggilan = 1
+// Promise seperti sebelumnya).
+function _dialogSelfHeal(){
+if(typeof ScannerSession!=='undefined' && ScannerSession && typeof ScannerSession.isActive==='function'){
+ScannerSession.isActive();
+}
+}
 function _queueDialog(store,renderFn){
 return new Promise((resolve)=>{
 store.queue.push({resolve,renderFn});
-if(store.queue.length===1) renderFn();
+if(store.queue.length===1){ _dialogSelfHeal(); renderFn(); }
 });
 }
 function _resolveDialog(store,overlayId,val){
 document.getElementById(overlayId).classList.remove('open');
 const cur=store.queue.shift();
 if(cur)cur.resolve(val);
-if(store.queue.length) setTimeout(()=>store.queue[0].renderFn(),0);
+if(store.queue.length) setTimeout(()=>{ _dialogSelfHeal(); store.queue[0].renderFn(); },0);
 }
 const _confirmStore={queue:[]};
 function askConfirm(message,opts){
@@ -229,6 +256,23 @@ if(!el){
 console.warn(`Modal #${id} tidak ditemukan di DOM — cek document.write index (lihat modals.js MODAL_HTML[] vs document.write(MODAL_HTML[i]) di index.html/app_production.html, urutan/jumlahnya harus persis sama).`);
 return;
 }
+// FIX (audit: openModal() langsung dari tombol, mis. openVehicleModal()/
+// VehicleCatalogUI.open(), tanpa lewat showPage() dulu — laporan user "tab
+// Kelola Kendaraan/Katalog Suku Cadang tidak respon, 0 toast"): self-heal
+// ScannerSession SEBELUMNYA cuma dipanggil dari showPage() (pindah tab) atau
+// ScannerSession.enter() (coba buka scanner lagi) — kalau _scannerSessionActive
+// nyangkut true (kamera scan kependam: izin ditolak/app di-minimize/tab
+// di-suspend saat scan) TAPI user cuma tap tombol buka modal biasa (bukan
+// pindah tab, bukan buka scanner), state nyangkut ini tidak pernah ke-heal.
+// Akibatnya el.classList.add('open') di bawah tetap jalan (modal "berhasil"
+// dibuka secara JS), tapi CSS body.scanner-session-active memaksa
+// display:none ke SEMUA .overlay.open DAN #toast (lihat
+// scanner-session.js/_scannerSessionEnsureStyle) — user tidak lihat modal
+// atau toast apa pun. Fix: panggil isActive() di sini juga, pola SAMA PERSIS
+// showPage() — 0 perubahan API ScannerSession, 0 breaking change.
+if(typeof ScannerSession!=='undefined' && ScannerSession && typeof ScannerSession.isActive==='function'){
+ScannerSession.isActive();
+}
 // FIX (audit: race condition scan-ocr.js async vs pindah record) — naikkan
 // epoch tiap modal dibuka (termasuk dibuka ULANG utk record berbeda, mis. edit
 // Tagihan A lalu edit Tagihan B, sama-sama lewat openBillModal->openModal
@@ -352,7 +396,10 @@ handle.addEventListener('mousedown',onStart);
 window.addEventListener('mousemove',onMove);
 window.addEventListener('mouseup',onEnd);
 }
-function openQS(id){document.getElementById(id).classList.add('open');_syncNavVisibilityForModals();}
+// BUGFIX (audit lanjutan v1026, sama persis kasus _queueDialog() di atas):
+// openQS() juga langsung classList.add('open') tanpa lewat openModal(),
+// jadi Quick Switcher kena celah self-heal ScannerSession yang sama.
+function openQS(id){_dialogSelfHeal();document.getElementById(id).classList.add('open');_syncNavVisibilityForModals();}
 function closeQS(id){document.getElementById(id).classList.remove('open');_syncNavVisibilityForModals();}
 
 // SARAN (dari review sebelumnya): dukung tombol Escape utk nutup modal, tidak cuma tap ✕/backdrop.
