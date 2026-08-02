@@ -152,7 +152,7 @@ const LifeOSHome = {
     const panels = ['today', 'goals', 'projects', 'review', 'knowledge', 'areas', 'life-objects', 'plugins'];
     panels.forEach((p) => {
       const panelEl = document.getElementById('lifeOSPanel-' + p);
-      if (panelEl) panelEl.classList.toggle('u-dnone', p !== name);
+      if (panelEl) { panelEl.classList.toggle('u-dnone', p !== name); panelEl.style.display = ''; }
     });
   },
 };
