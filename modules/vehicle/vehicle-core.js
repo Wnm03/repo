@@ -567,7 +567,9 @@ cniSubtabBtns.forEach(b=>b.classList.remove('active'));
 if(el) el.classList.add('active');
 else { const idx=CNI_SUBTAB_ORDER.indexOf(t); const btn=cniSubtabBtns[idx>=0?idx:0]; if(btn) btn.classList.add('active'); }
 document.getElementById('cniTab-ringkasan').classList.toggle('u-dnone', t!=='ringkasan');
+document.getElementById('cniTab-ringkasan').style.display='';
 document.getElementById('cniTab-rekomendasi').classList.toggle('u-dnone', t!=='rekomendasi');
+document.getElementById('cniTab-rekomendasi').style.display='';
 }
 const CNB_SUBTAB_ORDER=['ringkasan','analisis'];
 function setCnBbmTab(t,el){
@@ -576,7 +578,9 @@ cnbSubtabBtns.forEach(b=>b.classList.remove('active'));
 if(el) el.classList.add('active');
 else { const idx=CNB_SUBTAB_ORDER.indexOf(t); const btn=cnbSubtabBtns[idx>=0?idx:0]; if(btn) btn.classList.add('active'); }
 document.getElementById('cnbTab-ringkasan').classList.toggle('u-dnone', t!=='ringkasan');
+document.getElementById('cnbTab-ringkasan').style.display='';
 document.getElementById('cnbTab-analisis').classList.toggle('u-dnone', t!=='analisis');
+document.getElementById('cnbTab-analisis').style.display='';
 }
 function getVehicleKm(vehicleId){
 const kms=[
