@@ -854,6 +854,34 @@ const GROUP_B = [
   'modules/shop/inventory-engine.js',
   'modules/shop/profit-engine.js',
 
+  // Generic Shop Engine Tahap 1 (Generic Domain Layer, lanjutan
+  // AUDIT-PRA-IMPLEMENTASI-GENERIC-SHOP-ENGINE.md +
+  // ARSITEKTUR-SHOP-ENGINE-GENERIC.md): CategoryStore/SupplierStore/
+  // AttributeStore/ProductStore/PricingService/InventoryService — SAMA
+  // POLA 4 engine S198 di atas (pure wrapper, additive, belum dihubungkan
+  // ke UI/modul lain). Ditaruh SETELAH PurchaseEngine/InventoryEngine/
+  // ProfitEngine (pricing-service.js & inventory-service.js delegasi ke
+  // ProfitEngine/InventoryEngine) & SETELAH GROUP_A/ownership-engine.js
+  // (product-store.js pakai isProductOwnershipSelf) — 0 forward-reference.
+  // Urutan internal: category/supplier/attribute/product dulu (saling lepas,
+  // cuma butuh D), baru pricing/inventory (butuh Profit/InventoryEngine di
+  // atas + product-store tidak wajib tapi ditaruh duluan biar konsisten).
+  'modules/shop/generic/category-store.js',
+  'modules/shop/generic/supplier-store.js',
+  'modules/shop/generic/attribute-store.js',
+  'modules/shop/generic/product-store.js',
+  'modules/shop/generic/pricing-service.js',
+  'modules/shop/generic/inventory-service.js',
+
+  // Generic Shop Engine Tahap 4 (Product CRUD Layer, PURE, lanjutan Tahap
+  // 1-3 di atas): ProductRepository — createProduct()/updateProduct()/
+  // cloneProduct()/saveProduct(). Ditaruh SETELAH attribute-store.js/
+  // product-store.js (dipakai utk auto-route field atribut & default
+  // ownership) di blok yang sama — 0 forward-reference. SAMA POLA Tahap 1-3:
+  // pure wrapper, additive, BELUM dihubungkan ke UI/Etalase.save()/modul
+  // lain mana pun sesi ini (lihat LAPORAN-TAHAP4-GENERIC-SHOP-ENGINE.md).
+  'modules/shop/generic/product-repository.js',
+
   // S203 (Continue — Delivery Plan UI): DeliveryPlanUI, presenter yang
   // menutup gap TripEngine "Belum digunakan UI" dari S198 di atas. Ditaruh
   // langsung setelah TripEngine (0 forward-reference: TripEngine sudah
