@@ -1,3 +1,308 @@
+# Changelog — Sesi 362 (Modul 4 — Product Repository: Price Mutation Gate)
+
+## Konteks
+
+Lanjutan langsung dari Modul 3 (Sesi 361, stock-mutation-gate). Target
+Modul 4 (dikonfirmasi user): SEMUA mutasi absolut `.hargaBeli`/`.hargaJual`
+produk (`D.products[].hargaBeli` / `.hargaJual`) wajib lewat SATU gate
+(`ProductRepository`), bukan tersebar sbg assignment mentah
+(`product.hargaBeli=r.hargaBeli` / `p.hargaJual=reko` dst.) di banyak
+file dengan 0 validasi bersama — pola bug yang SAMA PERSIS dengan yang
+ditutup Modul 3 untuk `.stock`, kali ini untuk 2 field harga.
+
+`ProductRepository` (`modules/shop/generic/product-repository.js`) sudah
+punya Stock Mutation Gate sejak Modul 3 — sesi ini MENAMBAH (bukan
+menulis ulang) satu bagian baru di file yang sama: Price Mutation Gate.
+
+## Perubahan
+
+### 1. `ProductRepository` — Price Mutation Gate baru (2 method baru)
+
+- `validatePriceValue(value)` — validasi bersama dipakai SEMUA jalur
+  tulis harga absolut (`hargaBeli`/`hargaJual`). Tolak (`ok:false`) kalau
+  `value` bukan angka valid (NaN/Infinity/-Infinity/string/undefined/
+  null) — SEBELUM sesi ini kasus itu silently menghasilkan harga
+  NaN/Infinity/undefined di data (mis. kolom kosong pas import
+  Excel/CSV/Scan/PDF ke-parse jadi NaN/undefined lalu ketimpa begitu
+  saja ke produk yang sudah ada, 0 tempat cek). Hasil diklem `>=0`
+  (`Math.max(0,...)`) — harga tidak pernah negatif, prinsip sama dengan
+  `validateStockValue()`.
+- `mutateSetPrice(product, field, value)` — GATE utama (impure, disengaja
+  — alasan sama persis `mutateStockDelta()`/`mutateSetStock()`, lihat
+  komentar di file): satu-satunya jalur yang menulis `.hargaBeli`/
+  `.hargaJual` in-place ke referensi produk asli di `D.products`. `field`
+  HARUS `'hargaBeli'` atau `'hargaJual'` (scope sesi ini) — field lain
+  ditolak. Fail-safe: kalau `value` tidak valid, field TIDAK disentuh
+  sama sekali (bukan partial write) — produk mempertahankan harga
+  LAMA-nya, bukan berubah jadi NaN/undefined.
+
+`createProduct()`/`updateProduct()` (PURE, Tahap 4, dipakai jalur form
+`Etalase.save()`) SENGAJA TIDAK disentuh — sama alasan Modul 3: caller di
+situ sudah pegang objek baru/immutable-merge, bukan referensi langsung
+yang perlu di-gate.
+
+### 2. 7 titik mutasi lama dialihkan ke gate (5 file)
+
+| File | Fungsi | Sebelum |
+|---|---|---|
+| `modules/business/shop-data-io-api.js` | `ShopDataIO.commitShopRows()` | `product.hargaBeli=r.hargaBeli; product.hargaJual=r.hargaJual;` (partial-update, tanpa validasi) |
+| `modules/shop/cobek-io.js` | `ImportShopExcel.commit()` | `p.hargaBeli=r.hargaBeli; p.hargaJual=r.hargaJual;` (unconditional, tanpa validasi — bug lama: kolom kosong ke-parse `undefined` langsung ketimpa) |
+| `modules/shop/cobek-tx-cart.js` | `applyTxShopStockFromTx()` (restock) | `if(it.hargaBeli>0)product.hargaBeli=it.hargaBeli;` (guard `>0` tidak menahan `Infinity`) |
+| `modules/shop/cobek-pricing.js` | `PriceRekoWidget.applyOne()` | `p.hargaJual=reko;` |
+| `modules/shop/cobek-pricing.js` | `PriceRekoWidget.applyBulk()` | `targets.forEach(p=>{p.hargaJual=...});` |
+| `modules/shop/cobek-etalase.js` | `Etalase.syncPairedPrice()` | `changed.forEach(s=>{s.hargaJual=product.hargaJual;});` |
+| `modules/shop/cobek-etalase.js` | `Etalase.confirmMerge()` | `p.hargaJual=price;` (loop anggota grup) |
+
+Semua 7 titik memakai guard `typeof ProductRepository!=='undefined'` +
+fallback ke assignment mentah lama (pola SAMA PERSIS yang sudah dipakai
+di seluruh codebase untuk `ProductRepository`/`OwnershipEngine`/
+`AttributeStore`) — kalau modul belum dimuat, perilaku 100% sama seperti
+sebelum sesi ini. Nilai valid ditulis SAMA PERSIS seperti sebelumnya
+(business logic 0 berubah); nilai korup (NaN/Infinity/undefined) SEKARANG
+ditolak alih-alih ditulis mentah.
+
+### 3. Titik yang SENGAJA TIDAK disentuh (di luar scope, dicek eksplisit)
+
+- `modules/business/shop-pdf-import-ui.js` (`shopPdfImportUiCommit()`) &
+  `modules/business/shop-scan-ui.js` (`shopScanUiCommit()`) — keduanya
+  membangun objek `row` BARU (staged draft, bukan referensi produk yang
+  sudah ada di `D.products`), lalu dikirim ke `ShopDataIO.commitShopRows()`
+  yang SUDAH digate di poin 2. Tidak ada mutasi langsung di titik ini.
+- `modules/shop/cobek-io.js` (`ImportKatalog.commit()`, target Paste) —
+  sudah reroute ke `ShopDataIO.commitShopRows()` sejak sesi sebelumnya
+  (lihat komentar di file), sama seperti PDF/Scan — otomatis ikut tergate
+  lewat poin 2, 0 perubahan tambahan diperlukan.
+
+## Known issue baru (dicatat, BELUM diperbaiki sesi ini)
+
+- **`hargaReseller` belum digate.** Field harga ke-3 ini ditulis mentah
+  di titik yang SAMA PERSIS dengan `hargaBeli`/`hargaJual` di
+  `shop-data-io-api.js` (`commitShopRows()`) & `cobek-io.js`
+  (`ImportShopExcel.commit()`) — pola bug identik (NaN/undefined bisa
+  lolos ke `.hargaReseller`), tapi TIDAK termasuk scope sesi ini (user
+  eksplisit minta `hargaBeli`/`hargaJual` saja). Rekomendasi: Modul 5,
+  perluas `mutateSetPrice()` menerima `'hargaReseller'` sbg field
+  ketiga (dengan penanganan `null` eksplisit sbg "reseller belum diisi",
+  beda dari `hargaBeli`/`hargaJual` yang tidak pernah `null`).
+
+## Test
+
+- **Baru**: `tests/product-repository-price-gate-mod4.test.js` — 15 test
+  (6 unit `validatePriceValue()`/`mutateSetPrice()`, 9 integrasi
+  mencakup ke-5 file yang di-wire, termasuk kasus penolakan NaN/Infinity
+  di tiap titik).
+- **Regresi**: `npm test` penuh — 2374 test total, 2372 pass. 2 gagal
+  (`dashHubNavigateToFeature` — navigasi dashboard, tidak berkaitan
+  dengan Shop/ProductRepository) dikonfirmasi **pre-existing** (gagal
+  identik di baseline SEBELUM perubahan sesi ini, lihat
+  `FILES-CHANGED.md`) — 0 regresi baru dari Modul 4.
+
+## Build
+
+- `node scripts/build.js` — sukses, versi naik ke **v1059**
+  (`s386-generic-shop-engine-tahap12-final-audit-final-release`).
+  Bundle `app-bundle-a.min.js`/`app-bundle-b.min.js` ditulis ulang &
+  lolos cek sintaks (`node --check`). `verify-bundle-freshness.js` ✓.
+- **Catatan lingkungan**: `esbuild` tidak terpasang di sandbox ini (tidak
+  ada akses jaringan utk `npm install`) — bundle hasil build TIDAK
+  diminifikasi (lebih besar dari build sebelumnya, tapi 100% valid &
+  aman dipakai, dikonfirmasi oleh pesan build.js sendiri). Jalankan
+  `npm install --save-dev esbuild && node scripts/build.js` di
+  lingkungan dengan akses internet kalau ukuran bundle minifikasi
+  dibutuhkan.
+- `eslint` juga tidak terpasang (paket dev, sama sebab) — sebagai
+  gantinya, semua file yang diubah dicek `node --check` (sintaks valid,
+  0 error) secara manual.
+
+# Changelog — Sesi 361 (Modul 3 — Product Repository: Stock Mutation Gate)
+
+## Konteks
+
+Lanjutan langsung (instruksi eksplisit user: "jangan audit lagi") dari
+Modul 2 (Sesi 360, sales-mutation-fix s265). Target Modul 3: SEMUA mutasi
+`.stock` produk (`D.products[].stock`) di seluruh app wajib lewat SATU
+gate (`ProductRepository`), bukan tersebar sbg rumus inline
+(`p.stock=Math.max(0,(p.stock||0)+delta)` / `p.stock=r.stock` mentah) di
+banyak file dgn 0 validasi bersama.
+
+`ProductRepository` (`modules/shop/generic/product-repository.js`) SUDAH
+ada sejak Generic Shop Engine Tahap 4 (PURE CRUD: createProduct/
+updateProduct/cloneProduct/saveProduct) — sesi ini MENAMBAH (bukan
+menulis ulang) satu bagian baru di file yang sama: Stock Mutation Gate.
+
+## Perubahan
+
+### 1. `ProductRepository` — Stock Mutation Gate baru (7 method baru)
+
+- `validateStockDelta(currentStock, delta)` / `validateStockValue(value)`
+  — validasi bersama dipakai SEMUA jalur tulis stok: tolak (`ok:false`)
+  kalau delta/value bukan angka valid (NaN/Infinity/-Infinity/string/
+  undefined) — SEBELUM sesi ini kasus itu silently menghasilkan `NaN` di
+  `.stock` produk (0 tempat cek). Hasil tetap diklem `>=0`
+  (`Math.max(0,...)`) — behavior klem SAMA PERSIS semua call site lama,
+  cuma dipindah ke satu tempat.
+- `mutateStockDelta(product, delta)` / `mutateSetStock(product, value)` —
+  GATE utama (impure, disengaja — lihat komentar di file): satu-satunya
+  jalur yang menulis `.stock` in-place ke referensi produk asli di
+  `D.products`. Fail-safe: kalau input tidak valid, `.stock` TIDAK
+  disentuh sama sekali (bukan partial write).
+- `applyStockDelta(product, delta)` — versi PURE (balikin objek baru,
+  TIDAK memutasi input), utk caller yang pegang array terpisah.
+- `findById(products, id)` — cari produk + DETEKSI id ganda (data korup):
+  kalau ketemu >1 match, tolak (`ok:false`) drpd asal ambil match
+  pertama.
+- `hasDuplicateId(products, id)` — helper cek id ganda.
+- `saveProduct()` (Tahap 4, existing) sekarang JUGA menolak
+  (`ok:false`) upsert yang hasil akhirnya (`result` array) mengandung id
+  ganda di mana pun (bukan cuma id yang di-upsert) — validasi baru sesi
+  ini.
+
+### 2. Wiring — 8 titik mutasi langsung diganti ke gate (guard
+   `typeof ProductRepository`, fallback ke rumus lama kalau modul belum
+   dimuat — 0 breaking change utk file yang tidak load
+   `product-repository.js`)
+
+| File | Titik | Sebelumnya | Sesudah |
+|---|---|---|---|
+| `modules/shop/cobek-tx-cart.js` | rollback stok lama (2×), `applyTxShopStockFromTx` | `p.stock=Math.max(0,...)` | `ProductRepository.mutateStockDelta()` |
+| `modules/shop/cobek-tx-cart.js` | `applyBundleLinkedStock()` base+addon (2×) | idem | idem |
+| `modules/shop/cobek-tx-cart.js` | `rollbackShopItems()` (SSOT rollback dari Sesi 360) | idem | idem |
+| `modules/shop/cobek-pricing.js` | `StockRekoWidget.applyAll()` (restock massal) | `D.products[idx].stock=...` | `ProductRepository.mutateStockDelta()` |
+| `modules/shop/business-flow-presenter.js` | `receiveGoods()` (Trip→Goods Receipt→Stock) | `D.products[idx].stock=...` | `ProductRepository.mutateStockDelta()` |
+| `modules/finance/tx-list-cashflow.js` | `delTx()` — rollback stockItems/stockProductId/cobekLinkId (3×) | `p.stock=Math.max(0,...)` / `p.stock=(p.stock\|\|0)+it.qty` | `ProductRepository.mutateStockDelta()` |
+| `modules/finance/transaksi.js` | edit transaksi — rollback stockItems/stockProductId/cobekLinkId (3×) | idem | idem |
+| `modules/shop/cobek-io.js` | Import Excel/CSV katalog produk (SET absolut) | `p.stock=r.stock` mentah | `ProductRepository.mutateSetStock()` |
+| `modules/business/shop-data-io-api.js` | `ShopDataIO.commitShopRows()` (SET absolut) | `product.stock=r.stok` mentah | `ProductRepository.mutateSetStock()` |
+
+`modules/shop/cobek-etalase.js` (`Etalase.save()`, form tambah/edit
+produk) TIDAK disentuh — sudah lewat `ProductRepository.updateProduct()`
+sejak Tahap 6, sudah 100% comply.
+
+## Yang SENGAJA TIDAK diubah (scope guard, sesuai instruksi "minimal")
+
+- Tidak ada refactor struktur file / pemecahan file besar.
+- Business logic & format data 100% dipertahankan: rumus delta
+  (tambah/kurang/sign×qty) & klem `>=0` byte-identik, cuma dipindah ke 1
+  tempat + divalidasi.
+- Modul sparepart/kendaraan (`revertStockPurchase`, `partStockId` dst.) —
+  domain data terpisah dari `D.products`, di luar scope "Product
+  Repository".
+- Tidak menambah UI/pesan error baru ke user — gate menolak silent (data
+  tidak berubah), sama seperti sebelumnya kalau kondisi `if(p)`/
+  `if(prevP)` gagal.
+
+## Test
+
+- File baru: `tests/product-repository-stock-gate-mod3.test.js` (18
+  test): unit gate (validasi delta/value, mutate in-place, fail-safe,
+  findById/hasDuplicateId/saveProduct dedup) + integrasi (recordShopSale,
+  rollbackShopItems, StockRekoWidget.applyAll, ShopDataIO.commitShopRows)
+  membuktikan call site BENAR memanggil gate & hasil akhir stok identik
+  dgn business logic lama, PLUS kasus baru (delta/value NaN/Infinity
+  ditolak, stok TIDAK jadi NaN).
+- Full regression: `node --test tests/*.test.js` → 2359 test, 2357 pass,
+  2 fail — 2 kegagalan itu **pre-exist di source pristine yang di-upload
+  user** (`tests/dashboard-hub-goto-subtab.test.js`, test timing navigasi
+  Dashboard Hub, tidak menyentuh Shop/Product sama sekali) — dikonfirmasi
+  dgn menjalankan test yang sama di source asli sebelum sesi ini
+  diterapkan. 0 regresi baru dari Modul 3.
+- Build (`node scripts/build.js`): sukses, versi naik 1057 → 1058, kedua
+  bundle lolos `node --check` (sintaks valid). `esbuild` tidak tersedia
+  di environment ini (tidak ada akses internet) → bundle ditulis TANPA
+  minifikasi (lebih besar dari build production biasa, tapi 100% valid &
+  aman dipakai — build script sudah cek ini otomatis & cuma warning, bukan
+  error).
+
+---
+
+# Changelog — Sesi 360 (s265-sales-mutation-fix): Perbaikan Modul 2 Sales Mutation
+
+## Konteks
+
+Audit sebelumnya (repo yang di-upload user) menemukan beberapa bug pada
+jalur penjualan Shop (`recordShopSale()` & sekitarnya): temuan audit
+dianggap valid, sesi ini langsung implementasi fix-nya (bukan audit
+ulang).
+
+## Bug yang diperbaiki
+
+1. **Stok bisa negatif dari duplicate cart item** — `recordShopSale()`
+   (`modules/shop/cobek-tx-cart.js`) memvalidasi tiap baris item TERPISAH
+   terhadap `p.stock` yang sama (belum dikurangi), jadi 2 baris produk
+   yang sama (mis. 2×@3 dengan stok 5) lolos validasi (3<=5, dicek 2×)
+   padahal totalnya (6) melebihi stok — hasil akhir stok jadi minus.
+   **Fix**: qty diakumulasikan per `productId` dulu, baru divalidasi
+   terhadap total.
+2. **Cart form Transaksi (`curTxShopSaleCart`) tidak merge item sejenis**
+   — beda perilaku dari `Order.addItem()` (form Transaksi Manual) yang
+   sudah merge. `addTxShopSaleCartItem()` sekarang menggabung qty ke
+   baris yang sudah ada utk `productId` yang sama, sama seperti
+   `Order.addItem()`.
+3. **Rollback stok terduplikasi 3× (recordShopSale) + 1 implementasi lagi
+   TANPA bundle sama sekali (Laporan.delete())** — disatukan jadi 1 SSOT:
+   `rollbackShopItems(items, sign)` (`cobek-tx-cart.js`), reuse
+   `applyBundleLinkedStock()` yang sudah ada. `recordShopSale()` (restore
+   existingShopId lama, rollback-on-failure, apply penjualan baru) &
+   `Laporan.delete()` (hapus/retur transaksi) semua sekarang manggil
+   fungsi yang sama.
+4. **Bundle rollback hilang saat hapus/retur transaksi** —
+   `Laporan.delete()` sebelumnya cuma `p.stock += it.qty` tanpa
+   `applyBundleLinkedStock()`, jadi base product & addon (alu/muntu) dari
+   produk bundle TIDAK ikut balik saat transaksi bundle dihapus/diretur.
+   Catatan: di app ini "retur" = `BusinessFlowPresenter.processReturn()`
+   yang 100% delegasi ke `Laporan.delete()` (lihat komentar
+   "Wire Return->Refund" di `cobek-order.js`) — 0 jalur retur terpisah,
+   jadi 1 fix ini menutup dua-duanya (hapus transaksi & retur).
+5. **Edit transaksi**: sudah benar dari sebelumnya (restore stok lama
+   dulu via `existingShopId`, baru apply stok baru) — dipastikan tetap
+   berperilaku sama lewat `rollbackShopItems`, ditambah test regresi
+   eksplisit (termasuk kasus bundle & kasus stok baru tidak cukup ->
+   rollback restore dibatalkan lagi, stok balik ke kondisi semula).
+6. **Validasi backend ditambahkan** — `recordShopSale()` sebelumnya diam-
+   diam men-drop baris item yang `productId`-nya kosong/`qty<=0` (cuma
+   dicegah di form UI). Sekarang seluruh transaksi ditolak dgn pesan
+   jelas (`Produk tidak valid` / `Jumlah tidak valid`) kalau ada baris
+   tidak valid, supaya caller manapun (import data, API internal, dll)
+   tidak bisa lewat cuma dari validasi UI.
+
+## File berubah
+
+- `modules/shop/cobek-tx-cart.js` — `rollbackShopItems()` (baru),
+  `recordShopSale()` (rewrite, 0 formula bisnis baru selain fix di atas),
+  `addTxShopSaleCartItem()` (merge cart).
+- `modules/shop/cobek-order.js` — `Laporan.delete()` (rollback via SSOT +
+  guard idempotent).
+- `tests/sales-mutation-fix-s265.test.js` — 18 test baru (penjualan
+  normal, duplicate cart item, stok negatif, edit transaksi ×2, delete
+  transaksi, retur via `processReturn()`, bundle rollback ×2, rollback
+  idempotent ×2, produk tidak ditemukan, qty invalid ×2, merge cart ×2).
+- `modules/shared/modules-render.js`, `modules/shared/modals.js`,
+  `modules/shared/modules-calc.js`, `chat-action-handlers.js`,
+  `modules/shared/features-helpers-global-security.js` — konstanta versi
+  naik (`s384-...` -> `s385-sales-mutation-fix-s265`, sesuai skema versi
+  builder — lihat catatan versi lama/baru di bawah).
+- `app-bundle-a.min.js`, `app-bundle-b.min.js`, `index.html`,
+  `app_production.html`, `sw.js` — hasil build ulang otomatis
+  (`node scripts/build.js`).
+
+## Batasan yang dipatuhi
+
+Tidak ada refactor besar di luar modul Sales; 100% reuse
+`applyBundleLinkedStock()`/`Etalase.*`/`D.products`/`D.cobek` yang sudah
+ada; format data `D.cobek[].items[]` TIDAK berubah; backward compatible
+(caller lama tetap jalan tanpa perubahan pemanggilan).
+
+## Test
+
+`node --test tests/*.test.js` → **2339/2341 pass**. 2 gagal
+(`dashHubNavigateToFeature` di `tests/dashboard-hub-goto-subtab.test.js`)
+**pre-existing, tidak terkait** — sudah tercatat gagal di baseline
+sebelum sesi ini juga (lihat `docs/CHECKPOINT.md`, sesi v1047: "2 fail
+pre-existing... sudah gagal di baseline sebelum sesi ini juga"), file
+`dashboard-hub.js` tidak disentuh sesi ini.
+
+---
+
 # Changelog — Sesi 359: Konsolidasi ke repo GitHub (audit "apa yang kurang")
 
 ## Konteks

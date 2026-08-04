@@ -28,7 +28,11 @@ if(txHits.length)groups.push({title:'💸 Transaksi',page:'keuangan',items:txHit
 const billHits=D.bills.filter(b=>(b.name||'').toLowerCase().includes(q)).slice(0,8);
 if(billHits.length)groups.push({title:'🧾 Tagihan/Cicilan/Langganan',page:'keuangan',items:billHits.map(b=>({label:b.name,sub:`Jatuh tempo ${b.nextDue} · ${b.freq}`,amount:fmt(b.amount)}))});
 const prodHits=D.products.filter(p=>(p.name||'').toLowerCase().includes(q)).slice(0,8);
-if(prodHits.length)groups.push({title:'🪨 Produk Shop',page:'shop',items:prodHits.map(p=>({label:p.name,sub:`Stok ${p.stock}`,amount:fmt(p.hargaJual)}))});
+// Tahap 11 (Generic Shop Engine — audit sisa hardcode): harga jual produk
+// di hasil pencarian global dialihkan lewat PricingService kalau sudah
+// dimuat, fallback field asli langsung kalau belum (guard typeof, 0
+// perubahan nilai — lihat generic/pricing-service.js).
+if(prodHits.length)groups.push({title:'🪨 Produk Shop',page:'shop',items:prodHits.map(p=>({label:p.name,sub:`Stok ${p.stock}`,amount:fmt((typeof PricingService!=='undefined')?PricingService.getRetail(p):p.hargaJual)}))});
 const shopHits=D.cobek.filter(t=>t.customer&&(t.customer.name||'').toLowerCase().includes(q)).slice(0,8);
 if(shopHits.length)groups.push({title:'🛒 Transaksi Shop',page:'shop',items:shopHits.map(t=>({label:t.customer.name,sub:t.date,amount:fmt(t.total)}))});
 const servisHits=D.servisLogs.filter(s=>(s.item||'').toLowerCase().includes(q)||(s.note||'').toLowerCase().includes(q)).sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
