@@ -35,14 +35,34 @@ const ShopDataIO = {
       const nama = String(r.nama).trim();
       if (!nama) return;
       const kategoriId = r.kategori ? resolveShopKategori(r.kategori) : '';
-      let product = D.products.find((p) => p.name.toLowerCase() === nama.toLowerCase());
+      let product = (typeof ProductStore !== 'undefined')
+        ? ProductStore.findByName(nama)
+        : D.products.find((p) => p.name.toLowerCase() === nama.toLowerCase());
       if (product) {
-        if (r.hargaBeli !== undefined && r.hargaBeli !== null) product.hargaBeli = r.hargaBeli;
-        if (r.hargaJual !== undefined && r.hargaJual !== null) product.hargaJual = r.hargaJual;
-        if (r.hargaReseller !== undefined && r.hargaReseller !== null) product.hargaReseller = r.hargaReseller;
-        if (r.stok !== undefined && r.stok !== null) product.stock = r.stok;
-        if (r.satuan) product.satuan = r.satuan;
-        if (kategoriId) product.kategoriId = kategoriId;
+        if (r.hargaBeli !== undefined && r.hargaBeli !== null) {
+          if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetPrice(product, 'hargaBeli', r.hargaBeli);
+          else product.hargaBeli = r.hargaBeli;
+        }
+        if (r.hargaJual !== undefined && r.hargaJual !== null) {
+          if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetPrice(product, 'hargaJual', r.hargaJual);
+          else product.hargaJual = r.hargaJual;
+        }
+        if (r.hargaReseller !== undefined && r.hargaReseller !== null) {
+          if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetPrice(product, 'hargaReseller', r.hargaReseller);
+          else product.hargaReseller = r.hargaReseller;
+        }
+        if (r.stok !== undefined && r.stok !== null) {
+          if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetStock(product, r.stok);
+          else product.stock = r.stok;
+        }
+        if (r.satuan) {
+          if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetField(product, 'satuan', r.satuan);
+          else product.satuan = r.satuan;
+        }
+        if (kategoriId) {
+          if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetField(product, 'kategoriId', kategoriId);
+          else product.kategoriId = kategoriId;
+        }
         updated++;
       } else {
         product = {
@@ -167,7 +187,9 @@ const ShopDataIO = {
       if (!src || !src.name) return;
       const nama = String(src.name).trim();
       if (!nama) return;
-      const product = D.products.find((p) => p.name.toLowerCase() === nama.toLowerCase());
+      const product = (typeof ProductStore !== 'undefined')
+        ? ProductStore.findByName(nama)
+        : D.products.find((p) => p.name.toLowerCase() === nama.toLowerCase());
       if (product) {
         copyFields.forEach((f) => { if (src[f] !== undefined && src[f] !== null) product[f] = src[f]; });
         updated++;
@@ -252,7 +274,9 @@ const ShopCsvImport = {
     }
     let created = 0, updated = 0;
     const rowsHtml = this.parsedRows.slice(0, 50).map((r) => {
-      const exists = D.products.find((p) => p.name.toLowerCase() === r.nama.toLowerCase());
+      const exists = (typeof ProductStore !== 'undefined')
+        ? ProductStore.findByName(r.nama)
+        : D.products.find((p) => p.name.toLowerCase() === r.nama.toLowerCase());
       if (exists) updated++; else created++;
       const statusLabel = exists ? '🔄 update' : '🆕 baru';
       const sub = (r.stok || 0) + (r.satuan ? ' ' + r.satuan : '') + ' · ' + fmtFull(r.hargaJual || 0);
@@ -359,7 +383,9 @@ const ShopJsonIO = {
       let created = 0, updated = 0;
       products.forEach((p) => {
         if (!p || !p.name) return;
-        const exists = D.products.find((x) => x.name.toLowerCase() === String(p.name).toLowerCase());
+        const exists = (typeof ProductStore !== 'undefined')
+          ? ProductStore.findByName(p.name)
+          : D.products.find((x) => x.name.toLowerCase() === String(p.name).toLowerCase());
         if (exists) updated++; else created++;
       });
       let produsenBaru = 0;

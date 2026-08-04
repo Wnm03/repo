@@ -139,9 +139,11 @@ function shopScanUiRenderPreview() {
   const countLabel = '<div class="u-fs12 u-t2 u-mb8">' + includedCount + ' dari ' + _shopScanRows.length + ' dicentang</div>';
   const rowsHtml = _shopScanRows.map((row, idx) => {
     const checkedAttr = row.included ? 'checked' : '';
-    const exists = (typeof D !== 'undefined' && D && Array.isArray(D.products))
-      ? D.products.find((p) => p.name.toLowerCase() === String(row.nama || '').toLowerCase())
-      : null;
+    const exists = (typeof ProductStore !== 'undefined')
+      ? ProductStore.findByName(row.nama || '')
+      : ((typeof D !== 'undefined' && D && Array.isArray(D.products))
+        ? D.products.find((p) => p.name.toLowerCase() === String(row.nama || '').toLowerCase())
+        : null);
     const statusLabel = exists ? '🔄 update' : '🆕 baru';
     return '<div class="tx-item" style="align-items:flex-start">'
       + '<input type="checkbox" ' + checkedAttr + ' style="width:18px;height:18px;margin-top:8px;flex-shrink:0" onchange="ShopScanUI.toggleRow(' + idx + ')">'
