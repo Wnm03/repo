@@ -655,11 +655,11 @@ if(!stillChecked||!panelVisible){
 if(existingTx.stockItems&&existingTx.stockItems.length){
 existingTx.stockItems.forEach(si=>{
 const prevP=D.products.find(p=>p.id===si.productId);
-if(prevP)prevP.stock=Math.max(0,(prevP.stock||0)-(si.qty||0));
+if(prevP){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(prevP,-(si.qty||0));else prevP.stock=Math.max(0,(prevP.stock||0)-(si.qty||0));}
 });
 } else if(existingTx.stockProductId){
 const prevP=D.products.find(p=>p.id===existingTx.stockProductId);
-if(prevP)prevP.stock=Math.max(0,(prevP.stock||0)-(existingTx.stockQty||0));
+if(prevP){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(prevP,-(existingTx.stockQty||0));else prevP.stock=Math.max(0,(prevP.stock||0)-(existingTx.stockQty||0));}
 }
 delete existingTx.stockProductId;delete existingTx.stockQty;delete existingTx.stockItems;
 renderProductList();
@@ -680,7 +680,7 @@ const panelVisible=document.getElementById('txShopSalePanel')&&document.getEleme
 if(!stillChecked||!panelVisible){
 const prevShop=D.cobek.find(c=>c.id===existingTx.cobekLinkId);
 if(prevShop&&prevShop.items){
-prevShop.items.forEach(it=>{const pp=D.products.find(x=>x.id===it.productId);if(pp)pp.stock=(pp.stock||0)+it.qty;});
+prevShop.items.forEach(it=>{const pp=D.products.find(x=>x.id===it.productId);if(pp){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(pp,it.qty);else pp.stock=(pp.stock||0)+it.qty;}});
 }
 D.cobek=D.cobek.filter(c=>c.id!==existingTx.cobekLinkId);
 delete existingTx.cobekLinkId;

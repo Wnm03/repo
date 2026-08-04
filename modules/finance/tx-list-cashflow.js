@@ -52,17 +52,17 @@ renderStockList();
 if(t&&t.stockItems&&t.stockItems.length){
 t.stockItems.forEach(si=>{
 const p=D.products.find(x=>x.id===si.productId);
-if(p)p.stock=Math.max(0,(p.stock||0)-(si.qty||0));
+if(p){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(p,-(si.qty||0));else p.stock=Math.max(0,(p.stock||0)-(si.qty||0));}
 });
 toast(`📦 Stok dikurangi (transaksi dihapus)`,2600);
 } else if(t&&t.stockProductId){
 const p=D.products.find(x=>x.id===t.stockProductId);
-if(p){p.stock=Math.max(0,(p.stock||0)-(t.stockQty||0));toast(`📦 Stok "${p.name}" dikurangi ${t.stockQty} (transaksi dihapus)`,2600);}
+if(p){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(p,-(t.stockQty||0));else p.stock=Math.max(0,(p.stock||0)-(t.stockQty||0));toast(`📦 Stok "${p.name}" dikurangi ${t.stockQty} (transaksi dihapus)`,2600);}
 }
 if(t&&t.cobekLinkId){
 const linkedShop=D.cobek.find(c=>c.id===t.cobekLinkId);
 if(linkedShop&&linkedShop.items){
-linkedShop.items.forEach(it=>{const p=D.products.find(x=>x.id===it.productId);if(p)p.stock=(p.stock||0)+it.qty;});
+linkedShop.items.forEach(it=>{const p=D.products.find(x=>x.id===it.productId);if(p){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(p,it.qty);else p.stock=(p.stock||0)+it.qty;}});
 toast(`🪨 Stok dikembalikan, penjualan Shop terkait dihapus`,2600);
 }
 D.cobek=D.cobek.filter(c=>c.id!==t.cobekLinkId);
