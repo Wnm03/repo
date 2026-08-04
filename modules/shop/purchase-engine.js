@@ -76,10 +76,16 @@ const PurchaseEngine = {
   // masing-masing produk (product.hargaBeli, field yang sudah ada di
   // D.products — bukan field baru). Item tanpa hargaBeli (0/undefined)
   // dianggap 0 (tidak error).
+  // Tahap 7 (Generic Shop Engine, Pricing & Inventory Integration): harga
+  // beli per item sekarang dibaca lewat PricingService.getCost() kalau
+  // sudah dimuat — guard typeof + fallback ke `product.hargaBeli` langsung
+  // (perilaku asli). 0 rumus baru, 0 perubahan hasil.
   estimatedCost(scanResult) {
     const plan = this.restockPlan(scanResult);
     const totalCost = plan.items.reduce((s, x) => {
-      const beli = (x.product && x.product.hargaBeli) || 0;
+      const beli = (x.product && (
+        (typeof PricingService !== 'undefined') ? (PricingService.getCost(x.product) || 0) : (x.product.hargaBeli || 0)
+      )) || 0;
       return s + beli * (x.restockQty || 0);
     }, 0);
     return Object.assign({}, plan, { totalCost });

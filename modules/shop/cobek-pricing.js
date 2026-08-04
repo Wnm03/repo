@@ -160,8 +160,10 @@ if(!pr){toast('⚠️ Produsen tidak ditemukan');return;}
 const km=parseFloat(document.getElementById('ongkirKmProdusen')?.value)||0;
 const biaya=parseFloat(document.getElementById('ongkirBiayaProdusen')?.value)||0;
 if(km<=0){toast('⚠️ Isi Jarak (km) Etape 1 dulu sebelum disimpan');return;}
-pr.jarakKm=km;
-pr.biayaPerKm=biaya;
+// Modul 7 — mutasi rute tetap produsen dialihkan ke
+// SupplierStore.mutateSetRoute() (guard typeof + fallback mentah lama).
+if(typeof SupplierStore!=='undefined')SupplierStore.mutateSetRoute(pr,km,biaya);
+else{pr.jarakKm=km;pr.biayaPerKm=biaya;}
 save();
 this.prefillFromProdusen();
 toast(`✅ Rute ke ${pr.name} disimpan (${km} km${biaya>0?' × '+fmt(biaya)+'/km':''}) — otomatis terisi lain kali`);
@@ -378,7 +380,7 @@ const p=D.products[idx];
 const reko=this.recommend(p);
 if(!reko){toast('⚠️ Tidak bisa hitung estimasi (isi dulu Harga Beli)');return;}
 if(!await askConfirm(`Ubah Harga Jual "${p.name}" dari ${fmt(p.hargaJual)} jadi ${fmt(reko)}?`))return;
-p.hargaJual=reko;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetPrice(p,'hargaJual',reko);else p.hargaJual=reko;
 save();this.render();renderProductList();
 toast(`✅ Harga Jual "${p.name}" diperbarui ke ${fmtFull(reko)}`);
 },
@@ -398,7 +400,7 @@ if(!(margin>0)){toast('⚠️ Isi dulu Target Margin (%) yang mau dipakai');retu
 const targets=this.selfProducts().filter(p=>p.hargaBeli>0);
 if(!targets.length){toast('⚠️ Belum ada produk dengan Harga Beli terisi');return;}
 if(!await askConfirm(`Hitung ulang Harga Jual ${targets.length} produk pakai rumus (Harga Beli + Transport ${fmtFull(transport)}) × (1 + Margin ${margin}%)? Harga Jual lama akan ditimpa.`,{okText:'Ya, Terapkan ke Semua'}))return;
-targets.forEach(p=>{p.hargaJual=PriceReko.roundNice((p.hargaBeli+transport)*(1+margin/100));});
+targets.forEach(p=>{const newHargaJual=PriceReko.roundNice((p.hargaBeli+transport)*(1+margin/100));if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetPrice(p,'hargaJual',newHargaJual);else p.hargaJual=newHargaJual;});
 save();this.render();renderProductList();
 toast(`✅ Harga Jual ${targets.length} produk dihitung ulang sekaligus`);
 },
@@ -527,7 +529,7 @@ let count=0;
 flagged.forEach(({product,restockQty})=>{
 const idx=(D.products||[]).findIndex(p=>p.id===product.id);
 if(idx<0)return;
-D.products[idx].stock=(D.products[idx].stock||0)+restockQty;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(D.products[idx],restockQty);else D.products[idx].stock=(D.products[idx].stock||0)+restockQty;
 count++;
 });
 save();this.render();renderProductList();
@@ -581,7 +583,17 @@ if(idx<0)return;
 const inp=document.getElementById('weightBulkInput_'+productId);
 const val=Math.max(0,parseFloat(inp&&inp.value)||0);
 if(!(val>0)){toast('⚠️ Isi dulu angka berat (kg) yang valid');return;}
+// dialihkan lewat ProductRepository.updateProduct() (Modul 9) kalau
+// tersedia — beratPerUnit di-route lewat AttributeStore.setAttribute()
+// SSOT yang sudah dipakai Etalase.save() (immutable merge, produk lama
+// diganti hasilnya), guard + fallback raw PERSIS SAMA pola
+// mutateStockDelta() di restock() (baris ~532 file ini).
+if(typeof ProductRepository!=='undefined'){
+const r=ProductRepository.updateProduct(D.products[idx],{beratPerUnit:val});
+if(r.ok)D.products[idx]=r.product;
+}else{
 D.products[idx].beratPerUnit=val;
+}
 save();this.render();renderProductList();
 toast(`✅ Berat per unit "${D.products[idx].name}" disimpan (${val} kg)`);
 },
@@ -600,7 +612,15 @@ if(!filled.length){toast('⚠️ Isi dulu minimal 1 kolom berat sebelum Simpan S
 if(!await askConfirm(`Simpan berat per unit utk ${filled.length} produk yang sudah diisi angkanya?`,{okText:'Ya, Simpan Semua'}))return;
 filled.forEach(({p,val})=>{
 const idx=(D.products||[]).findIndex(x=>x.id===p.id);
-if(idx>=0)D.products[idx].beratPerUnit=val;
+if(idx<0)return;
+// dialihkan lewat ProductRepository.updateProduct() (Modul 9), guard +
+// fallback raw PERSIS SAMA pola applyOne() di atas.
+if(typeof ProductRepository!=='undefined'){
+const r=ProductRepository.updateProduct(D.products[idx],{beratPerUnit:val});
+if(r.ok)D.products[idx]=r.product;
+}else{
+D.products[idx].beratPerUnit=val;
+}
 });
 save();this.render();renderProductList();
 toast(`✅ Berat per unit ${filled.length} produk disimpan sekaligus`);

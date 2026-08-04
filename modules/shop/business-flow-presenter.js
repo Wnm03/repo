@@ -436,7 +436,8 @@ const BusinessFlowPresenter = {
     const idx = D.products.findIndex((p) => p.id === candidate.productId);
     if (idx < 0) return { ok: false };
     const qty = candidate.qty > 0 ? candidate.qty : 0;
-    D.products[idx].stock = (D.products[idx].stock || 0) + qty;
+    if (typeof ProductRepository !== 'undefined') ProductRepository.mutateStockDelta(D.products[idx], qty);
+    else D.products[idx].stock = (D.products[idx].stock || 0) + qty;
     if (typeof save === 'function') save();
     if (typeof renderProductList === 'function') renderProductList();
     if (typeof StockRekoWidget !== 'undefined' && StockRekoWidget.render) StockRekoWidget.render();
@@ -678,6 +679,96 @@ const BusinessFlowPresenter = {
   // menyentuh D.products[idx].stock, TIDAK PERNAH membuat D.transactions/
   // D.piutang — jadi tidak mungkin menghasilkan penjualan/profit.
 
+  // _sanitizeQty(qty) — HELPER VALIDASI TUNGGAL (bagian 1/2, Sesi 265
+  // Backend Hardening): satu-satunya tempat yang memutuskan apakah 1 nilai
+  // qty transfer VALID. Menolak <=0, NaN, Infinity/-Infinity, null,
+  // undefined, string non-angka — balikin `null` kalau tidak valid, atau
+  // angka finite > 0 kalau valid. Dipakai SEMUA jalur transfer (validasi
+  // backend createInventoryTransfer() di bawah, DAN cart UI
+  // addTransferCartItem()) supaya tidak ada 2 aturan qty yang beda.
+  _sanitizeQty(qty) {
+    const n = typeof qty === 'number' ? qty : parseFloat(qty);
+    if (typeof n !== 'number' || Number.isNaN(n) || !Number.isFinite(n) || n <= 0) return null;
+    return n;
+  },
+
+  // _availableAtSource(productId, fromLocation) — HELPER VALIDASI TUNGGAL
+  // (bagian 2/2, Sesi 265): stok yang TERSEDIA DI LOKASI ASAL utk 1 produk
+  // (bukan stok global D.products[idx].stock). Dihitung dari stok total
+  // produk DIKURANGI seluruh qty yang SUDAH PERNAH berangkat dari lokasi
+  // yang sama (`t.from === fromLocation`) — baik yang statusnya masih
+  // ON_TRIP maupun yang sudah RECEIVED (keduanya sama2 "sudah tidak ada
+  // lagi" di lokasi asal). Reuse D.inventoryTransfers yang SUDAH ADA (S243)
+  // sebagai satu-satunya sumber kebenaran posisi barang — 0 field/koleksi
+  // baru. Inilah yang mencegah OVER-TRANSFER (qty diminta > yang benar2
+  // tersisa di lokasi asal) & DOUBLE-TRANSFER (2 rit berturut-turut dari
+  // produk+lokasi yang sama otomatis saling mengurangi kuota, bukan
+  // masing2 divalidasi terhadap stok global yang tidak berkurang).
+  _availableAtSource(productId, fromLocation) {
+    if (typeof D === 'undefined' || !D.products) return 0;
+    const product = D.products.find((p) => p.id === productId);
+    if (!product) return 0;
+    const total = Math.max(0, parseFloat(product.stock) || 0);
+    const departed = (D.inventoryTransfers || [])
+      .filter((t) => t.from === fromLocation)
+      .reduce((sum, t) => sum + (t.items || [])
+        .filter((it) => it.productId === productId)
+        .reduce((s, it) => s + (parseFloat(it.qty) || 0), 0), 0);
+    return Math.max(0, total - departed);
+  },
+
+  // _validateTransferRequest(items, from) — HELPER VALIDASI TUNGGAL yang
+  // MENYATUKAN _sanitizeQty()+_availableAtSource() di atas, dipakai
+  // SATU-SATUNYA titik masuk backend createInventoryTransfer() di bawah
+  // (UI selalu lewat createInventoryTransfer() juga — lihat
+  // saveTransferFromModal() — jadi validasi backend ini TIDAK BISA
+  // dilewati cuma dgn skip UI). Baris dgn productId tak dikenal / qty
+  // tidak valid di-SKIP (bukan gagal total — pola konsisten dgn
+  // _transferItems() yang sudah ada, "1 baris salah tidak menggagalkan
+  // seluruh transfer"). Tapi kalau TOTAL qty valid utk 1 produk (bisa dari
+  // beberapa baris sekaligus) MELEBIHI stok yang tersedia di lokasi asal
+  // (_availableAtSource) — seluruh permintaan DITOLAK (ok:false, 0 item
+  // dibuat), supaya tidak ada transfer parsial yang melanggar invariant
+  // "total stok lokasi = stok produk".
+  _validateTransferRequest(items, from) {
+    const fromLoc = from || 'MAGELANG_STORAGE';
+    if (typeof D === 'undefined' || !D.products) return { ok: false, items: [], skipped: [], reason: 'D belum dimuat' };
+    const skipped = [];
+    const valid = [];
+    const requestedByProduct = {};
+    (items || []).forEach((it) => {
+      const productId = it && it.productId;
+      const product = productId ? D.products.find((p) => p.id === productId) : null;
+      if (!product) { skipped.push({ productId, reason: 'produk_tidak_ditemukan' }); return; }
+      const qty = this._sanitizeQty(it.qty);
+      if (qty === null) { skipped.push({ productId, reason: 'qty_tidak_valid' }); return; }
+      requestedByProduct[productId] = (requestedByProduct[productId] || 0) + qty;
+      valid.push({ productId, qty });
+    });
+    if (!valid.length) {
+      return { ok: false, items: [], skipped, reason: 'Tidak ada item valid (produk harus sudah ada di Etalase & qty harus > 0)' };
+    }
+    const productIds = Object.keys(requestedByProduct);
+    for (let i = 0; i < productIds.length; i++) {
+      const productId = productIds[i];
+      const requested = requestedByProduct[productId];
+      const available = this._availableAtSource(productId, fromLoc);
+      if (requested > available) {
+        return {
+          ok: false,
+          items: [],
+          skipped,
+          overTransfer: true,
+          productId,
+          available,
+          requested,
+          reason: `Stok tidak cukup di lokasi asal (${fromLoc}) untuk ${productId} — tersedia ${available}, diminta ${requested}`,
+        };
+      }
+    }
+    return { ok: true, items: valid, skipped };
+  },
+
   // _transferItems(items) — internal WIRE: dari [{productId,qty}] apa
   // adanya, resolve tiap productId ke master produk Etalase (D.products)
   // yang SUDAH ADA (name/beratPerUnit/panjang/lebar/tinggi) — TIDAK ADA
@@ -690,14 +781,19 @@ const BusinessFlowPresenter = {
       const p = D.products.find((pr) => pr.id === it.productId);
       if (!p) return null;
       const qty = Math.max(0, parseFloat(it.qty) || 0);
+      // Tahap 3 (Generic Shop Engine wiring): baca berat/dimensi lewat
+      // ProductStore kalau dimuat (delegasi AttributeStore -> field fisik
+      // yg sama), fallback field asli langsung — HASIL SAMA di kedua jalur.
+      const dims = (typeof ProductStore !== 'undefined') ? ProductStore.getDimensions(p) : { panjang: p.panjang, lebar: p.lebar, tinggi: p.tinggi };
+      const berat = (typeof ProductStore !== 'undefined') ? ProductStore.getWeight(p) : p.beratPerUnit;
       return {
         productId: p.id,
         name: p.name,
         qty,
-        beratPerUnit: p.beratPerUnit || 0,
-        panjang: p.panjang || 0,
-        lebar: p.lebar || 0,
-        tinggi: p.tinggi || 0,
+        beratPerUnit: berat || 0,
+        panjang: dims.panjang || 0,
+        lebar: dims.lebar || 0,
+        tinggi: dims.tinggi || 0,
       };
     }).filter(Boolean);
   },
@@ -740,14 +836,31 @@ const BusinessFlowPresenter = {
   createInventoryTransfer({ items, from, to } = {}) {
     if (typeof D === 'undefined') return { ok: false, reason: 'D belum dimuat' };
     if (!D.inventoryTransfers) D.inventoryTransfers = [];
-    const resolved = this._transferItems(items);
+    const fromLoc = from || 'MAGELANG_STORAGE';
+    const toLoc = to || 'PEKALONGAN_STORAGE';
+
+    // S265 (Backend Hardening): SATU-SATUNYA titik masuk yang BOLEH
+    // menulis D.inventoryTransfers — validasi qty (<=0/NaN/Infinity/null/
+    // undefined) & stok LOKASI ASAL (bukan stok global) WAJIB lolos di
+    // sini, terlepas dari apa yang sudah/belum dicek di UI (addTransferCartItem()
+    // cuma pre-check kenyamanan, BUKAN satu-satunya penjaga — UI bisa
+    // di-skip/dilewati lewat pemanggilan langsung, backend tidak boleh
+    // percaya begitu saja). Reuse _validateTransferRequest() (helper
+    // validasi tunggal, dipakai juga oleh addTransferCartItem()) — 0
+    // aturan qty/stok kedua yang berbeda di tempat lain.
+    const validation = this._validateTransferRequest(items, fromLoc);
+    if (!validation.ok) {
+      return { ok: false, reason: validation.reason || 'Tidak ada item valid (produk harus sudah ada di Etalase)', overTransfer: !!validation.overTransfer };
+    }
+
+    const resolved = this._transferItems(validation.items);
     if (!resolved.length) return { ok: false, reason: 'Tidak ada item valid (produk harus sudah ada di Etalase)' };
 
-    const totals = this.transferTotals(items);
+    const totals = this.transferTotals(validation.items);
     const transfer = {
       id: 'transfer_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-      from: from || 'MAGELANG_STORAGE',
-      to: to || 'PEKALONGAN_STORAGE',
+      from: fromLoc,
+      to: toLoc,
       status: 'ON_TRIP',
       items: resolved.map((it) => ({ productId: it.productId, qty: it.qty })),
       totalPcs: totals.totalPcs,
@@ -772,6 +885,16 @@ const BusinessFlowPresenter = {
   // D.products[idx].stock (stok total tetap, cuma "lokasi" tercatat pindah
   // dari ON_TRIP ke PEKALONGAN_STORAGE lewat status ini, dipakai
   // locationSummary() di bawah).
+  // receiveTransfer() (S243, idempotent by design sejak awal — dipanggil
+  // 2x pada transfer yg sudah RECEIVED balik ok:true+alreadyReceived:true
+  // TANPA menimpa ulang receivedDate) tetap 100% sama di sini (S265 tidak
+  // mengubah baris ini). Tambahan SATU-SATUNYA (S265, Orphan Handling):
+  // `hasOrphanItems` — deteksi kalau ada item transfer yang produknya
+  // SUDAH DIHAPUS dari Etalase (D.products) sebelum transfer diterima.
+  // receiveTransfer() TIDAK PERNAH menyentuh D.products[idx].stock, jadi
+  // produk yang sudah dihapus TIDAK menyebabkan crash di sini (aman by
+  // construction) — field ini murni supaya UI bisa menampilkan
+  // peringatan, bukan logic baru yang mengubah alur status ON_TRIP->RECEIVED.
   receiveTransfer(transferId) {
     if (typeof D === 'undefined' || !D.inventoryTransfers) return { ok: false };
     const transfer = D.inventoryTransfers.find((t) => t.id === transferId);
@@ -779,11 +902,15 @@ const BusinessFlowPresenter = {
     if (transfer.status === 'RECEIVED') return { ok: true, transfer, alreadyReceived: true };
     transfer.status = 'RECEIVED';
     transfer.receivedDate = new Date().toISOString();
+    const products = D.products || [];
+    const hasOrphanItems = (transfer.items || []).some((it) => !products.some((p) => p.id === it.productId));
     if (typeof save === 'function') save();
     this.render();
     this.renderTab();
-    if (typeof toast === 'function') toast(`✅ Barang sampai Pekalongan — ${transfer.totalPcs || 0} pcs diterima`);
-    return { ok: true, transfer };
+    if (typeof toast === 'function') {
+      toast(`✅ Barang sampai Pekalongan — ${transfer.totalPcs || 0} pcs diterima${hasOrphanItems ? ' (sebagian produk sudah dihapus dari Etalase)' : ''}`);
+    }
+    return { ok: true, transfer, hasOrphanItems };
   },
 
   // transferSummary(transferId) — ringkasan 1 rit Transfer (Status, Items
@@ -796,7 +923,10 @@ const BusinessFlowPresenter = {
     const found = INVENTORY_TRANSFER_STATUSES.find((s) => s.key === transfer.status);
     const items = transfer.items.map((it) => {
       const p = (D.products || []).find((pr) => pr.id === it.productId);
-      return { productId: it.productId, name: p ? p.name : it.productId, qty: it.qty };
+      // S265: `orphan` — field tambahan (additive, tidak mengubah field
+      // lama) menandai produk yang sudah dihapus dari Etalase sesudah
+      // transfer dibuat, supaya UI bisa menampilkan tanda tanpa crash.
+      return { productId: it.productId, name: p ? p.name : it.productId, qty: it.qty, orphan: !p };
     });
     return {
       ok: true,
@@ -822,19 +952,37 @@ const BusinessFlowPresenter = {
   // qty bukan Rupiah) supaya total selalu balance (Tidak boleh mengurangi
   // stok total): magelangQty = sisa stok yang belum pernah di-rit/sudah
   // kembali "diam" di gudang asal.
+  // locationSummary() (S243) — ditambah ORPHAN GUARD (S265): sebelumnya
+  // menjumlah SEMUA item transfer apa adanya, termasuk yang productId-nya
+  // sudah DIHAPUS dari Etalase (D.products) sesudah transfer dibuat. Itu
+  // membuat invariant "magelangQty+onTripQty+pekalonganQty = totalStockQty"
+  // (Tidak boleh mengurangi stok total) BISA PECAH: totalStockQty
+  // (dijumlah dari D.products yang masih ada) tidak lagi memuat kontribusi
+  // produk yang sudah dihapus, tapi onTripQty/pekalonganQty tetap
+  // menghitungnya — origin dari mismatch itu. Fix: item dgn productId yang
+  // sudah tidak ada di D.products di-SKIP dari onTripQty/pekalonganQty
+  // (persis skip yang sudah dipakai _transferItems()/transferSummary()
+  // utk kasus sama) — qty-nya dilaporkan terpisah lewat `orphanQty`
+  // (field BARU, additive, tidak menghapus/mengubah 4 field lama).
   locationSummary() {
     if (typeof D === 'undefined') return { ok: false };
     const transfers = D.inventoryTransfers || [];
+    const products = D.products || [];
     let onTripQty = 0;
     let pekalonganQty = 0;
+    let orphanQty = 0;
     transfers.forEach((t) => {
-      const qty = (t.items || []).reduce((s, it) => s + (it.qty || 0), 0);
-      if (t.status === 'ON_TRIP') onTripQty += qty;
-      else if (t.status === 'RECEIVED') pekalonganQty += qty;
+      (t.items || []).forEach((it) => {
+        const qty = it.qty || 0;
+        const exists = products.some((p) => p.id === it.productId);
+        if (!exists) { orphanQty += qty; return; }
+        if (t.status === 'ON_TRIP') onTripQty += qty;
+        else if (t.status === 'RECEIVED') pekalonganQty += qty;
+      });
     });
-    const totalStockQty = (D.products || []).reduce((s, p) => s + (p.stock || 0), 0);
+    const totalStockQty = products.reduce((s, p) => s + (p.stock || 0), 0);
     const magelangQty = Math.max(0, totalStockQty - onTripQty - pekalonganQty);
-    return { ok: true, magelangQty, onTripQty, pekalonganQty, totalStockQty };
+    return { ok: true, magelangQty, onTripQty, pekalonganQty, totalStockQty, orphanQty };
   },
 
   // _transferCard(summary) — kartu ke-9 (Inventory Transfer, S243) ke
@@ -890,22 +1038,32 @@ const BusinessFlowPresenter = {
   // 0 logic baru — cuma kumpulkan input, perhitungan totalnya tetap
   // 100% lewat transferTotals() (delegasi TripEngine.packing()) di
   // _renderTransferCart().
+  // addTransferCartItem() (S244) — S265: qty & cek stok SEKARANG reuse
+  // PERSIS _sanitizeQty()/_availableAtSource() (helper validasi tunggal
+  // yang sama dipakai createInventoryTransfer() di backend), bukan aturan
+  // qty>0/stok terpisah seperti sebelumnya — supaya UI & backend selalu
+  // sepakat 1 aturan yang sama (kalau UI meloloskan sesuatu, backend tidak
+  // akan menolaknya krn beda rumus). Ini tetap MURNI pre-check kenyamanan
+  // (UX cepat) — createInventoryTransfer() TETAP validasi ulang dari nol
+  // saat submit (backend tidak pernah percaya begitu saja ke state cart
+  // sisi client ini).
   addTransferCartItem() {
     if (typeof document === 'undefined') return;
     const prodSel = document.getElementById('itProduct');
     const qtyEl = document.getElementById('itQty');
+    const fromEl = document.getElementById('itFrom');
     const productId = prodSel && prodSel.value;
-    const qty = Math.max(0, parseFloat(qtyEl && qtyEl.value) || 0);
-    if (!productId || qty <= 0) {
+    const qty = this._sanitizeQty(qtyEl && qtyEl.value);
+    if (!productId || qty === null) {
       if (typeof toast === 'function') toast('Pilih produk & isi qty dulu');
       return;
     }
-    const product = (typeof D !== 'undefined' && (D.products || []).find((p) => p.id === productId)) || null;
-    const stock = product ? (parseFloat(product.stock) || 0) : 0;
+    const fromLoc = (fromEl && fromEl.value) || 'MAGELANG_STORAGE';
+    const available = this._availableAtSource(productId, fromLoc);
     const existing = this._transferCartState.find((it) => it.productId === productId);
     const alreadyInCart = existing ? existing.qty : 0;
-    if (stock > 0 && (alreadyInCart + qty) > stock) {
-      if (typeof toast === 'function') toast(`Stok tidak cukup (tersisa ${stock - alreadyInCart})`);
+    if ((alreadyInCart + qty) > available) {
+      if (typeof toast === 'function') toast(`Stok tidak cukup di lokasi asal (tersisa ${Math.max(0, available - alreadyInCart)})`);
       return;
     }
     if (existing) existing.qty += qty;
@@ -1441,8 +1599,10 @@ const BusinessFlowPresenter = {
     let totalKg = 0;
     trip.items.forEach((it) => {
       const product = (D.products || []).find((p) => p.id === it.productId);
-      if (product && product.beratPerUnit > 0) {
-        const w = (typeof TripEngine !== 'undefined') ? TripEngine.weight({ beratPerUnit: product.beratPerUnit, qty: it.qty }) : null;
+      // Tahap 3: ProductStore.getWeight() kalau dimuat, fallback beratPerUnit langsung.
+      const beratPerUnit = product ? ((typeof ProductStore !== 'undefined') ? ProductStore.getWeight(product) : product.beratPerUnit) : undefined;
+      if (product && beratPerUnit > 0) {
+        const w = (typeof TripEngine !== 'undefined') ? TripEngine.weight({ beratPerUnit, qty: it.qty }) : null;
         if (w && w.ok) totalKg += w.totalKg;
       }
     });
@@ -1585,8 +1745,10 @@ const BusinessFlowPresenter = {
     const weights = trip.items.map((it) => {
       const product = (D.products || []).find((p) => p.id === it.productId);
       let kg = 0;
-      if (product && product.beratPerUnit > 0 && typeof TripEngine !== 'undefined') {
-        const w = TripEngine.weight({ beratPerUnit: product.beratPerUnit, qty: it.qty });
+      // Tahap 3: ProductStore.getWeight() kalau dimuat, fallback beratPerUnit langsung.
+      const beratPerUnit = product ? ((typeof ProductStore !== 'undefined') ? ProductStore.getWeight(product) : product.beratPerUnit) : undefined;
+      if (product && beratPerUnit > 0 && typeof TripEngine !== 'undefined') {
+        const w = TripEngine.weight({ beratPerUnit, qty: it.qty });
         if (w && w.ok) kg = w.totalKg;
       }
       return { productId: it.productId, name: it.name || (product ? product.name : ''), qty: it.qty || 0, kg };

@@ -360,12 +360,59 @@ function setLaporanPeriode(p,el){return Laporan.setPeriodeLap(p,el);}
 // belum ada -> buat baru). TIDAK dipakai untuk Riwayat Transaksi/Pelanggan -- keduanya derived data
 // (transaksi & agregat), impor transaksi mentah berisiko bikin ganda dgn Keuangan/stok, jadi
 // sengaja tidak disediakan; hanya master data (Etalase/Produsen) yang aman diimpor begini.
+// HEADER_ALIAS (kw-import-header-alias) — daftar variasi nama kolom yang diterima
+// _parse() di bawah, per field logis. Urutan dalam tiap array = prioritas: kalau
+// sebuah baris punya lebih dari satu nama kolom yang match (header campuran), yang
+// paling kiri (indeks lebih kecil) yang dipakai. Entri pertama tiap array SELALU
+// nama kolom lama (format Export Excel bawaan app) supaya format lama tidak pernah
+// berubah perilakunya. TIDAK mengubah business logic apa pun di luar resolusi nama
+// kolom -- validasi/filter/output _parse() persis sama seperti sebelumnya.
+const HEADER_ALIAS={
+namaProduk:['Nama Produk','Nama','Produk'],
+kategori:['Kategori','Category'],
+produsen:['Produsen','Supplier','Vendor','Pemasok'],
+stok:['Stok','Stock','Qty'],
+hargaBeli:['Harga Beli','Harga_Beli','HPP'],
+hargaJual:['Harga Jual','Harga_Jual','Harga'],
+hargaReseller:['Harga Reseller'],
+diskonPersen:['Diskon %'],
+namaProdusen:['Nama Produsen'],
+kontak:['Kontak'],
+catatan:['Catatan'],
+jarakKm:['Jarak (km)'],
+biayaPerKm:['Biaya/km']
+};
+// resolveAliasValue(row, aliasKeys) — cari nilai kolom pertama (menurut urutan
+// prioritas aliasKeys) yang BENAR-BENAR ADA sbg key di object row (hasOwnProperty),
+// bukan berdasar truthy value -- supaya kolom yg ada tapi isinya sengaja kosong
+// (mis. harga belum ditentukan) tetap "match" persis seperti perilaku lama
+// (r['Harga Beli'] langsung dipakai apa adanya, termasuk kalau '' -> Number('')=0).
+function resolveAliasValue(row,aliasKeys){
+for(const key of aliasKeys){
+if(Object.prototype.hasOwnProperty.call(row,key))return row[key];
+}
+return undefined;
+}
+// buildHeaderErrorMsg(sampleRow, aliasKeys, label) — dipanggil HANYA kalau hasil
+// parse 0 baris valid. Kalau kolom kunci (mis. alias Nama Produk) memang tidak ada
+// SAMA SEKALI di header file (bukan cuma isinya kosong), kembalikan pesan spesifik
+// yg sebut kolom mana yg didukung vs kolom apa yg kebaca di file -- supaya beda
+// jelas dgn kasus "kolom ada tapi kebetulan semua barisnya kosong" (pesan generik
+// _renderPreview yg sudah ada, tidak diubah).
+function buildHeaderErrorMsg(sampleRow,aliasKeys,label){
+const found=Object.keys(sampleRow||{});
+const hasAnyAlias=aliasKeys.some(a=>found.includes(a));
+if(hasAnyAlias)return'';
+return`Kolom "${label}" tidak ditemukan di file. Kolom yang didukung: ${aliasKeys.join(', ')}. Kolom yang terbaca di file: ${found.length?found.join(', '):'(tidak ada)'}.`;
+}
 const ImportShopExcel={
 target:'etalase',
 parsedRows:[],
+headerError:'',
 open(target){
 this.target=target||'etalase';
 this.parsedRows=[];
+this.headerError='';
 document.querySelectorAll('#importShopExcelTargetToggle .chip-btn').forEach(b=>b.classList.remove('active'));
 const btn=document.getElementById(this.target==='produsen'?'importShopExcelTargetProdusen':'importShopExcelTargetEtalase');
 if(btn)btn.classList.add('active');
@@ -380,6 +427,7 @@ openModal('importShopExcelModal');
 setTarget(target,el){
 this.target=target;
 this.parsedRows=[];
+this.headerError='';
 document.querySelectorAll('#importShopExcelTargetToggle .chip-btn').forEach(b=>b.classList.remove('active'));
 if(el)el.classList.add('active');
 const box=document.getElementById('importShopExcelPreview');
@@ -415,25 +463,31 @@ return;
 this._renderPreview();
 },
 _parse(rows){
+this.headerError='';
 if(this.target==='produsen'){
 this.parsedRows=rows.map(r=>({
-name:String(r['Nama Produsen']||'').trim(),
-kontak:String(r['Kontak']||'').trim(),
-catatan:String(r['Catatan']||'').trim(),
-jarakKm:Number(r['Jarak (km)'])||'',
-biayaPerKm:Number(r['Biaya/km'])||''
+name:String(resolveAliasValue(r,HEADER_ALIAS.namaProdusen)||'').trim(),
+kontak:String(resolveAliasValue(r,HEADER_ALIAS.kontak)||'').trim(),
+catatan:String(resolveAliasValue(r,HEADER_ALIAS.catatan)||'').trim(),
+jarakKm:Number(resolveAliasValue(r,HEADER_ALIAS.jarakKm))||'',
+biayaPerKm:Number(resolveAliasValue(r,HEADER_ALIAS.biayaPerKm))||''
 })).filter(r=>r.name);
+if(!this.parsedRows.length&&rows.length)this.headerError=buildHeaderErrorMsg(rows[0],HEADER_ALIAS.namaProdusen,'Nama Produsen');
 } else {
-this.parsedRows=rows.map(r=>({
-name:String(r['Nama Produk']||'').trim(),
-kategori:String(r['Kategori']||'').trim(),
-produsen:String(r['Produsen']||'').trim(),
-stock:Number(r['Stok'])||0,
-hargaBeli:Number(r['Harga Beli'])||0,
-hargaJual:Number(r['Harga Jual'])||0,
-hargaReseller:r['Harga Reseller']!==''&&r['Harga Reseller']!==undefined?Number(r['Harga Reseller']):null,
-diskonPersen:Number(r['Diskon %'])||0
-})).filter(r=>r.name);
+this.parsedRows=rows.map(r=>{
+const hargaResellerRaw=resolveAliasValue(r,HEADER_ALIAS.hargaReseller);
+return{
+name:String(resolveAliasValue(r,HEADER_ALIAS.namaProduk)||'').trim(),
+kategori:String(resolveAliasValue(r,HEADER_ALIAS.kategori)||'').trim(),
+produsen:String(resolveAliasValue(r,HEADER_ALIAS.produsen)||'').trim(),
+stock:Number(resolveAliasValue(r,HEADER_ALIAS.stok))||0,
+hargaBeli:Number(resolveAliasValue(r,HEADER_ALIAS.hargaBeli))||0,
+hargaJual:Number(resolveAliasValue(r,HEADER_ALIAS.hargaJual))||0,
+hargaReseller:hargaResellerRaw!==''&&hargaResellerRaw!==undefined?Number(hargaResellerRaw):null,
+diskonPersen:Number(resolveAliasValue(r,HEADER_ALIAS.diskonPersen))||0
+};
+}).filter(r=>r.name);
+if(!this.parsedRows.length&&rows.length)this.headerError=buildHeaderErrorMsg(rows[0],HEADER_ALIAS.namaProduk,'Nama Produk');
 }
 },
 _renderPreview(){
@@ -441,7 +495,8 @@ const box=document.getElementById('importShopExcelPreview');
 const commitBtn=document.getElementById('importShopExcelCommitBtn');
 if(!box)return;
 if(!this.parsedRows.length){
-box.innerHTML='<div class="u-fs12 u-t2">Tidak ada baris valid terbaca. Pastikan file punya kolom header sesuai hasil Export Excel (mis. "Nama Produk"/"Nama Produsen").</div>';
+const msg=this.headerError||'Tidak ada baris valid terbaca. Pastikan file punya kolom header sesuai hasil Export Excel (mis. "Nama Produk"/"Nama Produsen").';
+box.innerHTML='<div class="u-fs12 u-t2">'+escapeHtml(msg)+'</div>';
 if(commitBtn)commitBtn.disabled=true;
 return;
 }
@@ -486,13 +541,12 @@ let p=D.products.find(x=>x.name.toLowerCase()===r.name.toLowerCase());
 const kategoriId=r.kategori?resolveShopKategori(r.kategori):'';
 const produsenMatch=r.produsen?D.produsen.find(x=>x.name.toLowerCase()===r.produsen.toLowerCase()):null;
 if(p){
-p.stock=r.stock;
-p.hargaBeli=r.hargaBeli;
-p.hargaJual=r.hargaJual;
-if(r.hargaReseller!=null)p.hargaReseller=r.hargaReseller;
-p.diskonPersen=r.diskonPersen;
-if(kategoriId)p.kategoriId=kategoriId;
-if(produsenMatch)p.produsenId=produsenMatch.id;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetStock(p,r.stock);else p.stock=r.stock;
+if(typeof ProductRepository!=='undefined'){ProductRepository.mutateSetPrice(p,'hargaBeli',r.hargaBeli);ProductRepository.mutateSetPrice(p,'hargaJual',r.hargaJual);}else{p.hargaBeli=r.hargaBeli;p.hargaJual=r.hargaJual;}
+if(r.hargaReseller!=null){if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetPrice(p,'hargaReseller',r.hargaReseller);else p.hargaReseller=r.hargaReseller;}
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetDiskon(p,r.diskonPersen);else p.diskonPersen=r.diskonPersen;
+if(kategoriId){if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(p,'kategoriId',kategoriId);else p.kategoriId=kategoriId;}
+if(produsenMatch){if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(p,'produsenId',produsenMatch.id);else p.produsenId=produsenMatch.id;}
 updated++;
 } else {
 D.products.push({id:'prod_'+Date.now()+'_'+uid(),name:r.name,stock:r.stock,hargaBeli:r.hargaBeli,hargaJual:r.hargaJual,hargaReseller:r.hargaReseller!=null?r.hargaReseller:null,diskonPersen:r.diskonPersen||0,kategoriId,produsenId:produsenMatch?produsenMatch.id:'',hargaByProdusen:{}});

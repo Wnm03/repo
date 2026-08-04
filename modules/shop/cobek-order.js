@@ -40,18 +40,39 @@ const name=document.getElementById('prName').value.trim();
 const contact=document.getElementById('prContact').value.trim();
 const note=document.getElementById('prNote').value.trim();
 if(!name){toast('⚠️ Nama produsen wajib diisi');return;}
+// Modul 7 — mutasi Produsen (create & update) dialihkan ke SupplierStore
+// Supplier Mutation Gate (guard typeof + fallback mentah lama, pola sama
+// persis Modul 3-6 ProductRepository).
 if(this.editId){
 const pr=D.produsen.find(x=>x.id===this.editId);
-if(pr)Object.assign(pr,{name,contact,note});
+if(pr){
+if(typeof SupplierStore!=='undefined')SupplierStore.mutateUpdate(pr,{name,contact,note});
+else Object.assign(pr,{name,contact,note});
+}
+} else {
+if(typeof SupplierStore!=='undefined'){
+const r=SupplierStore.mutateCreate({name,contact,note});
+if(r.ok)D.produsen.push(r.supplier);
 } else {
 D.produsen.push({id:'prd_'+Date.now(),name,contact,note});
+}
 }
 this.editId=null;
 save();closeModal('produsenModal');this.renderList();toast('✅ Produsen disimpan');
 },
 async delete(id){
 if(!await askConfirm('Hapus produsen ini? Harga yang sudah tercatat di produk tidak akan terhapus otomatis.'))return;
+// Modul 7 — hapus Produsen dialihkan ke SupplierStore.mutateDelete()
+// (guard typeof + fallback mentah lama). Sisi-efek pembersihan
+// p.produsenId='' di SEMUA produk terkait SENGAJA TETAP mentah (mutasi
+// Product, bukan Supplier, & string kosong ditolak ProductRepository.
+// mutateSetField() — lihat catatan lengkap di SupplierStore.mutateDelete()).
+if(typeof SupplierStore!=='undefined'){
+const r=SupplierStore.mutateDelete(D.produsen,id);
+if(r.ok)D.produsen=r.suppliers;
+} else {
 D.produsen=D.produsen.filter(x=>x.id!==id);
+}
 D.products.forEach(p=>{if(p.produsenId===id)p.produsenId='';});
 save();this.renderList();toast('🗑 Produsen dihapus');
 },
@@ -97,7 +118,12 @@ el.innerHTML='<div class="empty"><div class="empty-text">Belum ada produk di Eta
 } else {
 el.innerHTML=D.products.map(p=>{
 const harga=(p.hargaByProdusen&&p.hargaByProdusen[produsenId]!==undefined)?p.hargaByProdusen[produsenId]:'';
-return`<div class="fg"><label class="fl">${escapeHtml(p.name)} <span class="u-t2">(harga jual ${fmt(p.hargaJual)})</span></label><input type="number" class="fi" data-prod-id="${p.id}" placeholder="Harga beli dari ${escapeHtml(pr.name)}" value="${harga}"></div>`;
+// Tahap 7 (Generic Shop Engine, Pricing & Inventory Integration): label
+// "harga jual" di editor harga per-produsen ini murni display, dialihkan
+// lewat PricingService.getRetail() kalau dimuat — hargaByProdusen sendiri
+// TIDAK disentuh (tetap manual, itu input harga beli dari produsen ybs).
+const hargaJualDisp=(typeof PricingService!=='undefined')?PricingService.getRetail(p):p.hargaJual;
+return`<div class="fg"><label class="fl">${escapeHtml(p.name)} <span class="u-t2">(harga jual ${fmt(hargaJualDisp)})</span></label><input type="number" class="fi" data-prod-id="${p.id}" placeholder="Harga beli dari ${escapeHtml(pr.name)}" value="${harga}"></div>`;
 }).join('');
 }
 openModal('produsenHargaModal');
@@ -108,10 +134,16 @@ const inputs=document.querySelectorAll('#produsenHargaList input[data-prod-id]')
 inputs.forEach(inp=>{
 const p=D.products.find(x=>x.id===inp.getAttribute('data-prod-id'));
 if(!p)return;
-if(!p.hargaByProdusen)p.hargaByProdusen={};
 const val=parseFloat(inp.value);
-if(val>0)p.hargaByProdusen[this.hargaEditId]=val;
-else delete p.hargaByProdusen[this.hargaEditId];
+// Modul 6 — mutasi nested hargaByProdusen dialihkan ke ProductRepository
+// (guard typeof + fallback mentah lama, pola sama persis Modul 3/4/5).
+if(val>0){
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetHargaProdusen(p,this.hargaEditId,val);
+else{if(!p.hargaByProdusen)p.hargaByProdusen={};p.hargaByProdusen[this.hargaEditId]=val;}
+} else {
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateDeleteHargaProdusen(p,this.hargaEditId);
+else{if(!p.hargaByProdusen)p.hargaByProdusen={};delete p.hargaByProdusen[this.hargaEditId];}
+}
 });
 save();closeModal('produsenHargaModal');this.renderList();renderProductList();toast('✅ Harga produsen disimpan');
 }
@@ -266,11 +298,18 @@ let subtotal=0,modal=0;
 const lines=Order.items.map(it=>{
 const p=D.products.find(x=>x.id===it.productId);
 if(!p)return null;
-let hargaDefault=priceType==='reseller'&&p.hargaReseller?p.hargaReseller:p.hargaJual;
+// Tahap 7 (Generic Shop Engine, Pricing & Inventory Integration): field
+// harga mentah (hargaReseller/hargaJual/hargaBeli) dialihkan lewat
+// PricingService kalau dimuat — guard typeof + fallback field asli.
+// Rumus diskon (baris di bawah) TIDAK diubah, cuma sumber field-nya.
+const hargaResellerP=(typeof PricingService!=='undefined')?PricingService.getReseller(p):p.hargaReseller;
+const hargaJualP=(typeof PricingService!=='undefined')?PricingService.getRetail(p):p.hargaJual;
+const hargaBeliP=(typeof PricingService!=='undefined')?PricingService.getCost(p):p.hargaBeli;
+let hargaDefault=priceType==='reseller'&&hargaResellerP?hargaResellerP:hargaJualP;
 if(p.diskonPersen)hargaDefault=hargaDefault-(hargaDefault*p.diskonPersen/100);
 const harga=(it.hargaOverride!=null&&it.hargaOverride>0)?it.hargaOverride:hargaDefault;
 const lineTotal=harga*it.qty;
-subtotal+=lineTotal;modal+=p.hargaBeli*it.qty;
+subtotal+=lineTotal;modal+=hargaBeliP*it.qty;
 return{...it,product:p,harga,hargaDefault,lineTotal};
 }).filter(Boolean);
 const diskon=parseFloat(document.getElementById('oDiskon').value)||0;
@@ -468,8 +507,20 @@ if(el)el.innerHTML=sorted.length?sorted.map(t=>shopOrderRowHTML(t)).join(''):'<d
 async delete(id){
 if(!await askConfirm('Hapus transaksi ini? Stok produk akan dikembalikan & catatan keuangan terkait juga dihapus.'))return;
 const t=D.cobek.find(x=>x.id===id);
-if(t&&t.items){t.items.forEach(it=>{const p=D.products.find(x=>x.id===it.productId);if(p)p.stock+=it.qty;});}
-if(t&&t.txLinkId)D.transactions=D.transactions.filter(tx=>tx.id!==t.txLinkId);
+// kw-sales-mutation-fix: hapus/retur transaksi (di app ini "retur" = jalur
+// yg sama persis dgn hapus transaksi Shop, lihat catatan "Wire Return->Refund"
+// di bawah -- 0 jalur retur terpisah) HARUS mengembalikan stok lewat SSOT
+// rollbackShopItems() (cobek-tx-cart.js, dipanggil di sini krn Laporan berada
+// di GROUP_A SETELAH cobek-tx-cart -- pola forward-reference yg sama persis
+// dgn recordShopSale() yg sudah dipanggil dari _saveInner() di file ini).
+// SEBELUMNYA baris ini cuma p.stock+=it.qty TANPA applyBundleLinkedStock ->
+// bundle addon (alu/muntu) & base product produk bundle TIDAK ikut balik
+// saat transaksi bundle dihapus/diretur (bug). Guard `t` di awal (baru) juga
+// bikin delete() aman dipanggil ulang utk id yg sudah tidak ada (idempotent
+// no-op, tidak mengembalikan stok 2x / tidak crash).
+if(!t){toast('⚠️ Transaksi tidak ditemukan');return;}
+if(t.items)rollbackShopItems(t.items,1);
+if(t.txLinkId)D.transactions=D.transactions.filter(tx=>tx.id!==t.txLinkId);
 // S209-210 (Wire Return->Refund): piutang terhubung (sisa tagihan yg belum
 // dibayar dari order ini) ikut dibersihkan saat order-nya diretur, reuse
 // PERSIS pola filter yg sudah ada di Order._saveInner() (bukan rumus baru).
@@ -803,9 +854,13 @@ function calculateSmartDelivery({
   // belum ada datanya di sini) -> LogisticsEngine.plan() otomatis skip
   // bagian `load` (lihat catatan di plan()); pakai calculateVehicleCapacity()
   // di cobek-pricing.js terpisah kalau butuh hitung rit.
+  // Tahap 7 (Generic Shop Engine, Pricing & Inventory Integration): modal
+  // dibaca lewat PricingService.getCost() kalau dimuat — guard typeof +
+  // fallback product.hargaBeli langsung (perilaku asli).
+  const modalCost = (typeof PricingService !== 'undefined') ? PricingService.getCost(product) : product.hargaBeli;
   const plan = LogisticsEngine.plan({
     kmProdusen, biayaPerKmProdusen, kmKonsumen, biayaPerKmKonsumen,
-    metode, pcs, vehicleId, modal: product.hargaBeli, marginPct,
+    metode, pcs, vehicleId, modal: modalCost, marginPct,
   });
   const profit = (typeof calculateProfit === 'function')
     ? calculateProfit({ productId, qty: pcs, deliveryPlan: plan })

@@ -46,10 +46,23 @@ const InventoryEngine = {
   // dengan Etalase. Guard typeof isProductOwnershipSelf: kalau fungsi itu
   // belum dimuat, fallback anggap semua SELF (tidak exclude apa pun) —
   // pola guard yang sama dipakai fungsi lain di file ini.
+  // Tahap 2 (Generic Shop Engine, Pricing & Inventory Integration): jalur
+  // `products` diberikan (dipakai ShopBusinessEnginePresenter.summary(), yang
+  // memberi feed Dashboard Hub #shopBusinessEngineGrid & tab Laporan
+  // #shopBizEngineBody) sekarang delegasi ke InventoryService.totalValue()
+  // (Tahap 1, generic/inventory-service.js, yang sendiri delegasi ke
+  // PricingService utk harga) kalau sudah dimuat — guard typeof + fallback
+  // ke rumus asli persis kalau belum. Filter ownership SELF (selfFilter)
+  // TETAP diterapkan SEBELUM diserahkan ke InventoryService (0 perubahan
+  // filter, InventoryService.totalValue() sendiri tidak filter ownership —
+  // lihat catatan "beda sengaja" di generic/inventory-service.js). 0 rumus
+  // baru, 0 perubahan hasil.
   totalModalStok(products) {
     const selfFilter = (typeof isProductOwnershipSelf === 'function') ? isProductOwnershipSelf : (() => true);
     if (products) {
-      return (products || []).filter(selfFilter).reduce((s, p) => s + ((p.stock || 0) * (p.hargaBeli || 0)), 0);
+      const self = (products || []).filter(selfFilter);
+      if (typeof InventoryService !== 'undefined') return InventoryService.totalValue(self, 'cost');
+      return self.reduce((s, p) => s + ((p.stock || 0) * (p.hargaBeli || 0)), 0);
     }
     if (typeof Etalase === 'undefined') return 0;
     return Etalase.totalModalStok();
@@ -58,7 +71,9 @@ const InventoryEngine = {
   totalNilaiJualStok(products) {
     const selfFilter = (typeof isProductOwnershipSelf === 'function') ? isProductOwnershipSelf : (() => true);
     if (products) {
-      return (products || []).filter(selfFilter).reduce((s, p) => s + ((p.stock || 0) * (p.hargaJual || 0)), 0);
+      const self = (products || []).filter(selfFilter);
+      if (typeof InventoryService !== 'undefined') return InventoryService.totalValue(self, 'retail');
+      return self.reduce((s, p) => s + ((p.stock || 0) * (p.hargaJual || 0)), 0);
     }
     if (typeof Etalase === 'undefined') return 0;
     return Etalase.totalNilaiJualStok();

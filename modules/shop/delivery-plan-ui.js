@@ -144,13 +144,22 @@ const DeliveryPlanUI = {
     // Berat/volume muatan — hanya ditampilkan kalau produk sudah punya
     // data berat/dimensi (S203, field baru productModal). Reuse
     // TripEngine.weight()/volume() (S198), tidak ada rumus baru.
-    if (product.beratPerUnit > 0) {
-      const w = TripEngine.weight({ beratPerUnit: product.beratPerUnit, qty });
+    // Tahap 11 (Generic Shop Engine — audit sisa hardcode): baca berat/dimensi
+    // dialihkan lewat ProductStore.getWeight()/getDimensions() kalau sudah
+    // dimuat, fallback field asli langsung kalau belum (guard typeof, pola
+    // sama seluruh Shop Engine) — nilai yang diserahkan ke TripEngine.weight()/
+    // volume() 100% sama (ProductStore delegasi ke AttributeStore yang sendiri
+    // cuma baca field fisik yang sama, lihat generic/product-store.js), jadi
+    // hasil TripEngine TIDAK berubah.
+    const beratPU=(typeof ProductStore!=='undefined')?ProductStore.getWeight(product):product.beratPerUnit;
+    const dims=(typeof ProductStore!=='undefined')?ProductStore.getDimensions(product):{ panjang: product.panjang, lebar: product.lebar, tinggi: product.tinggi };
+    if (beratPU > 0) {
+      const w = TripEngine.weight({ beratPerUnit: beratPU, qty });
       if (w.ok) html += `<div>Total berat: ${w.totalKg.toFixed(2)} kg</div>`;
     }
-    if (product.panjang > 0 && product.lebar > 0 && product.tinggi > 0) {
+    if (dims.panjang > 0 && dims.lebar > 0 && dims.tinggi > 0) {
       const vol = TripEngine.volume({
-        panjang: product.panjang, lebar: product.lebar, tinggi: product.tinggi, qty,
+        panjang: dims.panjang, lebar: dims.lebar, tinggi: dims.tinggi, qty,
       });
       if (vol.ok) html += `<div>Total volume: ${vol.totalM3.toFixed(3)} m³</div>`;
     }

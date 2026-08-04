@@ -10,9 +10,20 @@ function acShopCustomers(){return Pelanggan._acList();}
 function onShopCustFieldInput(field){return Pelanggan.onFieldInput(field);}
 function selectShopCustomer(name,phone,address){return Pelanggan.select(name,phone,address);}
 
+// resolveShopKategori(name) — dialihkan lewat CategoryStore.mutateResolve()
+// (Modul 8, kw modules/shop/generic/category-store.js) kalau tersedia, guard
+// `typeof CategoryStore!=='undefined'` + fallback logic lama PERSIS (SAMA
+// pola guard 3 titik yang di-wire Modul 7 di cobek-order.js/cobek-pricing.js)
+// supaya urutan load script yang belum memuat CategoryStore tidak meledak.
 function resolveShopKategori(name){
 name=(name||'').trim();
 if(!name)return '';
+if(typeof CategoryStore!=='undefined'){
+const r=CategoryStore.mutateResolve(D.cobekKategori,name);
+if(!r.ok)return '';
+D.cobekKategori=r.categories;
+return r.id;
+}
 let cat=D.cobekKategori.find(c=>c.name.toLowerCase()===name.toLowerCase());
 if(!cat){cat={id:'ck_'+Date.now()+'_'+uid(),name};D.cobekKategori.push(cat);}
 return cat.id;
@@ -70,7 +81,16 @@ if(!prodSel)return;
 if(prodSel.value==='__new__'){
 const name=await showPromptModal({title:'Produsen Baru',message:'Nama produsen baru:',icon:'🏭'});
 if(name&&name.trim()){
-const np={id:'prd_'+Date.now(),name:name.trim(),contact:'',note:''};
+// Modul 10 — inline "Produsen Baru" dialihkan lewat SupplierStore.mutateCreate()
+// (SSOT Tahap 7), guard typeof + fallback raw PERSIS literal lama, pola SAMA
+// PERSIS Etalase.onProdusenChange() (cobek-etalase.js).
+let np;
+if(typeof SupplierStore!=='undefined'){
+const hasil=SupplierStore.mutateCreate({name:name.trim(),contact:'',note:''});
+np=hasil.ok?hasil.supplier:{id:'prd_'+Date.now(),name:name.trim(),contact:'',note:''};
+}else{
+np={id:'prd_'+Date.now(),name:name.trim(),contact:'',note:''};
+}
 D.produsen.push(np);
 populateTxShopStockSelect();
 prodSel.value=np.id;
@@ -143,11 +163,11 @@ if(existingTx){
 if(existingTx.stockItems&&existingTx.stockItems.length){
 existingTx.stockItems.forEach(si=>{
 const prevP=D.products.find(p=>p.id===si.productId);
-if(prevP)prevP.stock=Math.max(0,(prevP.stock||0)-(si.qty||0));
+if(prevP){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(prevP,-(si.qty||0));else prevP.stock=Math.max(0,(prevP.stock||0)-(si.qty||0));}
 });
 } else if(existingTx.stockProductId){
 const prevP=D.products.find(p=>p.id===existingTx.stockProductId);
-if(prevP)prevP.stock=Math.max(0,(prevP.stock||0)-(existingTx.stockQty||0));
+if(prevP){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(prevP,-(existingTx.stockQty||0));else prevP.stock=Math.max(0,(prevP.stock||0)-(existingTx.stockQty||0));}
 }
 }
 const resultItems=[];
@@ -158,22 +178,63 @@ if(it.isNew){
 const kategoriId=resolveShopKategori(it.kategoriInput);
 product=D.products.find(p=>p.name.toLowerCase()===it.name.toLowerCase());
 if(!product){
+// Modul 11 — inline create produk baru saat isi keranjang stok form Transaksi
+// (isNew, prompt "Produk Baru" tidak ada di UI ini — nama datang dari input
+// txShopStockNewName/note) dialihkan lewat ProductRepository.createProduct()
+// (SSOT Tahap 4, sudah battle-tested di Etalase.save() Tahap 6 & 3 gate lain
+// di fungsi ini — mutateStockDelta/mutateSetPrice/mutateSetField/
+// mutateSetHargaProdusen di baris bawah, SEMUA sudah lewat gate sejak Modul
+// 5/6 — HANYA titik create ini yang masih object literal mentah). Field yang
+// dikirim SAMA PERSIS object literal lama (stock dipaksa 0 lalu ditambah via
+// mutateStockDelta di bawah, hargaReseller null, diskonPersen 0,
+// hargaByProdusen {}). id TETAP pakai generator lokal
+// ('prod_'+Date.now()+'_'+uid(), BUKAN dari ProductRepository._genId() yang
+// cuma 'prod_'+Date.now() tanpa suffix uid()) — di-timpa SETELAH
+// createProduct() (bukan lewat fields, createProduct() sengaja menolak
+// override id lewat fields "jaga keunikan generatornya sendiri", lihat
+// komentarnya) supaya 0 perubahan perilaku id. Alasan TIDAK pakai id gate
+// apa adanya: forEach() ini bisa membuat >1 produk baru pada milidetik yang
+// sama (>1 item baru di 1 keranjang) — 'prod_'+Date.now() polos TABRAKAN id
+// kalau dipanggil >1x pada ms yang sama (batasan yang didokumentasikan
+// eksplisit sendiri di createProduct()), sedangkan suffix uid() lokal
+// (dipakai kode ini sejak awal) mencegahnya. Guard typeof + fallback raw
+// PERSIS literal lama.
+if(typeof ProductRepository!=='undefined'){
+const hasil=ProductRepository.createProduct({name:it.name,stock:0,hargaBeli:it.hargaBeli,hargaJual:it.hargaJual,hargaReseller:null,diskonPersen:0,kategoriId,produsenId:it.produsenId,hargaByProdusen:{}});
+if(hasil.ok){product=hasil.product;product.id='prod_'+Date.now()+'_'+uid();}
+else product={id:'prod_'+Date.now()+'_'+uid(),name:it.name,stock:0,hargaBeli:it.hargaBeli,hargaJual:it.hargaJual,hargaReseller:null,diskonPersen:0,kategoriId,produsenId:it.produsenId,hargaByProdusen:{}};
+}else{
 product={id:'prod_'+Date.now()+'_'+uid(),name:it.name,stock:0,hargaBeli:it.hargaBeli,hargaJual:it.hargaJual,hargaReseller:null,diskonPersen:0,kategoriId,produsenId:it.produsenId,hargaByProdusen:{}};
+}
 D.products.push(product);
 } else if(kategoriId){
-product.kategoriId=kategoriId;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(product,'kategoriId',kategoriId);else product.kategoriId=kategoriId;
 }
 } else {
 product=D.products.find(p=>p.id===it.productId);
-if(product&&it.kategoriInput) product.kategoriId=resolveShopKategori(it.kategoriInput);
+if(product&&it.kategoriInput){
+const kat=resolveShopKategori(it.kategoriInput);
+// kat bisa '' kalau kategoriInput whitespace-only (resolveShopKategori() balikin
+// '' — lihat definisinya) — perilaku LAMA tetap menimpa kategoriId jadi '' di
+// kasus itu (bukan biarkan value lama), jadi gate (yang menolak string kosong,
+// fail-safe) HANYA dipakai kalau kat valid; kat kosong tetap assignment mentah
+// SAMA PERSIS sebelumnya supaya 0 perubahan perilaku di edge-case ini.
+if(kat){
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(product,'kategoriId',kat);else product.kategoriId=kat;
+} else {
+product.kategoriId=kat;
+}
+}
 }
 if(!product)return;
-product.stock=(product.stock||0)+it.qty;
-if(it.hargaBeli>0)product.hargaBeli=it.hargaBeli;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(product,it.qty);else product.stock=(product.stock||0)+it.qty;
+if(it.hargaBeli>0){if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetPrice(product,'hargaBeli',it.hargaBeli);else product.hargaBeli=it.hargaBeli;}
 if(it.produsenId){
-product.produsenId=it.produsenId;
-if(!product.hargaByProdusen)product.hargaByProdusen={};
-if(it.hargaBeli>0)product.hargaByProdusen[it.produsenId]=it.hargaBeli;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(product,'produsenId',it.produsenId);else product.produsenId=it.produsenId;
+if(it.hargaBeli>0){
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetHargaProdusen(product,it.produsenId,it.hargaBeli);
+else{if(!product.hargaByProdusen)product.hargaByProdusen={};product.hargaByProdusen[it.produsenId]=it.hargaBeli;}
+}
 }
 resultItems.push({productId:product.id,name:product.name,qty:it.qty,hargaBeli:it.hargaBeli,produsenId:it.produsenId||'',kategoriId:product.kategoriId||''});
 totalBelanja+=it.qty*it.hargaBeli;
@@ -238,7 +299,18 @@ const qty=parseFloat(document.getElementById('txShopSaleQty').value)||0;
 const harga=parseFloat(document.getElementById('txShopSaleHarga').value)||0;
 if(qty<=0){toast('⚠️ Jumlah terjual harus lebih dari 0');return;}
 if(harga<=0){toast('⚠️ Harga jual harus lebih dari 0');return;}
-curTxShopSaleCart.push({productId:product.id,name:product.name,qty,harga});
+// kw-sales-mutation-fix: samakan perilaku dgn Order.addItem() (cobek-order.js)
+// -- produk yg sama ditambah lagi ke cart harus DIGABUNG (qty ditambahkan ke
+// baris yg sudah ada), bukan bikin baris duplikat baru. Sebelumnya cart ini
+// (beda dari Order.items) selalu push baris baru walau productId sudah ada,
+// jadi 1 produk bisa muncul >1 baris & rawan lolos dari validasi stok
+// per-baris (walau sekarang recordShopSale() juga sudah divalidasi
+// teragregasi sbg lapisan pertahanan kedua, cart tetap digabung dari sumbernya
+// spy tampilan & UX konsisten dgn Order). Harga dipakai yg PALING BARU
+// diisi user (asumsi: re-add = user mau update harga baris itu).
+const existing=curTxShopSaleCart.find(it=>it.productId===product.id);
+if(existing){existing.qty+=qty;existing.harga=harga;}
+else curTxShopSaleCart.push({productId:product.id,name:product.name,qty,harga});
 renderTxShopSaleCartList();
 syncTxShopSaleAmt();
 document.getElementById('txShopSaleQty').value='1';
@@ -278,7 +350,7 @@ const addon=Etalase.bundleAddonShape(product);
 if(!addon)return;
 const bracket=Etalase.bracketRange(product);
 const base=(D.products||[]).find(q=>q.id!==product.id&&Etalase.bracketRange(q)===bracket&&!Etalase.bundleAddonShape(q));
-if(base)base.stock=Math.max(0,(base.stock||0)+sign*qty);
+if(base){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(base,sign*qty);else base.stock=Math.max(0,(base.stock||0)+sign*qty);}
 const addonCandidates=(D.products||[]).filter(q=>{
 const parsed=Etalase.parseSizeName(q.name);
 if(addon==='alu')return parsed&&parsed.shape==='alu';
@@ -286,33 +358,78 @@ if(addon==='muntu')return(parsed&&(parsed.shape==='muntu'||parsed.shape==='munth
 return false;
 });
 const addonProduct=sign<0?(addonCandidates.find(q=>(q.stock||0)>=qty)||addonCandidates[0]):addonCandidates[0];
-if(addonProduct)addonProduct.stock=Math.max(0,(addonProduct.stock||0)+sign*qty);
+if(addonProduct){if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(addonProduct,sign*qty);else addonProduct.stock=Math.max(0,(addonProduct.stock||0)+sign*qty);}
+}
+// rollbackShopItems (kw-sales-mutation-fix, Modul 2) — SATU-SATUNYA implementasi
+// yang boleh mengubah stok produk (+base+addon alu/muntu) utk jalur Sales
+// (recordShopSale & Laporan.delete/retur). sign=+1 = kembalikan stok (restore,
+// dipakai saat rollback existingShopId lama / hapus transaksi / retur), sign=-1
+// = kurangi stok (consume, dipakai saat apply penjualan baru). Reuse
+// PERSIS applyBundleLinkedStock() (kw207-cobek-bundle-addon) yang sudah ada utk
+// bagian base product + addon-nya, jadi 1 pemanggilan helper ini SELALU
+// mencakup: produk utama, base product (bundle), & addon (alu/muntu) —
+// sebelumnya logic ini di-copy-paste 3x (existingShopId restore, 2x jalur
+// rollback-on-failure) + 1x lagi TANPA bundle sama sekali di Laporan.delete()
+// (bug: bundle addon tidak ikut balik saat hapus/retur transaksi). Sekarang
+// SEMUA titik itu manggil fungsi yang sama ini — 0 duplikasi, 0 rumus baru.
+function rollbackShopItems(items,sign){
+(items||[]).forEach(it=>{
+if(!it||!it.productId)return;
+const q=Number(it.qty);
+if(!Number.isFinite(q)||q<=0)return;
+const p=D.products.find(x=>x.id===it.productId);
+if(!p)return;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateStockDelta(p,sign*q);else p.stock=Math.max(0,(p.stock||0)+sign*q);
+applyBundleLinkedStock(p,q,sign);
+});
 }
 function recordShopSale(opts){
-const items=(opts.items||[]).filter(it=>it&&it.productId&&it.qty>0);
+const rawItems=opts.items||[];
+// Validasi backend (kw-sales-mutation-fix) — TIDAK boleh cuma mengandalkan
+// validasi UI (qty<=0 dicegah di form, tapi recordShopSale() bisa dipanggil
+// dari mana saja/data korup/import, jadi divalidasi ULANG di sini). Baris
+// dgn productId kosong/qty bukan angka positif ditolak SELURUH transaksi
+// (bukan di-skip diam2), supaya caller tahu ada data invalid, bukan
+// kehilangan item secara senyap.
+for(const it of rawItems){
+if(!it||!it.productId)return{ok:false,message:'Produk tidak valid'};
+const q=Number(it.qty);
+if(!Number.isFinite(q)||q<=0)return{ok:false,message:'Jumlah tidak valid'};
+}
+const items=rawItems.filter(it=>it&&it.productId&&Number(it.qty)>0);
 if(!items.length)return{ok:false,message:'Keranjang masih kosong'};
 let prevShop=null;
 if(opts.existingShopId){
 prevShop=D.cobek.find(c=>c.id===opts.existingShopId);
-if(prevShop&&prevShop.items){
-prevShop.items.forEach(it=>{
-const pp=D.products.find(x=>x.id===it.productId);
-if(pp){pp.stock=(pp.stock||0)+it.qty;applyBundleLinkedStock(pp,it.qty,1);}
-});
+// kw-sales-mutation-fix: edit transaksi SELALU restore stok lama (items
+// tersimpan di prevShop) dulu, baru validasi+apply stok baru di bawah —
+// urutan ini TIDAK berubah dari sebelumnya, cuma implementasinya sekarang
+// lewat rollbackShopItems() (SSOT) supaya base+addon bundle ikut kebawa.
+if(prevShop&&prevShop.items)rollbackShopItems(prevShop.items,1);
 }
-}
-for(const it of items){
-const p=D.products.find(x=>x.id===it.productId);
+// kw-sales-mutation-fix: akumulasikan qty per productId SEBELUM validasi
+// stok, supaya cart dgn 2+ baris produk yg sama (duplicate cart item) tidak
+// lolos validasi cuma karena tiap baris dicek terpisah terhadap p.stock yg
+// sama (bug lama: 2 baris @3 dgn stok 5 lolos krn 3<=5 dicek 2x, padahal
+// totalnya 6 > 5 -> stok jadi minus). Sekarang divalidasi terhadap TOTAL
+// qty per produk dulu, baru diterapkan.
+const qtyByProduct=new Map();
+for(const it of items)qtyByProduct.set(it.productId,(qtyByProduct.get(it.productId)||0)+Number(it.qty));
+for(const[productId,qty] of qtyByProduct){
+const p=D.products.find(x=>x.id===productId);
 if(!p){
-if(prevShop&&prevShop.items)prevShop.items.forEach(pi=>{const pp=D.products.find(x=>x.id===pi.productId);if(pp){pp.stock=Math.max(0,(pp.stock||0)-pi.qty);applyBundleLinkedStock(pp,pi.qty,-1);}});
+if(prevShop&&prevShop.items)rollbackShopItems(prevShop.items,-1);
 return{ok:false,message:'Produk tidak ditemukan'};
 }
-if(it.qty>p.stock){
-if(prevShop&&prevShop.items)prevShop.items.forEach(pi=>{const pp=D.products.find(x=>x.id===pi.productId);if(pp){pp.stock=Math.max(0,(pp.stock||0)-pi.qty);applyBundleLinkedStock(pp,pi.qty,-1);}});
+if(qty>p.stock){
+if(prevShop&&prevShop.items)rollbackShopItems(prevShop.items,-1);
 return{ok:false,message:'Stok '+p.name+' tidak cukup (sisa '+p.stock+')'};
 }
 }
-items.forEach(it=>{const p=D.products.find(x=>x.id===it.productId);p.stock=(p.stock||0)-it.qty;applyBundleLinkedStock(p,it.qty,-1);});
+// Total per produk sudah divalidasi <= stok tersedia di atas, jadi aman
+// diterapkan per baris (rollbackShopItems sign=-1 = consume), termasuk
+// base+addon bundle-nya — SSOT yang sama dgn restore di atas.
+rollbackShopItems(items,-1);
 const customer=opts.customer||{name:'',phone:'',address:''};
 if(prevShop){
 Object.assign(prevShop,{

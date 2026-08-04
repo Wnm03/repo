@@ -36,6 +36,23 @@ function isProductOwnershipSelf(p){
 if(typeof OwnershipEngine==='undefined')return true;
 return OwnershipEngine.resolve(p).type==='SELF';
 }
+// ATTR_FORM_MAP — Tahap 10 (Generic Shop Engine — metadata-driven form wiring,
+// OPSI B dikonfirmasi user: HTML form TETAP statis, TIDAK ada metadata UI baru
+// ditambah ke AttributeStore.DEFINITIONS). Mapping LOKAL kode atribut generik
+// (AttributeStore.DEFINITIONS[].code) -> {id elemen HTML form, nama field fisik
+// asli} SEMATA-MATA supaya openModal()/save() bisa loop, BUKAN sumber kebenaran
+// baru: `field` di sini harus selalu sama persis dgn `field` di
+// AttributeStore.DEFINITIONS (modules/shop/generic/attribute-store.js) utk kode
+// yang sama — dipakai sebagai fallback literal kalau AttributeStore belum
+// dimuat (guard typeof, pola sama seluruh file ini), persis field yang dipakai
+// manual assignment Tahap 9/sebelumnya (0 field baru, 0 kode baru).
+const ATTR_FORM_MAP={
+diskon_persen:{el:'pDiskon',field:'diskonPersen'},
+berat_per_unit:{el:'pBeratPerUnit',field:'beratPerUnit'},
+panjang:{el:'pPanjang',field:'panjang'},
+lebar:{el:'pLebar',field:'lebar'},
+tinggi:{el:'pTinggi',field:'tinggi'},
+};
 const Etalase={
 editIdx:null,
 expandedKatId:null,
@@ -106,7 +123,7 @@ const siblings=this.linkedSiblings(product);
 if(!siblings.length)return;
 const changed=siblings.filter(s=>s.hargaJual!==product.hargaJual);
 if(!changed.length)return;
-changed.forEach(s=>{s.hargaJual=product.hargaJual;});
+changed.forEach(s=>{if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetPrice(s,'hargaJual',product.hargaJual);else s.hargaJual=product.hargaJual;});
 save();
 this.renderList();
 toast(`🔗 Harga Jual ${changed.length} produk pasangan/gabungan (${changed.map(s=>s.name).join(', ')}) ikut disinkron ke ${fmtFull(product.hargaJual)}`,6000);
@@ -194,7 +211,7 @@ const allMembers=new Set(selected.map(p=>p.id));
 (D.products||[]).forEach(p=>{if(p.priceGroupId===groupId)allMembers.add(p.id);});
 const names=[];
 (D.products||[]).forEach(p=>{
-if(allMembers.has(p.id)){p.priceGroupId=groupId;p.hargaJual=price;names.push(p.name);}
+if(allMembers.has(p.id)){p.priceGroupId=groupId;if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetPrice(p,'hargaJual',price);else p.hargaJual=price;names.push(p.name);}
 });
 save();
 this.renderList();
@@ -210,16 +227,58 @@ save();
 this.renderList();
 toast('🔓 Produk dilepas dari grup harga');
 },
+// duplicateProduct(i) — Tahap 5 (Generic Shop Engine, UI Duplicate Product).
+// Tombol BARU di kartu katalog yang murni memakai ProductRepository.cloneProduct()
+// (Tahap 4, modules/shop/generic/product-repository.js) + ProductRepository.saveProduct()
+// (upsert PURE) — TIDAK menyentuh Etalase.save() atau alur create/update existing sama
+// sekali. cloneProduct() sendiri sudah final sejak Tahap 4: id baru, deep clone, stock
+// dipaksa 0, field lain (harga/kategori/produsen/ownership/atribut fisik/hargaByProdusen/
+// priceGroupId) tetap sama persis dgn produk asal — TIDAK diubah di sini.
+// Alur: cloneProduct(product) -> {ok,product:clone} -> saveProduct(D.products, clone)
+// (PURE upsert, balikin array baru krn clone.id belum ada di D.products jadi selalu
+// APPEND) -> D.products diganti dgn array baru itu -> save() (fungsi global existing,
+// SAMA persis yang dipanggil di seluruh CRUD produk lain, bukan Etalase.save()) -> renderList().
+// Guard `typeof ProductRepository==='undefined'`: kalau modul Tahap 4 belum dimuat (mis.
+// urutan build lama/parsial), tombol ini disembunyikan total di renderList() (lihat di bawah)
+// supaya tidak ada tombol mati — backward compatible, 0 breaking change kalau file itu
+// belum ada di suatu build.
+async duplicateProduct(i){
+if(typeof ProductRepository==='undefined')return;
+const p=D.products[i];
+if(!p)return;
+if(!await askConfirm(`Duplikat produk "${p.name}"? Salinan baru akan dibuat dgn stok 0, harga & atribut lain sama persis.`))return;
+const cloneResult=ProductRepository.cloneProduct(p);
+if(!cloneResult.ok){toast('⚠️ Gagal duplikat produk: '+cloneResult.reason);return;}
+const saveResult=ProductRepository.saveProduct(D.products,cloneResult.product);
+if(!saveResult.ok){toast('⚠️ Gagal menyimpan hasil duplikat: '+saveResult.reason);return;}
+D.products=saveResult.products;
+save();
+this.renderList();
+toast(`✅ "${p.name}" diduplikat sbg "${cloneResult.product.name}" (stok 0)`);
+},
+
 // totalModalStok/totalNilaiJualStok (kw208-cobek-modal-stok) — total uang modal (HPP) yg masih
 // "tertanam" di stok gudang (belum jadi uang tunai lagi sampai terjual), & estimasi nilai jualnya
 // kalau semua stok itu laku di Harga Jual sekarang. Dipakai di kartu ringkasan tab Shop (cModalStok/
 // cNilaiJualStok) & disuntikkan ke konteks chat AI (features-aiwidget-reminder-gdrive-search.js)
 // supaya analisa keuangan AI tahu ada uang yg "nyangkut" di bentuk barang, bukan cuma saldo akun.
+// Tahap 2 (Generic Shop Engine, Pricing & Inventory Integration): pembacaan
+// harga/stok di bawah ini dialihkan lewat InventoryService/PricingService
+// (modules/shop/generic/*.js, Tahap 1) kalau sudah dimuat — guard typeof +
+// fallback ke rumus asli (baca hargaBeli/hargaJual/stock langsung) kalau
+// belum, PERSIS pola guard yang sudah dipakai di seluruh file ini (mis.
+// isProductOwnershipSelf). 0 rumus baru, 0 perubahan hasil: InventoryService.
+// totalValue()/PricingService.getCost()/getRetail() 100% delegasi balik ke
+// field asli yang sama (lihat generic/pricing-service.js §PRICE_TYPES).
 totalModalStok(){
-return(D.products||[]).filter(isProductOwnershipSelf).reduce((s,p)=>s+((p.stock||0)*(p.hargaBeli||0)),0);
+const self=(D.products||[]).filter(isProductOwnershipSelf);
+if(typeof InventoryService!=='undefined')return InventoryService.totalValue(self,'cost');
+return self.reduce((s,p)=>s+((p.stock||0)*(p.hargaBeli||0)),0);
 },
 totalNilaiJualStok(){
-return(D.products||[]).filter(isProductOwnershipSelf).reduce((s,p)=>s+((p.stock||0)*(p.hargaJual||0)),0);
+const self=(D.products||[]).filter(isProductOwnershipSelf);
+if(typeof InventoryService!=='undefined')return InventoryService.totalValue(self,'retail');
+return self.reduce((s,p)=>s+((p.stock||0)*(p.hargaJual||0)),0);
 },
 renderModalStat(){
 const elModal=document.getElementById('cModalStok');
@@ -234,25 +293,41 @@ document.getElementById('productModalTitle').textContent=isEdit?'Edit Produk':'T
 const p=isEdit?D.products[this.editIdx]:null;
 document.getElementById('pName').value=p?p.name:'';
 document.getElementById('pStock').value=p?p.stock:'';
-document.getElementById('pKategori').value=p?shopKategoriName(p.kategoriId):'';
+const pKatObj=p?((typeof ProductStore!=='undefined')?ProductStore.getCategory(p):null):null;
+document.getElementById('pKategori').value=p?(pKatObj?pKatObj.name:shopKategoriName(p.kategoriId)):'';
 document.getElementById('pKategoriList').innerHTML=D.cobekKategori.map(k=>`<option value="${escapeHtml(k.name)}">`).join('');
 const pProdusenEl=document.getElementById('pProdusen');
 if(pProdusenEl){
 pProdusenEl.innerHTML='<option value="">— Tanpa produsen —</option>'+D.produsen.map(pr=>`<option value="${pr.id}">${escapeHtml(pr.name)}</option>`).join('')+'<option value="__new__">➕ Produsen Baru</option>';
 pProdusenEl.value=p&&p.produsenId?p.produsenId:'';
 }
-document.getElementById('pBeli').value=p?p.hargaBeli:'';
-document.getElementById('pJual').value=p?p.hargaJual:'';
-document.getElementById('pReseller').value=p&&p.hargaReseller?p.hargaReseller:'';
-document.getElementById('pDiskon').value=p&&p.diskonPersen?p.diskonPersen:'';
-const pBeratEl=document.getElementById('pBeratPerUnit');
-if(pBeratEl)pBeratEl.value=p&&p.beratPerUnit?p.beratPerUnit:'';
-const pPanjangEl=document.getElementById('pPanjang');
-if(pPanjangEl)pPanjangEl.value=p&&p.panjang?p.panjang:'';
-const pLebarEl=document.getElementById('pLebar');
-if(pLebarEl)pLebarEl.value=p&&p.lebar?p.lebar:'';
-const pTinggiEl=document.getElementById('pTinggi');
-if(pTinggiEl)pTinggiEl.value=p&&p.tinggi?p.tinggi:'';
+// Tahap 11 (Generic Shop Engine — audit sisa hardcode Product UI): 3 field
+// harga di form (Beli/Jual/Reseller) dialihkan lewat PricingService kalau
+// sudah dimuat, PERSIS pola yang sudah dipakai renderList() sejak Tahap 7
+// (lihat komentar §Tahap 7 di renderList() bawah) — guard typeof + fallback
+// baca field asli langsung kalau belum dimuat. 0 rumus baru, 0 perubahan
+// nilai: PricingService.getCost/getRetail/getReseller 100% delegasi balik
+// ke field yang sama.
+const pBeliVal=p?((typeof PricingService!=='undefined')?PricingService.getCost(p):p.hargaBeli):'';
+document.getElementById('pBeli').value=pBeliVal;
+const pJualVal=p?((typeof PricingService!=='undefined')?PricingService.getRetail(p):p.hargaJual):'';
+document.getElementById('pJual').value=pJualVal;
+const pResellerRaw=p?((typeof PricingService!=='undefined')?PricingService.getReseller(p):p.hargaReseller):null;
+document.getElementById('pReseller').value=pResellerRaw?pResellerRaw:'';
+// Tahap 10 (Generic Shop Engine — metadata-driven form wiring, OPSI B):
+// 5 assignment manual Tahap 9 di atas diganti loop terhadap ATTR_FORM_MAP
+// (mapping lokal, lihat definisinya di atas file ini). Tiap iterasi TETAP
+// baca lewat AttributeStore.getAttribute() (guard typeof, pola sama persis
+// Tahap 9) dgn fallback literal `p[map.field]` kalau AttributeStore belum
+// dimuat — 0 rumus baru, hasil byte-identik dgn 5 baris manual sebelumnya.
+// HTML form/modals.js TIDAK disentuh (OPSI B dikonfirmasi user), cuma cara
+// BACA nilai atribut yang di-generic-kan di level JS.
+Object.keys(ATTR_FORM_MAP).forEach((code)=>{
+const map=ATTR_FORM_MAP[code];
+const el=document.getElementById(map.el);
+const val=(typeof AttributeStore!=='undefined')?AttributeStore.getAttribute(p||{},code):(p&&p[map.field]);
+if(el)el.value=val?val:'';
+});
 const pAccEl=document.getElementById('pAcc');
 if(pAccEl) pAccEl.innerHTML=D.accounts.map(a=>`<option value="${a.id}">${a.emoji} ${escapeHtml(a.name)}</option>`).join('');
 const hint=document.getElementById('pAccHint');
@@ -289,7 +364,16 @@ if(!sel)return;
 if(sel.value==='__new__'){
 const name=await showPromptModal({title:'Produsen Baru',message:'Nama produsen baru:',icon:'🏭'});
 if(name&&name.trim()){
-const np={id:'prd_'+Date.now(),name:name.trim(),contact:'',note:''};
+// Modul 10 — inline "Produsen Baru" dialihkan lewat SupplierStore.mutateCreate()
+// (SSOT Tahap 7, sudah battle-tested di Produsen.save()), guard typeof + fallback
+// raw PERSIS literal lama (id generator SAMA: 'prd_'+Date.now()).
+let np;
+if(typeof SupplierStore!=='undefined'){
+const hasil=SupplierStore.mutateCreate({name:name.trim(),contact:'',note:''});
+np=hasil.ok?hasil.supplier:{id:'prd_'+Date.now(),name:name.trim(),contact:'',note:''};
+}else{
+np={id:'prd_'+Date.now(),name:name.trim(),contact:'',note:''};
+}
 D.produsen.push(np);
 save();
 sel.innerHTML='<option value="">— Tanpa produsen —</option>'+D.produsen.map(pr=>`<option value="${pr.id}">${escapeHtml(pr.name)}</option>`).join('')+'<option value="__new__">➕ Produsen Baru</option>';
@@ -323,15 +407,26 @@ const produsenId=produsenSel&&produsenSel.value!=='__new__'?produsenSel.value:''
 const hargaBeli=parseFloat(document.getElementById('pBeli').value)||0;
 const hargaJual=parseFloat(document.getElementById('pJual').value)||0;
 const hargaReseller=parseFloat(document.getElementById('pReseller').value)||null;
-const diskonPersen=parseFloat(document.getElementById('pDiskon').value)||0;
-const beratPerUnitEl=document.getElementById('pBeratPerUnit');
-const beratPerUnit=beratPerUnitEl?(parseFloat(beratPerUnitEl.value)||0):0;
-const panjangEl=document.getElementById('pPanjang');
-const panjang=panjangEl?(parseFloat(panjangEl.value)||0):0;
-const lebarEl=document.getElementById('pLebar');
-const lebar=lebarEl?(parseFloat(lebarEl.value)||0):0;
-const tinggiEl=document.getElementById('pTinggi');
-const tinggi=tinggiEl?(parseFloat(tinggiEl.value)||0):0;
+// Tahap 10 (Generic Shop Engine — metadata-driven form wiring, OPSI B):
+// 5 parseFloat() manual di atas diganti loop terhadap ATTR_FORM_MAP (mapping
+// lokal, definisi di atas file ini, dipakai jg oleh openModal()). pDiskon
+// SENGAJA TIDAK diberi guard elemen (sama seperti baris manual sebelumnya —
+// satu-satunya field yang selalu diasumsikan ada di form, 0 perubahan
+// perilaku), field lain (beratPerUnit/panjang/lebar/tinggi) tetap guard
+// elemen ada/tidak seperti sebelumnya. Hasil: object attrVals dgn key = nama
+// field fisik asli (persis nama variabel lama), dipakai ke fieldsBaru via
+// spread di bawah — 0 rumus baru, 0 field baru, nilai byte-identik.
+const attrVals={};
+Object.keys(ATTR_FORM_MAP).forEach((code)=>{
+const map=ATTR_FORM_MAP[code];
+if(code==='diskon_persen'){
+attrVals[map.field]=parseFloat(document.getElementById(map.el).value)||0;
+return;
+}
+const el=document.getElementById(map.el);
+attrVals[map.field]=el?(parseFloat(el.value)||0):0;
+});
+const {diskonPersen,beratPerUnit,panjang,lebar,tinggi}=attrVals;
 if(!name||!hargaJual){toast('⚠️ Lengkapi nama & harga jual');return;}
 const accId=document.getElementById('pAcc')?document.getElementById('pAcc').value:D.accounts[0]?.id;
 const prevStock=this.editIdx!==null?(D.products[this.editIdx].stock||0):0;
@@ -345,17 +440,47 @@ const kategoriId=resolveShopKategori(kategoriName);
 const ownRawP=document.getElementById('pOwnership')?.value;
 const ownership=(typeof OwnershipEngine!=='undefined'&&OwnershipEngine.isValidType(ownRawP))?OwnershipEngine.normalize(ownRawP):(typeof OwnershipEngine!=='undefined'?OwnershipEngine.DEFAULT:'SELF');
 let product;
+// Tahap 6 — wiring ProductRepository (product-repository.js, Tahap 4) ke jalur
+// nyata create/edit produk, sesuai keputusan yang dikonfirmasi user (opsi
+// konservatif LAPORAN-TAHAP5-GENERIC-SHOP-ENGINE.md §rekomendasi):
+//   - Create: createProduct() lalu D.products.push() — mekanisme insert TETAP
+//     .push() persis seperti sebelumnya, objeknya memang baru jadi identitas
+//     bukan masalah di jalur ini.
+//   - Edit: updateProduct() dipakai HANYA utk menghitung hasil merge (PURE,
+//     tidak memutasi input), lalu Object.assign(product, hasil.product) —
+//     TETAP memutasi objek asli yang sama di D.products[editIdx]. Identitas
+//     objek 100% tidak berubah dari perilaku sebelumnya (0 perubahan pada
+//     45+ file yang bergantung pada D.products[idx] stabil referensinya).
+// Guard typeof ProductRepository (pola SAMA PERSIS OwnershipEngine/AttributeStore
+// di seluruh file ini) — kalau modul belum/tidak dimuat, fallback ke literal
+// Object.assign/object-literal lama, 0 perubahan perilaku.
+const fieldsBaru={name,stock,hargaBeli,hargaJual,hargaReseller,diskonPersen,kategoriId,beratPerUnit,panjang,lebar,tinggi,ownership};
 if(this.editIdx!==null){
 product=D.products[this.editIdx];
-Object.assign(product,{name,stock,hargaBeli,hargaJual,hargaReseller,diskonPersen,kategoriId,beratPerUnit,panjang,lebar,tinggi,ownership});
+if(typeof ProductRepository!=='undefined'){
+const hasil=ProductRepository.updateProduct(product,fieldsBaru);
+if(hasil.ok){Object.assign(product,hasil.product);}
+else{Object.assign(product,fieldsBaru);}
 } else {
-product={id:'prod_'+Date.now(),name,stock,hargaBeli,hargaJual,hargaReseller,diskonPersen,kategoriId,beratPerUnit,panjang,lebar,tinggi,ownership,produsenId:'',hargaByProdusen:{}};
+Object.assign(product,fieldsBaru);
+}
+} else {
+let produkBaru={id:'prod_'+Date.now(),...fieldsBaru,produsenId:'',hargaByProdusen:{}};
+if(typeof ProductRepository!=='undefined'){
+const hasil=ProductRepository.createProduct(fieldsBaru);
+if(hasil.ok)produkBaru=hasil.product;
+}
+product=produkBaru;
 D.products.push(product);
 }
 if(!product.hargaByProdusen)product.hargaByProdusen={};
 if(produsenId){
-product.produsenId=produsenId;
-if(hargaBeli>0)product.hargaByProdusen[produsenId]=hargaBeli;
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(product,'produsenId',produsenId);else product.produsenId=produsenId;
+// Modul 6 — mutasi nested hargaByProdusen dialihkan ke ProductRepository.
+if(hargaBeli>0){
+if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetHargaProdusen(product,produsenId,hargaBeli);
+else product.hargaByProdusen[produsenId]=hargaBeli;
+}
 }
 const produsenName=produsenId?(D.produsen.find(pr=>pr.id===produsenId)||{}).name:'';
 const kategoriLabel=kategoriName?` · kategori ${kategoriName}`:'';
@@ -374,7 +499,21 @@ this.syncPairedPrice(product);
 },
 async delete(i){
 if(!await askConfirm('Hapus produk ini dari etalase?'))return;
-D.products.splice(i,1);save();this.renderList();toast('🗑 Dihapus');
+// Modul 12 — hapus produk dialihkan lewat ProductRepository.mutateDelete()
+// (GATE BARU sesi ini, tidak ada gate delete produk sebelumnya, pola SAMA
+// PERSIS SupplierStore.mutateDelete()), guard typeof + fallback raw PERSIS
+// literal lama (splice by index). Kalau index sudah basi (produk di index
+// itu sudah tidak ada), fallback ke splice mentah SAMA PERSIS perilaku lama
+// supaya 0 perubahan pada kasus tepi itu.
+const p=D.products[i];
+if(p&&typeof ProductRepository!=='undefined'){
+const r=ProductRepository.mutateDelete(D.products,p.id);
+if(r.ok)D.products=r.products;
+else D.products.splice(i,1);
+}else{
+D.products.splice(i,1);
+}
+save();this.renderList();toast('🗑 Dihapus');
 },
 katEditId:null,
 // editKategori(id) — Fitur Edit Kategori Produk (audit sesi 132: kategori
@@ -412,7 +551,14 @@ const kat=D.cobekKategori.find(c=>c.id===this.katEditId);
 if(!kat){this.cancelEditKategori();return;}
 const clash=D.cobekKategori.find(c=>c.id!==this.katEditId&&c.name.toLowerCase()===name.toLowerCase());
 if(clash){toast(`⚠️ Kategori "${name}" sudah ada`);return;}
+// dialihkan lewat CategoryStore.mutateRename() (Modul 8) kalau tersedia,
+// guard + fallback raw PERSIS SAMA pola 3 titik Modul 7.
+if(typeof CategoryStore!=='undefined'){
+const r=CategoryStore.mutateRename(kat,name);
+if(!r.ok){toast('⚠️ Nama kategori tidak valid');return;}
+}else{
 kat.name=name;
+}
 this.katEditId=null;
 save();el.value='';this.renderKategoriList();this.renderList();
 const btn=document.getElementById('cobekKategoriAddBtn');if(btn)btn.textContent='+ Tambah';
@@ -432,7 +578,16 @@ const msg=usedCount>0
 :`Hapus kategori "${escapeHtml(kat.name)}"?`;
 if(!await askConfirm(msg,{title:'Hapus Kategori',okText:'Ya, Hapus'}))return;
 if(this.katEditId===id)this.cancelEditKategori();
+// dialihkan lewat CategoryStore.mutateDelete() (Modul 8) kalau tersedia,
+// guard + fallback raw PERSIS SAMA pola Produsen.delete() Modul 7.
+// p.kategoriId='' TETAP raw dgn sengaja (lihat catatan mutateDelete()
+// CategoryStore — sisi-efek Product, bukan Category, di luar scope gate ini).
+if(typeof CategoryStore!=='undefined'){
+const r=CategoryStore.mutateDelete(D.cobekKategori,id);
+if(r.ok)D.cobekKategori=r.categories;
+}else{
 D.cobekKategori=D.cobekKategori.filter(c=>c.id!==id);
+}
 D.products.forEach(p=>{if(p.kategoriId===id)p.kategoriId='';});
 save();this.renderKategoriList();this.renderList();toast('🗑 Kategori dihapus');
 },
@@ -471,24 +626,49 @@ const el=document.getElementById('productList');
 if(!el)return;
 if(!D.products.length){el.innerHTML='<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Belum ada produk</div></div>';return;}
 el.innerHTML=D.products.map((p,i)=>{
+// Tahap 7 (Generic Shop Engine, Pricing & Inventory Integration): harga
+// jual/beli/reseller yang DITAMPILKAN dialihkan lewat PricingService kalau
+// sudah dimuat — guard typeof + fallback field asli langsung, 0 perubahan
+// angka (PricingService.getRetail/getCost/getReseller 100% passthrough ke
+// field yg sama, lihat generic/pricing-service.js). Rumus margin/marginPct
+// di bawah ini SENGAJA TIDAK dialihkan — basisnya markup-thd-hargaBeli,
+// beda dgn PricingService.margin()/ProfitEngine.margin() yg revenue-based
+// thd hargaJual; migrasi akan mengubah angka yang tampil, lihat
+// LAPORAN-TAHAP7-GENERIC-SHOP-ENGINE.md §temuan.
+const hargaJualDisp=(typeof PricingService!=='undefined')?PricingService.getRetail(p):p.hargaJual;
+const hargaBeliDisp=(typeof PricingService!=='undefined')?PricingService.getCost(p):p.hargaBeli;
+const hargaResellerDisp=(typeof PricingService!=='undefined')?PricingService.getReseller(p):p.hargaReseller;
 const margin=p.hargaJual-p.hargaBeli;
 const marginPct=p.hargaBeli>0?Math.round((margin/p.hargaBeli)*100):0;
-const stockCls=p.stock<=2?'low':(p.stock<=5?'mid':'ok');
-const stockLbl=p.stock<=2?'Menipis':(p.stock<=5?'Terbatas':'Aman');
-const kat=shopKategoriName(p.kategoriId);
-const prod=p.produsenId?(D.produsen.find(pr=>pr.id===p.produsenId)||{}).name:'';
+// stockCls/stockLbl — delegasi InventoryService.stockStatus() (Tahap 1,
+// PERSIS ambang yg sama, lihat InventoryEngine.stockStatus()) kalau sudah
+// dimuat, fallback rumus asli. 0 perubahan hasil.
+const stockStatus=(typeof InventoryService!=='undefined')?InventoryService.stockStatus(p):null;
+const stockCls=stockStatus?stockStatus.cls:(p.stock<=2?'low':(p.stock<=5?'mid':'ok'));
+const stockLbl=stockStatus?stockStatus.label:(p.stock<=2?'Menipis':(p.stock<=5?'Terbatas':'Aman'));
+// Tahap 3 (Generic Shop Engine wiring): ProductStore.getCategory/getSupplier
+// kalau dimuat, fallback ke shopKategoriName()/D.produsen.find() langsung
+// (compat layer) — HASIL SAMA di kedua jalur, murni titik baca dipindah.
+const katObj=(typeof ProductStore!=='undefined')?ProductStore.getCategory(p):null;
+const kat=katObj?katObj.name:shopKategoriName(p.kategoriId);
+const prodObj=(typeof ProductStore!=='undefined')?ProductStore.getSupplier(p):null;
+const prod=prodObj?prodObj.name:(p.produsenId?(D.produsen.find(pr=>pr.id===p.produsenId)||{}).name:'');
 const hasDiskon=p.diskonPersen>0;
+// finalHarga — rumus diskon SENGAJA TIDAK diubah (tetap baca p.hargaJual
+// mentah), sesuai instruksi. priceBlock di bawah dipakai utk DISPLAY strike/
+// harga jual polos, jadi aman pakai hargaJualDisp.
 const finalHarga=hasDiskon?Math.round(p.hargaJual*(1-p.diskonPersen/100)):p.hargaJual;
 const priceBlock=hasDiskon
-?`<div class="shop-price-strike">${fmt(p.hargaJual)}</div><div class="shop-price-final discounted">${fmt(finalHarga)}<span class="shop-diskon-badge">-${p.diskonPersen}%</span></div>`
-:`<div class="shop-price-final">${fmt(p.hargaJual)}</div>`;
+?`<div class="shop-price-strike">${fmt(hargaJualDisp)}</div><div class="shop-price-final discounted">${fmt(finalHarga)}<span class="shop-diskon-badge">-${p.diskonPersen}%</span></div>`
+:`<div class="shop-price-final">${fmt(hargaJualDisp)}</div>`;
 const groupCount=p.priceGroupId?this.groupSiblings(p).length+1:0;
 const groupTag=groupCount?`<span class="shop-tag" style="color:var(--accent);font-weight:700">🔗 Gabungan (${groupCount} produk)</span>`:'';
 // weightMissingTag — reuse persis kondisi rule AI 'product-weight-missing'
 // (cobek-pricing.js): produk dipakai di Transfer/Rencana Pengiriman tapi
 // beratPerUnit kosong. Badge di kartu supaya kelihatan tanpa nunggu AI
 // Briefing (cooldown 72 jam bisa kelewat).
-const usedInLogistics=!p.beratPerUnit&&(
+const beratPU=(typeof ProductStore!=='undefined')?ProductStore.getWeight(p):p.beratPerUnit;
+const usedInLogistics=!beratPU&&(
 (D.inventoryTransfers||[]).some(t=>(t.items||[]).some(it=>it.productId===p.id))
 ||(D.deliveryPlans||[]).some(dp=>(dp.items||[]).some(it=>it.productId===p.id))
 );
@@ -510,13 +690,14 @@ return`<div class="shop-product-card stock-${stockCls}">
           <div>
             <div class="shop-price-label">Harga Jual</div>
             ${priceBlock}
-            <div class="shop-price-sub">Modal ${fmt(p.hargaBeli)}${p.hargaReseller?' · Reseller '+fmt(p.hargaReseller):''}</div>
+            <div class="shop-price-sub">Modal ${fmt(hargaBeliDisp)}${p.hargaReseller?' · Reseller '+fmt(hargaResellerDisp):''}</div>
           </div>
           <div class="shop-product-right">
             <div class="shop-margin-badge">+${fmt(margin)} (${marginPct}%)</div>
             <div class="shop-product-actions">
               ${p.priceGroupId?`<button data-action="Etalase.unlinkFromGroup" data-args="${escapeHtml(JSON.stringify([i]))}" aria-label="Lepas dari grup harga" title="Lepas dari grup harga gabungan">🔓</button>`:''}
               <button data-action="openProductModal" data-args="${escapeHtml(JSON.stringify([i]))}" aria-label="Edit/Buka">✏️</button>
+              ${(typeof ProductRepository!=='undefined')?`<button data-action="Etalase.duplicateProduct" data-args="${escapeHtml(JSON.stringify([i]))}" aria-label="Duplikat produk" title="Duplikat produk (stok 0)">📋</button>`:''}
               <button data-action="delProduct" data-args="${escapeHtml(JSON.stringify([i]))}" aria-label="Hapus">🗑</button>
             </div>
           </div>
