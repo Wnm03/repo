@@ -5,6 +5,44 @@ JANGAN audit/implement/test/build ulang bagian yang sudah **Completed**.
 
 ## Current Session
 
+v1047 — Tahap 6 Generic Shop Engine (wiring `Etalase.save()` ke
+`ProductRepository`)
+
+**Konteks:** Lanjutan Tahap 5 (LAPORAN-TAHAP5-GENERIC-SHOP-ENGINE.md).
+Audit penuh `Etalase.save()` menemukan `ProductRepository.updateProduct()`
+bersifat PURE (balikin objek baru, tidak memutasi input) — kalau dipakai
+langsung via `saveProduct()` (replace-by-id) di jalur EDIT, identitas objek
+`D.products[editIdx]` akan berubah referensinya, beda dari perilaku
+existing (`Object.assign` in-place). User mengonfirmasi opsi konservatif.
+
+**Implementasi** (`modules/shop/cobek-etalase.js`, fungsi `save()` — sama
+patch diterapkan ke `app-bundle-a.min.js` karena itu yang benar-benar
+dimuat via `<script>` di `app_production.html`/`index.html`):
+- **Create** (`editIdx===null`): `ProductRepository.createProduct(fields)`
+  → `D.products.push(hasil.product)`. Mekanisme insert tetap `.push()`.
+- **Edit** (`editIdx!==null`): `ProductRepository.updateProduct(product,
+  fields)` dipakai HANYA utk menghitung hasil merge, lalu
+  `Object.assign(product, hasil.product)` — objek asli di
+  `D.products[editIdx]` **tetap referensi yang sama** (0 perubahan pada
+  45+ file yang bergantung pada identitas objek stabil).
+- Guard `typeof ProductRepository!=='undefined'` di kedua jalur — fallback
+  ke `Object.assign`/object-literal lama kalau modul tidak dimuat.
+- Logic supplier price (`produsenId`/`hargaByProdusen`) **tetap manual**,
+  tidak dipindah ke `ProductRepository` (di luar scope-nya, sesuai audit
+  Tahap 3).
+
+**Test baru:** `tests/shop-engine-tahap6-save-wiring.test.js` (4 test) —
+create via `createProduct()`, parity hasil `withProductRepository`
+true/false, identitas objek tidak berubah saat edit, dan fallback guard.
+`node --test tests/*.test.js` → **2265/2267 pass** (2 fail pre-existing,
+tidak terkait — `dashHubNavigateToFeature`, sudah gagal di baseline
+sebelum sesi ini juga).
+
+**Version bump:** `v1046` → `v1047` (`app_production.html`, `index.html`,
+`sw.js`).
+
+---
+
 Sesi 348 (2026-08-01) — FIX BUG KRITIS (audit ulang lanjutan Sesi 347,
 1 modul terlewat: AlokasiAset)
 

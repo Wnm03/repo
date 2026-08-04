@@ -11,8 +11,8 @@
 > file tapi lupa `node build.js`), jalankan ulang generatornya, JANGAN diedit
 > tangan — editan manual bakal ketimpa lagi di build berikutnya.
 
-Terakhir digenerate: 2026-08-02T09:14:24.163Z
-Total file source: 278 · Total identifier global: 1954
+Terakhir digenerate: 2026-08-04T10:22:50.032Z
+Total file source: 285 · Total identifier global: 1966
 
 ## 1. Urutan load & ringkasan tiap file
 
@@ -24,12 +24,12 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 1 | `modules/shared/modules-render.js` | 1974 | Fungsi render (85 fungsi) dipisah dari app_production.html untuk pemerataan ukuran file. Dipindah ke modules/shared/modules-render.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & … |
 | 2 | `modules/shared/modals.js` | 8 | Modal HTML dipisah dari app_production.html untuk pemerataan ukuran file. Dipindah ke modules/shared/modals.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
 | 3 | `modules/shared/modules-calc.js` | 926 | _(tidak ada komentar header)_ |
-| 4 | `modules/shop/cobek-etalase.js` | 612 | Domain Shop bagian Etalase: katalog produk (tambah/edit/hapus, Dipindah ke modules/shop/cobek-etalase.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
-| 5 | `modules/shop/cobek-pricing.js` | 861 | Domain Shop bagian rekomendasi harga & ongkir: PriceReko (kalkulator Dipindah ke modules/shop/cobek-pricing.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, … |
-| 6 | `modules/shop/cobek-order.js` | 870 | Domain Shop bagian order & pelanggan: Produsen (supplier), SiapPulang Dipindah ke modules/shop/cobek-order.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, … |
-| 7 | `modules/shop/cobek-tx-cart.js` | 373 | Domain Shop bagian integrasi form Transaksi: cart Stok Masuk & Penjualan Dipindah ke modules/shop/cobek-tx-cart.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
-| 8 | `modules/shop/cobek-io.js` | 512 | Domain Shop bagian impor/ekspor: ImportKatalog (impor massal produk+harga Dipindah ke modules/shop/cobek-io.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, … |
-| 9 | `modules/business/shop-data-io-api.js` | 402 | Bagian B (Shop Import/Export: Scan/PDF/CSV/JSON) dari DESIGN_torsi-vehicle-selector_shop-import-export-2.md. Bagian B (Scan, Import PDF, Import CSV, Import/Export JSON) SUDAH SELESAI 4/4. Sesi ini (lanjutan opsional, … |
+| 4 | `modules/shop/cobek-etalase.js` | 793 | Domain Shop bagian Etalase: katalog produk (tambah/edit/hapus, Dipindah ke modules/shop/cobek-etalase.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
+| 5 | `modules/shop/cobek-pricing.js` | 881 | Domain Shop bagian rekomendasi harga & ongkir: PriceReko (kalkulator Dipindah ke modules/shop/cobek-pricing.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, … |
+| 6 | `modules/shop/cobek-order.js` | 925 | Domain Shop bagian order & pelanggan: Produsen (supplier), SiapPulang Dipindah ke modules/shop/cobek-order.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, … |
+| 7 | `modules/shop/cobek-tx-cart.js` | 490 | Domain Shop bagian integrasi form Transaksi: cart Stok Masuk & Penjualan Dipindah ke modules/shop/cobek-tx-cart.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
+| 8 | `modules/shop/cobek-io.js` | 566 | Domain Shop bagian impor/ekspor: ImportKatalog (impor massal produk+harga Dipindah ke modules/shop/cobek-io.js (Sesi 10 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, … |
+| 9 | `modules/business/shop-data-io-api.js` | 428 | Bagian B (Shop Import/Export: Scan/PDF/CSV/JSON) dari DESIGN_torsi-vehicle-selector_shop-import-export-2.md. Bagian B (Scan, Import PDF, Import CSV, Import/Export JSON) SUDAH SELESAI 4/4. Sesi ini (lanjutan opsional, … |
 | 10 | `modules/business/kasir.js` | 375 | Modul "🧠 Kasir AI" (v127, kw81-kasir-ai-pos): Dipindah ke modules/business/kasir.js (Sesi 15 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder). Tab … |
 | 11 | `modules/finance/piutang-utang.js` | 618 | Domain Piutang & Utang: catatan piutang (uang dipinjamkan), utang (uang dipinjam) beserta status lunas/cicilan, dan DebtStrategy (simulasi strategi pelunasan Avalanche/Snowball). Dipindah ke … |
 | 12 | `modules/finance/pajak-pbb-zakat.js` | 377 | Kalkulator Pajak Bumi & Bangunan (PBB), Zakat (penghasilan, maal, fitrah), Referensi AI (cek harga emas/nisab via AI), Pajak UMKM, dan PPh 21 (Orang Pribadi) Dipindah ke modules/finance/pajak-pbb-zakat.js (Sesi 16 … |
@@ -120,8 +120,8 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 97 | `modules/vehicle/honda-pdf-import-parse.js` | 98 | Import PDF Honda: Parse Text -> JSON (Tahap 7D-3), lanjutan Tahap 7D-2 (honda-pdf-import-extract.js, extract teks -> preview). Logic murni orkestrasi, TIDAK ada engine parsing baru: 100% reuse … |
 | 98 | `modules/vehicle/honda-pdf-import-commit.js` | 76 | Import PDF Honda: JSON -> Vehicle Catalog (Tahap 7D-4), lanjutan Tahap 7D-3 (honda-pdf-import-parse.js, parse teks -> JSON). Logic murni orkestrasi, TIDAK ada engine commit baru: 100% reuse … |
 | 99 | `modules/vehicle/honda-pdf-import-ui.js` | 236 | UI Tahap 7D-5 "Import PDF Honda" (Preview Import). Lapisan DOM/presenter SAJA di atas HondaPdfImport (Tahap 7D-1, pilih+simpan sementara), HondaPdfImportExtract (Tahap 7D-2, extract teks), HondaPdfImportParse (Tahap … |
-| 100 | `modules/business/shop-pdf-import-ui.js` | 201 | Bagian B (Shop Import/Export: Scan/PDF/CSV/JSON) dari DESIGN_torsi-vehicle-selector_shop-import-export-2.md, §B.3.2 Import PDF (Sesi N+7, urutan implementasi disarankan di dokumen tsb — setelah Sesi N+6 … |
-| 101 | `modules/business/shop-scan-ui.js` | 193 | Bagian B (Shop Import/Export: Scan/PDF/CSV/JSON) dari DESIGN_torsi-vehicle-selector_shop-import-export-2.md, §B.3.1 Scan (Sesi N+8, urutan implementasi disarankan di dokumen tsb — setelah Sesi N+7 Import PDF Shop). … |
+| 100 | `modules/business/shop-pdf-import-ui.js` | 203 | Bagian B (Shop Import/Export: Scan/PDF/CSV/JSON) dari DESIGN_torsi-vehicle-selector_shop-import-export-2.md, §B.3.2 Import PDF (Sesi N+7, urutan implementasi disarankan di dokumen tsb — setelah Sesi N+6 … |
+| 101 | `modules/business/shop-scan-ui.js` | 195 | Bagian B (Shop Import/Export: Scan/PDF/CSV/JSON) dari DESIGN_torsi-vehicle-selector_shop-import-export-2.md, §B.3.1 Scan (Sesi N+8, urutan implementasi disarankan di dokumen tsb — setelah Sesi N+7 Import PDF Shop). … |
 | 102 | `modules/ai/chat-action.js` | 84 | Parsing & UI blok [[ACTION]] dari balasan AI Chat (RefAI), murni ekstraksi/format teks, Dipindah ke modules/ai/chat-action.js (Sesi 14 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file … |
 | 103 | `modules/shared/data-archive.js` | 162 | Storage usage estimate & Archive (export lalu hapus data lama per tahun). Dipindah ke modules/shared/data-archive.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
 | 104 | `modules/vehicle/sparepart-servis.js` | 1433 | Domain Sparepart & Servis kendaraan: kategori & stok sparepart (Sparepart), catatan servis (wrapper ke Servis di car-notes.js), interval servis per-kategori & override per-kendaraan, katalog referensi … |
@@ -133,7 +133,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 110 | `laporan-export.js` | 146 | Ekspor Laporan Keuangan ke PDF (exportLaporanPDF) & gambar (exportLaporanImage), plus builder data laporan (buildLaporanExportData: filter periode, total income/expense, breakdown per kategori). Dipisah dari … |
 | 111 | `gdrive-backup.js` | 293 | Integrasi Google Drive: OAuth connect/disconnect, backup manual/otomatis (uploadBackupToDrive), restore (gdriveDownloadBackup). Dipisah dari features-aiwidget-reminder-gdrive-search.js (Sesi 5 restrukturisasi folder, … |
 | 112 | `data-health-check.js` | 270 | Cek integritas data lintas-domain (runDataHealthCheck): transaksi dengan akun/tanggal/jumlah tidak valid, ID duplikat, tagihan/aset/BBM dengan tautan akun atau kendaraan yang sudah dihapus, dll. Dipisah dari … |
-| 113 | `global-search.js` | 54 | Pencarian DATA milik user lintas halaman (openGlobalSearch/runGlobalSearch), beda tujuan dari Feature Search (dashboard-hub-search.js) yang cari FITUR/MENU. Dipisah dari features-aiwidget-reminder-gdrive-search.js (Sesi … |
+| 113 | `global-search.js` | 58 | Pencarian DATA milik user lintas halaman (openGlobalSearch/runGlobalSearch), beda tujuan dari Feature Search (dashboard-hub-search.js) yang cari FITUR/MENU. Dipisah dari features-aiwidget-reminder-gdrive-search.js (Sesi … |
 | 114 | `sheets-schema.js` | 228 | Skema kolom Google Sheets per modul (SHEETS_SCHEMAS/SHEETS_MODULES) & helper konversi item<->baris (sheetsHeaderFor/sheetsItemToCells/sheetsCellsToItem dst), dipakai oleh sheets-sync.js. Dipisah dari … |
 | 115 | `sheets-sync.js` | 239 | Integrasi Google Sheets: koneksi OAuth, sinkronisasi push/pull data D.* ke/dari Google Spreadsheet. Dipisah dari features-sheets-pwa-selftest.js (Sesi 2 restrukturisasi folder, blok 1/5 — lihat … |
 | 116 | `pwa-setup.js` | 62 | Setup PWA: registrasi manifest (via Blob kalau tidak di-hosting https) & service worker (sw.js, fallback inline Blob). Dipisah dari features-sheets-pwa-selftest.js (Sesi 2 restrukturisasi folder, blok 2/5 — lihat … |
@@ -289,16 +289,23 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 266 | `modules/ai/ai-service.js` | 665 | Smart Delivery Engine, Sesi 2/6: facade tunggal. Lihat RENCANA-SESI-RINGKAS.md untuk peta 6 sesi. Butuh ai-core.js (Sesi 1) & ai-decision-engine.js (di atas, Sesi 2 ini) sudah dimuat lebih dulu — lihat urutan di … |
 | 267 | `modules/logistics/logistics-engine.js` | 415 | Smart Delivery Engine, Sesi 3/6: mesin hitung logistik. Lihat RENCANA-SESI-RINGKAS.md untuk peta 6 sesi. Sesi ini TIDAK butuh ai-core.js/ai-decision-engine.js/ai-service.js (Sesi 1-2) sama sekali — murni fungsi hitung … |
 | 268 | `modules/logistics/logistics-service.js` | 130 | Smart Delivery Engine, Sesi 3/6: facade logistik. Lihat RENCANA-SESI-RINGKAS.md untuk peta 6 sesi. Butuh logistics-engine.js (di atas, Sesi 3 ini) sudah dimuat lebih dulu — lihat urutan di scripts/build.js. Kenapa 1 … |
-| 269 | `modules/shop/purchase-engine.js` | 88 | Shop Business Engine, S198 (Business Engine untuk Shop). TARGET EKSPLISIT USER (S198): "Buat Business Engine untuk Shop. Reuse seluruh Shop existing. Jangan ubah business logic. Jangan implementasi ke modul lain. Jangan … |
+| 269 | `modules/shop/purchase-engine.js` | 94 | Shop Business Engine, S198 (Business Engine untuk Shop). TARGET EKSPLISIT USER (S198): "Buat Business Engine untuk Shop. Reuse seluruh Shop existing. Jangan ubah business logic. Jangan implementasi ke modul lain. Jangan … |
 | 270 | `modules/shop/trip-engine.js` | 91 | Shop Business Engine, S198 (Business Engine untuk Shop). TripEngine = lapisan pengiriman/rit (ongkir, berat/volume/packing, muatan kendaraan, BBM). SAMA POLA dgn PurchaseEngine (file sebelah) & LogisticsEngine … |
-| 271 | `modules/shop/inventory-engine.js` | 96 | Shop Business Engine, S198 (Business Engine untuk Shop). InventoryEngine = lapisan stok/katalog (nilai stok tertanam, status stok per produk, grup harga ukuran/gabungan, & rekomendasi restock). SAMA POLA dgn … |
+| 271 | `modules/shop/inventory-engine.js` | 111 | Shop Business Engine, S198 (Business Engine untuk Shop). InventoryEngine = lapisan stok/katalog (nilai stok tertanam, status stok per produk, grup harga ukuran/gabungan, & rekomendasi restock). SAMA POLA dgn … |
 | 272 | `modules/shop/profit-engine.js` | 74 | Shop Business Engine, S198 (Business Engine untuk Shop). ProfitEngine = lapisan profit/margin (untung per transaksi, rekap omzet periode, & rekomendasi harga jual). SAMA POLA dgn PurchaseEngine/ … |
-| 273 | `modules/shop/delivery-plan-ui.js` | 198 | modules/shop/delivery-plan-ui.js — Delivery Plan UI (Sesi 203, Continue). Menutup gap yang dicatat di trip-engine.js ("Belum digunakan UI. Belum dihubungkan ke Shop.") & shop-business-engine-presenter.js ("TripEngine … |
-| 274 | `modules/shop/shop-business-engine-presenter.js` | 232 | modules/shop/shop-business-engine-presenter.js — Shop Business Engine Presenter (Sesi 199, Finalisasi Integrasi Shop). Target sesi: audit menemukan PurchaseEngine/TripEngine/InventoryEngine/ProfitEngine (S198, … |
-| 275 | `modules/shop/trip-presenter.js` | 166 | modules/shop/trip-presenter.js — Trip Presenter (Sesi 204-A). Menutup gap yang dicatat eksplisit di shop-business-engine-presenter.js: "TripEngine (S198) tidak dipakai di sini — tidak ada ringkasan 'pengiriman' yang … |
-| 276 | `modules/shop/business-flow-presenter.js` | 1929 | modules/shop/business-flow-presenter.js — Business Flow Presenter (Sesi 205). WIRE ONLY: menyusun 4 tahap alur bisnis Shop — Purchase -> Trip -> Stock -> Sale — dari 2 presenter yang SUDAH ADA: … |
-| 277 | `modules/finance/dana-kelolaan.js` | 165 | Dana Kelolaan / Managed Funds (Sesi 195). TARGET EKSPLISIT USER: "S195 Managed Funds. Reuse OwnershipEngine. Implementasikan Dana Kelolaan... Reuse existing modules. No audit. No refactor. No business logic changes." … |
-| 278 | `modules/finance/dana-kelolaan-presenter.js` | 160 | Dana Kelolaan / Managed Funds Presenter (Sesi 195). Pola SAMA PERSIS PropertyManagementPresenter.render() (modules/asset/property-management-presenter.js, S102/Sesi 132): UI HANYA presenter, 100% reuse … |
+| 273 | `modules/shop/generic/category-store.js` | 144 | Generic Shop Engine, Tahap 1 (Generic Domain Layer). KONTEKS: lanjutan dari AUDIT-PRA-IMPLEMENTASI-GENERIC-SHOP-ENGINE.md + ARSITEKTUR-SHOP-ENGINE-GENERIC.md. Karena KW tidak punya database SQL (PWA client-side murni, … |
+| 274 | `modules/shop/generic/supplier-store.js` | 213 | Generic Shop Engine, Tahap 1 (Generic Domain Layer). SupplierStore = Master Supplier (setara `master_supplier` + `product_supplier` di skema SQL yang diusulkan) — AREA MIGRASI PERTAMA sesuai rekomendasi audit §6 (paling … |
+| 275 | `modules/shop/generic/attribute-store.js` | 107 | Generic Shop Engine, Tahap 1 (Generic Domain Layer). AttributeStore = Master Product bagian sifat dinamis (setara `attribute_definition` + `product_attribute_value`/EAV di skema SQL yang diusulkan) — TAPI diterjemahkan … |
+| 276 | `modules/shop/generic/product-store.js` | 135 | Generic Shop Engine, Tahap 1 (Generic Domain Layer). ProductStore = Master Product bagian identitas (setara `master_product` di skema SQL yang diusulkan, TANPA sisi atribut dinamis — lihat attribute-store.js utk itu). … |
+| 277 | `modules/shop/generic/pricing-service.js` | 83 | Generic Shop Engine, Tahap 1 (Generic Domain Layer). PricingService = Master Pricing (setara `price_type` + `master_pricing` di skema SQL yang diusulkan) — "tipe harga sbg data, bukan kolom", diterjemahkan jadi PEMETAAN … |
+| 278 | `modules/shop/generic/inventory-service.js` | 54 | Generic Shop Engine, Tahap 1 (Generic Domain Layer). InventoryService = Master Inventory (setara `master_inventory` + `inventory_movement` di skema SQL yang diusulkan) — versi yang cocok utk KW: TIDAK ada ledger … |
+| 279 | `modules/shop/generic/product-repository.js` | 574 | Generic Shop Engine, Tahap 4 (Product CRUD Layer, PURE). Lanjutan Tahap 1-3 (category-store.js/supplier-store.js/attribute-store.js/ product-store.js/pricing-service.js/inventory-service.js) yang SEMUA cuma baca … |
+| 280 | `modules/shop/delivery-plan-ui.js` | 207 | modules/shop/delivery-plan-ui.js — Delivery Plan UI (Sesi 203, Continue). Menutup gap yang dicatat di trip-engine.js ("Belum digunakan UI. Belum dihubungkan ke Shop.") & shop-business-engine-presenter.js ("TripEngine … |
+| 281 | `modules/shop/shop-business-engine-presenter.js` | 232 | modules/shop/shop-business-engine-presenter.js — Shop Business Engine Presenter (Sesi 199, Finalisasi Integrasi Shop). Target sesi: audit menemukan PurchaseEngine/TripEngine/InventoryEngine/ProfitEngine (S198, … |
+| 282 | `modules/shop/trip-presenter.js` | 166 | modules/shop/trip-presenter.js — Trip Presenter (Sesi 204-A). Menutup gap yang dicatat eksplisit di shop-business-engine-presenter.js: "TripEngine (S198) tidak dipakai di sini — tidak ada ringkasan 'pengiriman' yang … |
+| 283 | `modules/shop/business-flow-presenter.js` | 2091 | modules/shop/business-flow-presenter.js — Business Flow Presenter (Sesi 205). WIRE ONLY: menyusun 4 tahap alur bisnis Shop — Purchase -> Trip -> Stock -> Sale — dari 2 presenter yang SUDAH ADA: … |
+| 284 | `modules/finance/dana-kelolaan.js` | 165 | Dana Kelolaan / Managed Funds (Sesi 195). TARGET EKSPLISIT USER: "S195 Managed Funds. Reuse OwnershipEngine. Implementasikan Dana Kelolaan... Reuse existing modules. No audit. No refactor. No business logic changes." … |
+| 285 | `modules/finance/dana-kelolaan-presenter.js` | 160 | Dana Kelolaan / Managed Funds Presenter (Sesi 195). Pola SAMA PERSIS PropertyManagementPresenter.render() (modules/asset/property-management-presenter.js, S102/Sesi 132): UI HANYA presenter, 100% reuse … |
 
 ## 2. Index fungsi/variabel global → file (urut abjad)
 
@@ -620,6 +627,8 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `AssetMaintenancePresenter` | `modules/asset/asset-maintenance-presenter.js` |
 | `AssetPortfolioAPI` | `modules/asset/asset-portfolio-api.js` |
 | `AssetPortfolioPresenter` | `modules/asset/asset-portfolio-presenter.js` |
+| `ATTR_FORM_MAP` | `modules/shop/cobek-etalase.js` |
+| `AttributeStore` | `modules/shop/generic/attribute-store.js` |
 | `autoBudgetName` | `budget.js` |
 | `autoFillVehTaxBiaya` | `car-notes.js` |
 | `AutoKat` | `modules/ai/kategorisasi-ai.js` |
@@ -669,6 +678,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `BudgetTabs` | `budget.js` |
 | `buildBackupPayload` | `modules/shared/backup-restore.js` |
 | `buildEvaluationView` | `modules/self-reward/self-reward-view.js` |
+| `buildHeaderErrorMsg` | `modules/shop/cobek-io.js` |
 | `buildLaporanExportData` | `laporan-export.js` |
 | `buildModalBodyHtml` | `modules/self-reward/self-reward-view.js` |
 | `buildSettingsFormHtml` | `modules/self-reward/self-reward-view.js` |
@@ -742,6 +752,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `catalogWebImportUiRenderPreview` | `modules/vehicle/vehicle-catalog-web-import-ui.js` |
 | `catalogWebImportUiToggleRow` | `modules/vehicle/vehicle-catalog-web-import-ui.js` |
 | `catatZakatDibayar` | `pajak-aset-ui-wrappers.js` |
+| `CategoryStore` | `modules/shop/generic/category-store.js` |
 | `catLearnKey` | `modules/shared/scan-ocr.js` |
 | `changeAbsensiWeek` | `modules/business/gaji-calc.js` |
 | `changeBillStatMonth` | `modules/finance/tagihan-kalender.js` |
@@ -1133,6 +1144,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `handleTxRenovBelumDibeli` | `modules/finance/tx-renov.js` |
 | `hashPin` | `modules/shared/keamanan-pin.js` |
 | `hasIntervalOverride` | `modules/vehicle/sparepart-servis.js` |
+| `HEADER_ALIAS` | `modules/shop/cobek-io.js` |
 | `hideDashCardEl` | `modules/shared/modules-render.js` |
 | `hideSuggestBox` | `modules/finance/transaksi.js` |
 | `hitungPBB` | `pajak-aset-ui-wrappers.js` |
@@ -1207,6 +1219,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `INVENTORY_MOVEMENT_LOCATIONS` | `modules/shop/business-flow-presenter.js` |
 | `INVENTORY_TRANSFER_STATUSES` | `modules/shop/business-flow-presenter.js` |
 | `InventoryEngine` | `modules/shop/inventory-engine.js` |
+| `InventoryService` | `modules/shop/generic/inventory-service.js` |
 | `InvestAI` | `modules/asset/invest-ai-widget.js` |
 | `Investment` | `modules/asset/investasi.js` |
 | `INVESTMENT_TYPES` | `modules/asset/investasi.js` |
@@ -1497,9 +1510,12 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `previewImportKatalog` | `modules/shop/cobek-io.js` |
 | `PriceReko` | `modules/shop/cobek-pricing.js` |
 | `PriceRekoWidget` | `modules/shop/cobek-pricing.js` |
+| `PricingService` | `modules/shop/generic/pricing-service.js` |
 | `printWindow` | `modules/shared/action-wrappers.js` |
 | `PriorityEngine` | `modules/cross/priority-engine.js` |
 | `PRODUCTION_BUILD_SYNCED_VERSION` | `modules/shared/features-helpers-global-security.js` |
+| `ProductRepository` | `modules/shop/generic/product-repository.js` |
+| `ProductStore` | `modules/shop/generic/product-store.js` |
 | `Produsen` | `modules/shop/cobek-order.js` |
 | `produsenActionDelete` | `modules/shared/action-wrappers.js` |
 | `produsenActionHarga` | `modules/shared/action-wrappers.js` |
@@ -1699,6 +1715,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `resetShopStockCart` | `modules/shop/cobek-tx-cart.js` |
 | `resetTxPageAndRender` | `modules/finance/filter-laporan.js` |
 | `resetTxShopSaleCart` | `modules/shop/cobek-tx-cart.js` |
+| `resolveAliasValue` | `modules/shop/cobek-io.js` |
 | `resolveFavoritEntries` | `modules/dashboard-hub/dashboard-hub-favorit-view.js` |
 | `resolveShopKategori` | `modules/shop/cobek-tx-cart.js` |
 | `resolveVehicleTxCategory` | `modules/finance/transaksi.js` |
@@ -1719,6 +1736,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `reviewSourceLastSnapshot` | `lifeos/adapters/review-adapter.js` |
 | `RIPPLE_SELECTOR` | `modules/shared/ripple-position.js` |
 | `RISKY_OPENER_SPECS` | `self-test.js` |
+| `rollbackShopItems` | `modules/shop/cobek-tx-cart.js` |
 | `RuleEngine` | `economic-intelligence/engine/rule-engine.js` |
 | `runBackup` | `modules/shared/backup-restore.js` |
 | `runDataHealthCheck` | `data-health-check.js` |
@@ -1999,6 +2017,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `STORAGE_QUOTA_ESTIMATE` | `modules/shared/data-archive.js` |
 | `subCatParentId` | `modules/shared/features-helpers-global-security.js` |
 | `subNamesForCat` | `modules/finance/kategori.js` |
+| `SupplierStore` | `modules/shop/generic/supplier-store.js` |
 | `syncBbmCost` | `modules/vehicle/vehicle-core.js` |
 | `syncBbmHargaChanged` | `modules/vehicle/vehicle-core.js` |
 | `syncBbmLiterFromCost` | `modules/vehicle/vehicle-core.js` |
