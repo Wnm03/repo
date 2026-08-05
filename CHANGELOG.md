@@ -1,3 +1,105 @@
+# Changelog — Sesi 387 (Fix `.calc-modal` "Tambah Transaksi" kepotong toolbar browser mobile)
+
+## Konteks
+
+Laporan user (screenshot Brave mobile): modal "Tambah Transaksi" bagian
+bawah (kalkulator/Scan Struk) kepotong di balik toolbar bawah browser.
+Detail di `FIX-v1086-to-v1087-s387-calc-modal-overflow-safearea.md`.
+
+## Perubahan
+
+- `styles.css` — `.calc-modal` ditambah `max-height`(vh+dvh)/
+  `overflow-y:auto`/`env(safe-area-inset-bottom)`, pola sama `.modal`.
+  `.qs-modal` ditambah fallback `max-height:88dvh` (sebelumnya cuma vh).
+- Versi `v1086` → `v1087`.
+
+---
+
+# Changelog — Sesi 386 (Audit CSV Import Shop: kolom `berat_kg`/`catatan` + audit hard-code "Cobek")
+
+## Konteks
+
+Audit implementasi CSV import Shop menyusul contoh file katalog nyata
+(`katalog-batu-merapi-v2_3-lengkap.csv`, header:
+`nama,kategori,harga_beli,harga_jual,stok,satuan,berat_kg,catatan`) +
+cek hard-code literal "Cobek" di kode app. Detail lengkap di
+`FIX-v1084-to-v1086-s386-csv-import-berat-catatan.md`.
+
+## Temuan
+
+- `ShopDataIO.parseShopCSV()` mengabaikan kolom `berat_kg`/`catatan`
+  tanpa warning (kolom tidak dikenali sama sekali).
+- Parser CSV (`split(',')` polos) salah memecah baris kalau kolom
+  berkutip berisi koma literal — bug nyata ditemukan di file katalog
+  contoh (kolom `catatan` baris 19-38).
+- Hard-code "Cobek" ditemukan (default subkategori transaksi legacy) —
+  disengaja utk kompatibilitas data lama, BUKAN bug, TIDAK diubah.
+
+## Perubahan
+
+- `modules/business/shop-data-io-api.js` — `_splitCsvLine()` (parser CSV
+  yg menghormati kutip, baru); `parseShopCSV()` kenal kolom `berat_kg`/
+  `catatan`; `commitShopRows()` petakan `berat`->`beratPerUnit` &
+  `catatan`->`product.catatan` (partial-update, fallback shape terjaga).
+- `modules/shop/generic/product-repository.js` — `createProduct()`
+  default `catatan:''`; `mutateSetField()` whitelist +`'catatan'`.
+- `tests/shop-data-io-csv-import.test.js` — 2 test lama diupdate ke shape
+  baru, 8 test baru (termasuk kasus catatan berkutip-koma & integrasi CSV
+  mirip file nyata).
+- Versi `v1084` → `v1086`.
+
+---
+
+
+
+## Konteks
+
+Laporan gj: kartu 💡 AI Insight di tab Mobil/Car Notes masih nunjukin
+reminder "STNK Tahunan jatuh tempo/sudah lewat" utk kendaraan yg
+pajaknya SEBENARNYA sudah dibayar — kejadian kalau pembayarannya dicatat
+manual lewat 💰 Tambah Transaksi di Keuangan (bukan lewat tombol ✅ Bayar
+di modal Pajak Kendaraan, yg otomatis advance `v[cfg.tglKey]` ke siklus
+berikutnya). Insight-nya cuma baca tanggal jatuh tempo tersimpan di data
+kendaraan, tidak pernah cross-check ke `D.transactions` — jadi kalau
+tanggalnya belum sempat di-update manual juga, insight nyangkut terus
+padahal transaksi pembayarannya sudah ada di Keuangan.
+
+## Perubahan
+
+- `modules/ai/feature-insights.js` — `MobilInsight.compute()`: sebelum
+  push item pajak kendaraan (STNK Tahunan/Ganti Plat 5th/Uji Kelayakan)
+  ke insight, cross-check dulu ke `D.transactions`: kalau ADA transaksi
+  `expense` yang note-nya mengandung label pajak (tanpa emoji) + nama
+  kendaraan, dengan tanggal transaksi dlm rentang wajar di sekitar
+  tanggal jatuh tempo saat ini (maks H-45 sebelum s/d H+30 sesudah),
+  item itu dianggap SUDAH DIBAYAR & tidak ditampilkan lagi di AI
+  Insight — meski field tanggal jatuh tempo kendaraan belum sempat
+  ke-refresh. SIM (bagian 2 insight ini) TIDAK diubah — tetap sesuai
+  perilaku lama, karena SIM tidak dibayar lewat transaksi Keuangan
+  bertipe reguler dgn pola note yg konsisten.
+- `app-bundle-a.min.js` — bundle produksi ikut disinkronkan (source
+  `MobilInsight.compute()` di bundle ini identik dgn file modul asli,
+  bukan hasil minify-obfuscate, jadi perubahan diterapkan sama persis).
+- `index.html`, `app_production.html`, `sw.js` — bump cache-busting
+  `?v=1083`→`?v=1084` & `CACHE_NAME` 'kw-cache-v1083'→'kw-cache-v1084'
+  supaya perubahan bundle di atas ke-load ulang, bukan kepakai versi
+  cache lama.
+
+## Belum dikerjakan
+
+- Reminder proaktif dashboard (`getProactiveReminders()` di
+  `vehicle-core.js`) masih murni baca tanggal jatuh tempo kendaraan,
+  BELUM di-cross-check ke transaksi seperti AI Insight di sesi ini —
+  di luar scope permintaan (spesifik minta sync "di AI insight"), bisa
+  disamakan di sesi lanjutan kalau memang mau dikonsistenkan juga.
+- Window pencocokan transaksi (H-45/H+30) pakai heuristik note-matching
+  (label + nama kendaraan) karena transaksi manual tidak punya link
+  eksplisit ke record pajak kendaraan (beda dgn Bill yg pakai
+  `taxLink.key`) — kalau user ganti nama kendaraan atau catatan
+  transaksinya tidak menyebut nama kendaraan persis, sync ini bisa
+  gagal cocok (fallback aman: insight tetap tampil, tidak ada risiko
+  false-hide pajak yg belum dibayar).
+
 # Changelog — Sesi 384 (Supplier per Batch + Riwayat PO Multi-Produk)
 
 ## Konteks
