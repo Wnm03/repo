@@ -1,3 +1,514 @@
+# Changelog — Sesi 384 (Supplier per Batch + Riwayat PO Multi-Produk)
+
+## Konteks
+
+2 ide follow-up TERAKHIR dari 4 ide lanjutan Sesi 381 (PO Multi-Produk):
+pilih Supplier/Produsen per batch, dan pisah tampilan "aktif" vs
+"riwayat" di daftar batch PO.
+
+## Perubahan
+
+- `modules/shop/business-flow-presenter.js`: `createPurchaseOrderBatch()`
+  terima parameter baru `supplier` (opsional, free-text, disimpan
+  di-trim ke tiap record `D.purchaseOrders` dalam batch). Ikut muncul di
+  `purchaseOrderBatches()`. `renderPurchaseOrderBatchList()` dipisah 2
+  kelompok (aktif = ORDERED, riwayat = RECEIVED, pola sama
+  `billArchiveList` di Buku Tagihan) — label section cuma muncul kalau
+  kedua kelompok sama-sama ada isinya.
+- `modules/shared/modals.js`: field baru "Supplier / Produsen (opsional)"
+  (`#pobSupplier`) di `purchaseOrderBatchModal`.
+- `tests/purchase-order-batch-s381.test.js` — +9 test baru.
+- Bundle di-rebuild — versi 1082 → 1083.
+
+## Verifikasi
+
+`node --test tests/*.test.js` — 2608 test, 2606 pass, 2 fail
+(pre-existing, sama seperti sesi-sesi sebelumnya). `node
+scripts/build.js` lolos penuh.
+
+## Status
+
+Semua 4 ide follow-up Sesi 381 (PO Multi-Produk) sudah selesai. Detail
+lengkap: `FIX-v1082-to-v1083-s384-purchase-order-supplier-riwayat.md`.
+
+# Changelog — Sesi 383 (Auto-suggest Qty dari Stok Minimum, PO Multi-Produk)
+
+## Konteks
+
+Follow-up ke-2 dari 4 ide lanjutan Sesi 381: tap sekali isi keranjang PO
+Multi-Produk sekaligus dari semua produk yang stoknya di bawah ambang
+minimum.
+
+## Perubahan
+
+- `modules/shop/business-flow-presenter.js`: `restockCandidatesForBatch()`
+  baru — 100% reuse `InventoryEngine.restockScan()`, balikin SEMUA
+  kandidat restock (beda dari `restockTripCandidate()` S206 yang cuma
+  ambil 1 paling urgent). `fillPurchaseOrderBatchCartFromRestock()`
+  baru — isi keranjang sekaligus, qty digabung kalau produk sudah ada
+  di keranjang.
+- `modules/shared/modals.js`: tombol "📉 Isi Otomatis dari Stok
+  Minimum" di `purchaseOrderBatchModal`.
+- `tests/purchase-order-batch-s381.test.js` — +5 test baru.
+- Bundle di-rebuild — versi 1081 → 1082.
+
+## Verifikasi
+
+`node --test tests/*.test.js` — 2601 test, 2599 pass, 2 fail
+(pre-existing, sama seperti sesi-sesi sebelumnya). `node
+scripts/build.js` lolos penuh.
+
+## Belum dikerjakan
+
+2 ide follow-up lain Sesi 381 masih terbuka (Supplier per batch,
+riwayat/archive batch). Detail lengkap:
+`FIX-v1081-to-v1082-s383-purchase-order-batch-restock-autofill.md`.
+
+# Changelog — Sesi 382 (Estimasi Biaya PO Multi-Produk)
+
+## Konteks
+
+Follow-up paling ringan dari 4 ide lanjutan Sesi 381 (PO Multi-Produk):
+keranjang PO belum menunjukkan estimasi total modal (Rp) sebelum
+disimpan.
+
+## Perubahan
+
+- `modules/shop/business-flow-presenter.js`: `_purchaseOrderBatchCartEstimatedCost()`
+  baru — 100% reuse `PurchaseEngine.estimatedCost()` (S198), 0 rumus
+  baru; mapping keranjang `{productId,qty}` -> shape `{product,
+  restockQty}`. `_renderPurchaseOrderBatchCart()` — ringkasan
+  `#pobCartSummary` nambah `· Estimasi Biaya: Rp ...` kalau > 0.
+- `tests/purchase-order-batch-s381.test.js` — +3 test baru.
+- Bundle di-rebuild — versi 1080 → 1081.
+
+## Verifikasi
+
+`node --test tests/*.test.js` — 2596 test, 2594 pass, 2 fail
+(pre-existing, sama seperti sesi-sesi sebelumnya). `node
+scripts/build.js` lolos penuh.
+
+## Belum dikerjakan
+
+3 ide follow-up lain Sesi 381 masih terbuka (Supplier per batch,
+riwayat/archive batch, auto-suggest qty dari stok minimum) — belum
+dikerjakan, sengaja dibatasi 1 concern/sesi. Detail lengkap:
+`FIX-v1080-to-v1081-s382-purchase-order-batch-estimated-cost.md`.
+
+# Changelog — Sesi 381 (PO Multi-Produk / Purchase Order Batch)
+
+## Konteks
+
+Lanjutan dari Sesi 378-380 (Purchase Order per produk): user sering
+memesan BANYAK produk sekaligus dari 1 Supplier dalam 1 kali PO,
+padahal `createPurchaseOrder()` sebelumnya cuma 1 produk per panggilan.
+Sesi ini nambah PO Multi-Produk — pola cart-nya 100% REUSE pola
+Inventory Transfer chip-tap (S243/S374).
+
+## Perubahan
+
+- `modules/shop/business-flow-presenter.js`:
+  - `createPurchaseOrderBatch({items})` baru — 1 PO bisa berisi banyak
+    produk sekaligus; tiap produk tetap jadi 1 record `D.purchaseOrders`
+    TERPISAH (0 breaking change ke `createPurchaseOrder()`/
+    `receivePurchaseOrder()`/riwayat lama), ditambah field `batchId`
+    (BARU, additive) buat mengelompokkan. Item invalid di-skip, bukan
+    gagalkan seluruh batch.
+  - `receivePurchaseOrderBatch(batchId)` baru — terima semua item
+    dalam 1 batch sekaligus, delegasi persis `receivePurchaseOrder()`
+    per item (idempotent).
+  - `purchaseOrderBatches()` baru — ringkasan semua batch, status
+    RECEIVED hanya kalau SEMUA item sudah diterima.
+  - UI cart: `openPurchaseOrderBatchModal()`, `_purchaseOrderBatchCartState`,
+    `renderPurchaseOrderBatchProductChips()`, `tapPurchaseOrderBatchChip()`,
+    `removePurchaseOrderBatchCartItem()`, `_renderPurchaseOrderBatchCart()`,
+    `savePurchaseOrderBatchFromModal()`, `renderPurchaseOrderBatchList()`,
+    `receivePurchaseOrderBatchFromUI()`.
+  - Tombol "🧾 Buat PO Multi-Produk" ditambah di kartu Purchase
+    (index 0, `#businessFlowGrid`).
+- `modules/shared/modals.js` — modal baru `purchaseOrderBatchModal`
+  disisipkan di MODAL_HTML tepat setelah `inventoryTransferModal`
+  (index 89, `shopKatalogDinamisModal` geser ke index 90).
+- `index.html`/`app_production.html` — container
+  `#businessFlowPurchaseOrderBatchList` ditambah di bawah
+  `#businessFlowTransferList`; `document.write(MODAL_HTML[N])` index
+  disamakan dgn drift array di atas.
+- `tests/purchase-order-batch-s381.test.js` — file baru, 17 test.
+- Bundle di-rebuild via `node scripts/build.js` -> versi 1079 -> 1080.
+
+---
+
+# Changelog — Sesi 380 (Purchase Order — riwayat semua PO per produk)
+
+## Konteks
+
+Lanjutan langsung dari catatan "Belum dikerjakan" Sesi 379: entry point
+UI Purchase Order (`renderPurchaseOrderBox()`) cuma nampilin PO
+TERBARU per produk — begitu PO lama (RECEIVED) tertimpa PO baru, tidak
+ada cara lihat lagi riwayat pembelian dari Supplier utk produk itu.
+Sesi ini nambah riwayat SEMUA Purchase Order per produk, 0 field D
+baru, 0 fungsi bisnis baru — murni tampilan atas `D.purchaseOrders`
+yang sudah ada dari S378.
+
+## Perubahan
+
+- `modules/shared/modals.js` — modal `productModal`: tambah container
+  `#productPurchaseOrderHistory` tepat di bawah
+  `#productPurchaseOrderBox`.
+- `modules/shop/business-flow-presenter.js`:
+  - `renderPurchaseOrderHistory(productId)` baru — filter
+    `D.purchaseOrders` by `productId`, sort terbaru dulu, tampilkan
+    SEMUA (qty, tanggal pesan, status/tanggal terima).
+  - `clickCreatePurchaseOrder()`/`clickReceivePurchaseOrder()` — ikut
+    panggil `renderPurchaseOrderHistory()` supaya riwayat langsung
+    sinkron setelah aksi.
+- `modules/shop/cobek-etalase.js` — panggil `renderPurchaseOrderHistory()`
+  saat `productModal` dibuka (persis di sebelah panggilan
+  `renderPurchaseOrderBox()` yang sudah ada).
+- `tests/inventory-movement-s238.test.js` — +6 test baru.
+- Bundle di-rebuild via `node scripts/build.js` -> versi 1078 -> 1079.
+
+## Cara apply manual (kalau tidak pakai full release)
+
+1. Timpa `modules/shared/modals.js`, `modules/shop/business-flow-presenter.js`,
+   `modules/shop/cobek-etalase.js`, dan `tests/inventory-movement-s238.test.js`
+   dgn versi di patch ini.
+2. Jalankan `node scripts/build.js` di root repo.
+3. `node --test tests/*.test.js` -> harus 2574/2576 pass (2 fail
+   pre-existing `dashHubNavigateToFeature`, tidak terkait patch ini).
+
+# Changelog — Sesi 379 (Purchase Order — entry point UI di modal Detail Produk)
+
+## Konteks
+
+Lanjutan langsung dari catatan "Belum dikerjakan" Sesi 378: fungsi
+`createPurchaseOrder()`/`receivePurchaseOrder()` sebelumnya cuma bisa
+dipanggil programatik (test) — belum ada tombol/UI nyata di modal
+Detail Produk (Shop). Sesi ini nambah entry point UI MINIMAL (bukan
+modul Purchasing lengkap) — 0 field D baru, 0 fungsi bisnis baru, 100%
+delegasi ke `createPurchaseOrder()`/`receivePurchaseOrder()`/
+`_latestPurchaseForProduct()` yang sudah ada dari S378.
+
+## Perubahan
+
+### 1. `modules/shared/modals.js`
+
+- Modal `productModal` — tambah container `#productPurchaseOrderBox`
+  (section "Purchase Order (Beli dari Supplier)") tepat di bawah
+  `#productMovementList`, di atas tombol "Simpan Produk". Sama pola
+  persis section "Inventory Movement" di atasnya.
+
+### 2. `modules/shop/business-flow-presenter.js`
+
+- **`renderPurchaseOrderBox(productId)`** (baru) — isi container di
+  atas. Kalau produk belum punya id (belum disimpan): tampil hint.
+  Kalau PO terakhir (`_latestPurchaseForProduct()`, S378) masih
+  `ORDERED`: tampil info qty+tanggal pesan + tombol "✅ Terima Barang
+  di Magelang". Selain itu (belum ada PO / PO terakhir `RECEIVED`):
+  tampil 1 input qty (`#pPoQty`, fixed id — pola sama field singleton
+  lain di modal ini mis. `#pStock`) + tombol "🧾 Buat Purchase Order".
+  Guard container/typeof, pola sama persis `renderMovement()` (S238).
+- **`clickCreatePurchaseOrder(productId)`** (baru) — handler WIRE
+  tombol "Buat Purchase Order": ambil qty dari `#pPoQty`, delegasi
+  100% ke `createPurchaseOrder()` (S378, validasi di sana), lalu
+  re-render box + `renderMovement()` supaya langsung sinkron tanpa
+  tutup-buka modal.
+- **`clickReceivePurchaseOrder(purchaseId, productId)`** (baru) —
+  handler WIRE tombol "Terima Barang di Magelang": delegasi 100% ke
+  `receivePurchaseOrder()` (S378, idempotent di sana), lalu re-render
+  box + `renderMovement()`.
+
+### 3. `modules/shop/cobek-etalase.js`
+
+- Saat `productModal` dibuka (fungsi yang sama yang sudah memanggil
+  `renderMovement()`), tambah 1 panggilan
+  `BusinessFlowPresenter.renderPurchaseOrderBox(p ? p.id : null)` —
+  sama pola guard/fallback persis panggilan `renderMovement()` tepat
+  di atasnya.
+
+### 4. `tests/inventory-movement-s238.test.js`
+
+- +6 test baru: `renderPurchaseOrderBox()` (guard DOM, productId
+  kosong, tampilan "belum ada PO", tampilan "PO ORDERED"),
+  `clickCreatePurchaseOrder()`, `clickReceivePurchaseOrder()`.
+
+## Cara verifikasi manual
+
+1. Buka Shop -> Etalase Produk -> tap salah satu produk (modal Detail
+   Produk / edit produk yang sudah tersimpan).
+2. Scroll ke section "Purchase Order (Beli dari Supplier)" di bawah
+   "Inventory Movement".
+3. Isi qty, tap "🧾 Buat Purchase Order" -> section berubah jadi info
+   "X pcs sedang dipesan..." + tombol "✅ Terima Barang di Magelang" +
+   section "Inventory Movement" di atasnya ikut pindah highlight ke
+   SUPPLIER (kalau belum ada sinyal lain yg menang, lihat prioritas
+   `currentLocation()` S378).
+4. Tap "✅ Terima Barang di Magelang" -> highlight pindah ke MAGELANG
+   STORAGE, section PO balik ke tampilan input qty (siap PO baru).
+
+## Belum dikerjakan (butuh keputusan produk terpisah)
+
+- Riwayat/list semua Purchase Order per produk (saat ini cuma PO
+  TERBARU yang ditampilkan, sesuai `_latestPurchaseForProduct()`).
+- Purchase Order lintas-produk (bikin 1 PO isi banyak produk sekaligus,
+  mis. seperti keranjang di Inventory Transfer S243).
+
+# Changelog — Sesi 378 (Purchase Order — record beli dari Supplier)
+
+## Konteks
+
+Lanjutan langsung dari catatan "Belum dikerjakan" Sesi 377: status
+SUPPLIER di chain Inventory Movement sebelumnya murni TEBAKAN dari
+`product.stock===0` — tidak ada record transaksi pembelian ke supplier
+sama sekali (`D.purchases` tidak ada). Sesi ini nambah record MINIMAL
+(bukan modul Purchasing lengkap) khusus utk kasih `currentLocation()`
+sinyal nyata di 2 tahap awal rantai (SUPPLIER/MAGELANG_STORAGE) yang
+sebelumnya cuma bisa dicapai lewat Manual Override (S376).
+
+## Perubahan
+
+### 1. `D.purchaseOrders` (koleksi baru)
+
+- Default `[]` + migration guard di
+  `modules/shared/features-helpers-global-security.js`, pola sama persis
+  `D.inventoryTransfers` (S243).
+- Record: `{id, productId, qty, status:'ORDERED'|'RECEIVED', createdDate,
+  receivedDate}`. TIDAK PERNAH menyentuh `D.products[idx].stock` — stok
+  tetap ditambah lewat alur restock yang sudah ada, PO ini murni penanda
+  status/lokasi.
+
+### 2. `BusinessFlowPresenter` (`modules/shop/business-flow-presenter.js`)
+
+- **`createPurchaseOrder({productId, qty})`** (baru) — catat 1 record
+  pesanan ke supplier. Validasi produk nyata + qty>0/finite, pola sama
+  persis `_validateTransferRequest()`/`createInventoryTransfer()` (S243).
+- **`receivePurchaseOrder(purchaseId)`** (baru) — Supplier -> Magelang
+  Storage. Idempotent (pola sama `receiveTransfer()`, S243) — dipanggil
+  2x pada PO yg sudah RECEIVED balik `alreadyReceived:true` tanpa timpa
+  `receivedDate`.
+- **`_latestPurchaseForProduct(productId)`** (baru, internal) — PO
+  TERBARU (by `createdDate`) utk 1 produk, pola sama
+  `_activeTransferForProduct()`/`_latestOrderForProduct()`.
+- **`currentLocation()`** — +1 pengecekan baru, DI BAWAH transfer aktif
+  (S377) & lifecycle order (S237/S238), DI ATAS fallback stok mentah:
+  PO status `RECEIVED` -> **MAGELANG_STORAGE** (lokasi yg sebelum sesi
+  ini TIDAK PERNAH bisa didapat otomatis sama sekali), PO status
+  `ORDERED` -> tetap **SUPPLIER**, tapi sekarang eksplisit dari record
+  nyata, bukan tebakan stok lagi.
+- 0 perubahan ke `renderMovement()`/Manual Override (S376)/Inventory
+  Transfer (S243/S377) — 100% tetap seperti semula.
+
+**Urutan prioritas `currentLocation()` SEKARANG (lengkap):** Manual
+Override (S376) > Inventory Transfer aktif ON_TRIP (S377) > lifecycle
+order/sale (S237/S238) > **Purchase Order (S378, baru)** > fallback stok
+mentah (lama, sekarang jadi jalur TERAKHIR, cuma dipakai kalau produk
+belum pernah punya PO/order/transfer sama sekali).
+
+**Sengaja TIDAK dikerjakan** (di luar scope minimal ini): UI/modal utk
+`createPurchaseOrder()`/`receivePurchaseOrder()` — sesi ini murni
+fondasi data/service (WIRE ke `currentLocation()`), pola sama Vehicle
+Reminder Foundation (S78) yg juga murni service dulu sebelum UI. Field
+harga/biaya per PO (estimasi biaya restock TETAP pakai
+`PurchaseEngine.estimatedCost()` yang sudah ada, S198 — tidak
+diduplikasi).
+
+## Test (baru)
+
+`tests/inventory-movement-s238.test.js` — 10 test baru:
+`createPurchaseOrder()` (produk tidak ada, qty invalid ×3, sukses),
+`receivePurchaseOrder()` (PO tidak ada, sukses + idempotent),
+`currentLocation()` × PO (SUPPLIER eksplisit dari PO ORDERED menang di
+atas fallback stok yg salah, MAGELANG_STORAGE dari PO RECEIVED, transfer
+aktif S377 tetap menang di atas PO, lifecycle order/sale tetap menang di
+atas PO lama, fallback stok lama tetap jalan kalau 0 PO).
+
+`node --test tests/*.test.js` → **2564/2566 pass** (2 failure
+pre-existing `dashHubNavigateToFeature`, sama seperti Sesi 376/377,
+tidak terkait sesi ini).
+
+## File yang diubah (manual)
+
+- `modules/shared/features-helpers-global-security.js` — default
+  `D.purchaseOrders:[]` + migration guard.
+- `modules/shop/business-flow-presenter.js` — `createPurchaseOrder()`/
+  `receivePurchaseOrder()`/`_latestPurchaseForProduct()` baru,
+  `currentLocation()` +1 pengecekan.
+- `tests/inventory-movement-s238.test.js` — 10 test baru (append).
+- `CHANGELOG.md` — entri Sesi 378 baru (prepend).
+
+## File yang di-generate ulang otomatis (`node scripts/build.js`)
+
+- `app-bundle-a.min.js`, `app-bundle-b.min.js` — bundle ulang (versi
+  source `s378-purchase-order-supplier`, belum diminify, esbuild tidak
+  terpasang — 100% valid).
+- `index.html`, `app_production.html` — `?v=1077`.
+- `sw.js` — `CACHE_NAME` → `kw-cache-v1077`.
+- `docs/FILE-MAP.md`, `docs/COVERAGE-PER-MODULE.md` — regenerasi
+  otomatis.
+
+## Belum dikerjakan (di luar scope, butuh keputusan produk)
+
+- UI/tombol nyata utk bikin & terima Purchase Order (saat ini
+  `createPurchaseOrder()`/`receivePurchaseOrder()` cuma bisa dipanggil
+  programatik — belum ada entry point di modal Detail Produk/Shop).
+  Kalau mau dipakai sungguhan di lapangan, ini target sesi lanjutan yg
+  jelas.
+- Field biaya/harga per PO, integrasi ke `PurchaseEngine`/laporan
+  restock.
+
+---
+
+# Changelog — Sesi 377 (Fix Sinkronisasi Inventory Transfer -> Inventory Movement)
+
+## Konteks
+
+Lanjutan audit yang diminta gj: cek sinkronisasi antara transaksi beli
+dari supplier (Purchase), rit transfer barang (Inventory Transfer,
+Magelang->Pekalongan, S243), dan transaksi jual ke konsumen + pengiriman
+(Sale/Delivery, S209-210/S237). Hasil audit: `currentLocation()` (S238,
+dasar tampilan Inventory Movement) **tidak pernah membaca
+`D.inventoryTransfers`** — padahal itu record NYATA rit yang sedang
+berjalan (status `ON_TRIP`/`RECEIVED`). Akibatnya produk yang SEDANG
+di-rit menuju Pekalongan tetap salah ditampilkan sbg SUPPLIER (kalau stok
+0) atau PEKALONGAN_STORAGE (kalau stok masih ada dari batch lama) — bukan
+ON_MOTOR yang seharusnya. Manual Override (S376) sempat jadi satu-satunya
+tambalan utk gap ini. Soal Purchase dari supplier: dikonfirmasi tidak ada
+record transaksi pembelian nyata (`D.purchases` tidak ada) — status
+SUPPLIER/PURCHASED di chain memang murni tebakan dari `stock===0`, di
+luar scope fix minimal sesi ini (butuh keputusan produk kalau mau
+dibuatkan modul Purchase order sungguhan).
+
+## Perubahan
+
+### `BusinessFlowPresenter.currentLocation()` (`modules/shop/business-flow-presenter.js`)
+
+- **`_activeTransferForProduct(productId)`** (baru, internal) — cari rit
+  `D.inventoryTransfers` berstatus `ON_TRIP` TERBARU (by `createdDate`)
+  yg `items`-nya memuat `productId` ini. Pola sama persis
+  `_latestOrderForProduct()` yg sudah ada — 0 field D baru, 0 index baru.
+- **`currentLocation()`** — tambah 1 pengecekan baru: kalau ada transfer
+  aktif (`ON_TRIP`) utk produk ini, balikin `ON_MOTOR` (+ `transferId`).
+  Urutan prioritas SEKARANG: Manual Override (S376) > **Transfer aktif
+  (S377, baru)** > lifecycle order (S237/S238 lama) > fallback stok (lama).
+  Transfer `RECEIVED` SENGAJA tidak dicek di sini — begitu diterima,
+  posisi sudah cukup terwakili derivasi order/stok yang sudah ada.
+- 0 perubahan ke `renderMovement()`/`setManualLocation()`/
+  `clearManualLocation()` (S376) — 100% tetap seperti semula, cuma
+  sumber derivasi otomatis yang bertambah akurat.
+
+## Test (baru)
+
+`tests/inventory-movement-s238.test.js` — 5 test baru: transfer `ON_TRIP`
+menang di atas fallback stok, menang di atas lifecycle order, transfer
+`RECEIVED` TIDAK dianggap aktif (balik ke derivasi biasa), pakai transfer
+TERBARU kalau ada beberapa rit aktif utk produk yg sama, Manual Override
+(S376) tetap menang di atas transfer aktif (S377).
+
+`node --test tests/*.test.js` → **2554/2556 pass** (2 failure
+pre-existing `dashHubNavigateToFeature`, sudah gagal sebelum sesi ini
+juga, tidak terkait file yang disentuh sesi ini — lihat catatan sama di
+CHANGELOG Sesi 376).
+
+## File yang diubah (manual)
+
+- `modules/shop/business-flow-presenter.js` — `currentLocation()` +1
+  pengecekan, `_activeTransferForProduct()` baru.
+- `tests/inventory-movement-s238.test.js` — 5 test baru (append, tidak
+  mengubah test lama).
+- `CHANGELOG.md` — entri Sesi 377 baru (prepend, file ini).
+
+## File yang di-generate ulang otomatis (`node scripts/build.js`)
+
+- `app-bundle-a.min.js`, `app-bundle-b.min.js` — bundle ulang (versi
+  source disamakan ke `s377-fix-inventory-transfer-sync-currentlocation`,
+  belum diminify, esbuild tidak terpasang di environment build — 100%
+  valid).
+- `index.html`, `app_production.html` — `?v=1076`.
+- `sw.js` — `CACHE_NAME` → `kw-cache-v1076`.
+- `docs/FILE-MAP.md`, `docs/COVERAGE-PER-MODULE.md` — regenerasi otomatis.
+
+## Belum dikerjakan (di luar scope sesi ini, butuh keputusan produk)
+
+- Modul Purchase order sungguhan (record transaksi beli dari supplier
+  dgn status PICKED_UP/dst) — saat ini status SUPPLIER murni tebakan dari
+  stok 0, TIDAK ada transaksi purchase nyata yang bisa dijadikan sumber.
+
+---
+
+# Changelog — Sesi 376 (Inventory Movement — Manual Override)
+
+## Konteks
+
+gj: "untuk inventori movement belum ada modulnya" — screenshot menunjukkan
+section "INVENTORY MOVEMENT" di modal Detail Produk (Shop) sudah tampil
+(rantai Supplier → Magelang Storage → On Motor → Pekalongan Storage →
+Packing → Shipped → Customer, dengan highlight posisi aktif), tapi
+`BusinessFlowPresenter.currentLocation()`/`renderMovement()` (S238) SELALU
+derivasi otomatis murni dari status transaksi (`lifecycleStatus()`, S237)
+atau fallback stok — 100% READ-ONLY, tidak ada cara set posisi barang
+manual kalau derivasi otomatis belum/tidak sesuai kenyataan lapangan
+(mis. barang baru dipindah ke motor tapi belum ada transaksi apapun yang
+tercatat, atau baru sampai Pekalongan tapi produk itu stoknya masih 0).
+Itulah "modul" yang dimaksud belum ada: kontrol manual, bukan sekadar
+tampilan.
+
+## Perubahan
+
+### 1. `BusinessFlowPresenter` (`modules/shop/business-flow-presenter.js`)
+
+- `currentLocation(productId)` — cek `D.productMovementOverride[productId]`
+  LEBIH DULU sebelum derivasi otomatis (lifecycle/stok yang sudah ada).
+  Kalau override ada, balikin `{ok:true, location, manual:true, ts}` —
+  0 perubahan pada jalur derivasi otomatis lama (tetap fallback kalau tidak
+  ada override).
+- `setManualLocation(productId, locationKey)` — SATU-SATUNYA titik masuk
+  utk menyimpan override. Validasi: productId harus produk nyata di
+  `D.products`, locationKey harus salah satu dari 7 key
+  `INVENTORY_MOVEMENT_LOCATIONS` (case-insensitive, dinormalisasi ke
+  UPPERCASE). Simpan `{location, ts}` ke
+  `D.productMovementOverride[productId]`, panggil `save()` kalau ada.
+- `clearManualLocation(productId)` — hapus override, balik ke derivasi
+  otomatis.
+- `renderMovement(productId)` — tiap baris rantai sekarang **tappable**
+  (`data-action="BusinessFlowPresenter.clickMovementRow"`, pola sama
+  data-action lain di project). Kalau lagi override manual, muncul hint
+  "📍 Lokasi diset manual..." + tombol "🔄 Reset ke Otomatis".
+- `clickMovementRow(productId, locationKey)` / `clickResetMovement(productId)`
+  — handler WIRE tipis: delegasi ke `setManualLocation()`/
+  `clearManualLocation()` lalu re-render container (tanpa perlu
+  tutup-buka modal).
+
+### 2. `D.productMovementOverride` (koleksi baru)
+
+- Ditambahkan ke default `D` object (`features-helpers-global-security.js`)
+  + migration guard `if(!D.productMovementOverride) D.productMovementOverride={}`
+  utk data lama yang belum punya field ini.
+- BUKAN stok baru — object map `{[productId]: {location, ts}}`, murni
+  penanda posisi, TIDAK PERNAH menyentuh `D.products[idx].stock`.
+
+### 3. `Etalase.delete()` (`modules/shop/cobek-etalase.js`)
+
+- Bersihkan `D.productMovementOverride[productId]` saat produk dihapus,
+  supaya tidak ada entry basi mengarah ke productId yang sudah tidak ada.
+
+### 4. Tests (`tests/inventory-movement-s238.test.js`)
+
+- 6 test baru: validasi `setManualLocation()` (produk tidak ada, lokasi
+  tidak valid, menang di atas derivasi otomatis, normalisasi lowercase),
+  `clearManualLocation()` (balik ke otomatis), dan
+  `clickMovementRow()`/`clickResetMovement()` (wiring + re-render).
+- Total suite: 2551 test, 2549 pass (2 fail pre-existing di
+  `dashboard-hub-goto-subtab.test.js`, tidak terkait perubahan sesi ini).
+
+## Yang TIDAK berubah
+
+- 0 rumus stok baru, 0 field baru di `D.products`, 0 halaman/modal baru
+  (container `#productMovementList` di `productModal` sudah ada sejak
+  S238) — murni tambahan interaktivitas + 1 koleksi override kecil.
+- Derivasi otomatis (lifecycle transaksi S237 / fallback stok) tetap jadi
+  default kalau belum pernah di-override manual — 0 perubahan perilaku
+  utk produk yang belum pernah disentuh fitur ini.
+
 # Changelog — Sesi 362 (Modul 4 — Product Repository: Price Mutation Gate)
 
 ## Konteks
