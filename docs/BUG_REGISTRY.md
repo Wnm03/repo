@@ -1114,8 +1114,31 @@ Status: **BY DESIGN**
 | AUD-004 | Source/bundle drift | project contains multiple HTML artifacts | OPEN |
 | AUD-005 | Dashboard/widget ownership | multiple migrations/dedup efforts | OPEN |
 | AUD-006 | Data fallback resolution | historical fallback ambiguity fixes | OPEN |
+| AUD-007 | `Zakat.hitungMaal()` (pajak-pbb-zakat.js) baca `document.getElementById('zmUtang').value` tanpa guard `if(el)`, dan memanggil `save()` sendiri di dalam badannya — TIDAK aman dipanggil dari `save()` (lihat s422i, `FIX-v1136-to-v1137-s422i-revert-hitungzakatmaal-guard.md`); kalau mau auto-refresh Zakat Maal dari `save()` nanti, refactor dulu: pisahkan baca input DOM dari kalkulasi murni, hilangkan panggilan `save()` rekursif | OPEN |
 
 `OPEN` here means **requires verification**, not confirmed bug.
+
+---
+
+## BUG-015
+
+- Severity: Medium
+- Domain: Finance (cicilan, utang, langganan, tagihan bulanan) + Sewa Kios + Scan OCR paylater
+- Requirement ID: —
+- File: `modules/shared/features-helpers-global-security.js` (helper baru `addMonthsClamped()`); call site: `modules/business/sewakios.js`, `modules/finance/tagihan-kalender.js` (6 lokasi), `modules/finance/piutang-utang.js`, `modules/finance/transaksi.js` (3 lokasi), `modules/shared/scan-ocr.js`
+- Line: lihat `FIX-v1111-to-v1112-s406-bug015-date-overflow-clamp.md` untuk daftar lengkap per file
+- Function/component: `nextTagih()`, `revertBillFromDeletedTx()`, `advanceBillNextDue()`, `getBillCalendarRange()`/`getBillCalendarMonth()` (occurrence loop), `defaultNextDue()`, `onCicilanTenorSelectChange()`, `saveTx()` (cicilan & langganan), `maybeOfferPaylaterReminder()`
+- Trigger: Menghitung tanggal jatuh tempo bulan berikutnya (atau mundur 1 bulan) dari tanggal dasar yang tidak ada di bulan tujuan (mis. tanggal 29/30/31 dan bulan tujuan lebih pendek).
+- Actual: `Date.setMonth()` native JavaScript overflow otomatis ke bulan berikutnya alih-alih clamp ke hari terakhir bulan tujuan — contoh 31 Jan + 1 bulan menghasilkan 3 Mar (bukan 28/29 Feb).
+- Expected: Tanggal jatuh tempo di-clamp ke hari terakhir bulan tujuan kalau tanggal asal tidak ada di bulan itu (31 Jan + 1 bulan → 28 Feb / 29 Feb tahun kabisat), sesuai ekspektasi kalender pada umumnya untuk recurrence bulanan.
+- Root cause: Seluruh 12 call site memakai pola native `d.setMonth(d.getMonth()+n)` langsung tanpa mekanisme clamp; ini perilaku default JS Date, bukan bug logic aplikasi, tapi tidak sesuai ekspektasi bisnis untuk jatuh tempo bulanan.
+- Impact: Tanggal jatuh tempo cicilan/langganan/tagihan/sewa yang bermula di tanggal 29/30/31 melompat tidak konsisten (kadang ke bulan berikutnya, bukan akhir bulan target) — berpotensi salah tampil di kalender tagihan, salah urutan reminder, dan hitungan sisa tenor cicilan meleset saat dibatalkan/direvert (arah mundur).
+- Reproduction: Buat cicilan dgn `nextDue=2026-01-31`, panggil alur "bayar" (advance +1 bulan) → sebelum fix hasilnya `2026-03-03`, seharusnya `2026-02-28`.
+- Evidence: Diverifikasi manual dgn skrip Node terhadap kasus tepi (kabisat, mundur bulan, lintas tahun, tanggal tanpa overflow) — lihat lampiran verifikasi di `FIX-v1111-to-v1112-s406-bug015-date-overflow-clamp.md`.
+- Fix: Tambah helper `addMonthsClamped(base, months)` (geser ke tanggal 1 dulu sebelum `setMonth()` supaya pergeseran bulan itu sendiri tidak overflow, lalu clamp tanggal asli ke hari terakhir bulan tujuan) di `modules/shared/features-helpers-global-security.js`; ganti seluruh 12 call site recurrence bulanan yang relevan. 4 file yang bisa dimuat berdiri sendiri oleh test harness (`tagihan-kalender.js`, `piutang-utang.js`, `transaksi.js`, `scan-ocr.js`) diberi fallback lokal `_amc015()` dgn algoritma identik.
+- Regression test: Tidak ada test baru dibuat (sesuai instruksi sesi); 2721 test suite existing (`npm test`) tetap 100% PASS setelah fix — termasuk 3 file test (`s285`, `s292`, `s303`) yang perlu disesuaikan agar ikut meng-extract fungsi `_amc015()` ke sandbox vm mereka (brace-counting manual atas `advanceBillNextDue()`).
+- Verification: `node --test tests/*.test.js` → 2721 pass / 0 fail. Bundle build (`node scripts/build.js s406-bug015-date-overflow-clamp`) sukses, sintaks bundle valid.
+- Status: FIXED (v1112, sesi s406)
 
 ---
 
