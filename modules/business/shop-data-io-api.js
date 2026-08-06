@@ -23,10 +23,14 @@
 // (partial, field yg tidak dikirim TIDAK ditimpa), belum ada = buat baru
 // dengan shape objek produk yang sama persis dipakai di seluruh Shop.
 const ShopDataIO = {
-  // rows: {nama, kategori?, hargaBeli?, hargaJual?, hargaReseller?, stok?, satuan?}[]
+  // rows: {nama, kategori?, hargaBeli?, hargaJual?, hargaReseller?, stok?,
+  // satuan?, berat?, catatan?}[]
   // Field opsional yang tidak dikirim (undefined/null) TIDAK menimpa data lama
   // pada produk yang sudah ada — sama prinsip partial-update dgn
   // TorsiVehicleAPI.setCheck() (Bagian A, lihat torsi-vehicle-api.js).
+  // `berat` (Sesi 386) -> map ke field fisik `beratPerUnit` yang SUDAH ADA
+  // (dipakai OngkirCalc/Smart Delivery Engine). `catatan` (Sesi 386) -> field
+  // teks bebas `product.catatan` (baru, lihat ProductRepository).
   commitShopRows(rows) {
     if (!Array.isArray(rows) || !rows.length) return { ok: false, created: 0, updated: 0, total: 0 };
     let created = 0, updated = 0;
@@ -59,27 +63,119 @@ const ShopDataIO = {
           if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetField(product, 'satuan', r.satuan);
           else product.satuan = r.satuan;
         }
+        if (r.berat !== undefined && r.berat !== null && r.berat > 0) {
+          // beratPerUnit dirute lewat ProductRepository.updateProduct() —
+          // BEDA dari gate lain di atas (mutateSetPrice/mutateSetStock/
+          // mutateSetField, yang mutasi in-place): updateProduct() PURE
+          // (balikin objek produk BARU, tidak mengubah `product` yang lama)
+          // sama seperti dipakai WeightBulkWidget.applyOne() (cobek-pricing.js)
+          // — jadi hasilnya WAJIB ditimpakan balik ke index-nya di
+          // `D.products`, bukan cuma diandalkan sbg mutasi `product` di sini.
+          if (typeof ProductRepository !== 'undefined') {
+            const rw = ProductRepository.updateProduct(product, { beratPerUnit: r.berat });
+            if (rw.ok) {
+              const pi = D.products.indexOf(product);
+              if (pi > -1) D.products[pi] = rw.product;
+              product = rw.product;
+            }
+          } else {
+            product.beratPerUnit = r.berat;
+          }
+        }
+        if (r.catatan) {
+          if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetField(product, 'catatan', r.catatan);
+          else product.catatan = r.catatan;
+        }
         if (kategoriId) {
           if (typeof ProductRepository !== 'undefined') ProductRepository.mutateSetField(product, 'kategoriId', kategoriId);
           else product.kategoriId = kategoriId;
         }
         updated++;
       } else {
-        product = {
-          id: 'prod_' + Date.now() + '_' + uid(),
-          name: nama,
-          stock: r.stok || 0,
-          hargaBeli: r.hargaBeli || 0,
-          hargaJual: r.hargaJual || 0,
-          hargaReseller: (r.hargaReseller !== undefined && r.hargaReseller !== null) ? r.hargaReseller : null,
-          diskonPersen: 0,
-          kategoriId,
-          produsenId: '',
-          hargaByProdusen: {},
-          satuan: r.satuan || '',
-        };
-        D.products.push(product);
-        created++;
+        // Modul 13 (sesi ini, "CSV Import Product Mutation Gate"): create
+        // produk baru dari CSV (dan Scan/PDF/Paste — SEMUANYA lewat SATU
+        // fungsi commit ini, lihat komentar header file) lewat
+        // ProductRepository.createProduct()+saveProduct() (SSOT yang SUDAH
+        // ADA sejak Tahap 4/6, dipakai Etalase.save()/applyTxShopStockFromTx()
+        // Modul 11/ImportShopExcel.commit() cabang .xlsx) — menggantikan
+        // `D.products.push({...object literal...})` mentah. Id TETAP pakai
+        // generator LOKAL 'prod_'+Date.now()+'_'+uid() (LITERAL SAMA PERSIS
+        // spt sebelum Modul 13, BUKAN ProductRepository._genId() yang tanpa
+        // suffix uid()) — ditimpa SETELAH createProduct() supaya 0 perubahan
+        // mekanisme anti-tabrakan id yang sudah dipakai fungsi ini sejak
+        // awal. uid() sendiri adalah counter monotonic (lihat
+        // features-helpers-global-security.js), jadi kombinasi ini SUDAH
+        // aman dari tabrakan id meski dipanggil berkali-kali pada forEach
+        // sinkron (batch import CSV banyak baris) — bukan solusi sementara,
+        // bukan perubahan sistem id aplikasi.
+        if (typeof ProductRepository !== 'undefined') {
+          const cr = ProductRepository.createProduct({
+            name: nama,
+            stock: r.stok || 0,
+            hargaBeli: r.hargaBeli || 0,
+            hargaJual: r.hargaJual || 0,
+            hargaReseller: (r.hargaReseller !== undefined && r.hargaReseller !== null) ? r.hargaReseller : null,
+            diskonPersen: 0,
+            kategoriId,
+            produsenId: '',
+            hargaByProdusen: {},
+            satuan: r.satuan || '',
+            beratPerUnit: r.berat || 0,
+            catatan: r.catatan || '',
+          });
+          if (cr.ok) {
+            const newProduct = { ...cr.product, id: 'prod_' + Date.now() + '_' + uid() };
+            const sr = ProductRepository.saveProduct(D.products, newProduct);
+            // Fail-safe: kalau saveProduct() menolak (mis. id ganda --
+            // praktis tidak pernah terjadi krn uid() monotonic, tapi tetap
+            // disediakan sesuai pola gate lain), fallback push mentah
+            // supaya baris CSV ini tidak hilang / batch tidak berhenti.
+            if (sr.ok) D.products = sr.products; else D.products.push(newProduct);
+            created++;
+          } else {
+            product = {
+              id: 'prod_' + Date.now() + '_' + uid(),
+              name: nama,
+              stock: r.stok || 0,
+              hargaBeli: r.hargaBeli || 0,
+              hargaJual: r.hargaJual || 0,
+              hargaReseller: (r.hargaReseller !== undefined && r.hargaReseller !== null) ? r.hargaReseller : null,
+              diskonPersen: 0,
+              kategoriId,
+              produsenId: '',
+              hargaByProdusen: {},
+              satuan: r.satuan || '',
+              beratPerUnit: r.berat || 0,
+              catatan: r.catatan || '',
+            };
+            D.products.push(product);
+            created++;
+          }
+        } else {
+          product = {
+            id: 'prod_' + Date.now() + '_' + uid(),
+            name: nama,
+            stock: r.stok || 0,
+            hargaBeli: r.hargaBeli || 0,
+            hargaJual: r.hargaJual || 0,
+            hargaReseller: (r.hargaReseller !== undefined && r.hargaReseller !== null) ? r.hargaReseller : null,
+            diskonPersen: 0,
+            kategoriId,
+            produsenId: '',
+            hargaByProdusen: {},
+            satuan: r.satuan || '',
+          };
+          // Fallback tanpa ProductRepository (SAMA POLA SEBELUM Modul 13):
+          // beratPerUnit/catatan HANYA ditambah kalau row benar-benar
+          // mengirim nilainya — supaya shape objek produk fallback ini
+          // TETAP PERSIS SAMA seperti sebelum Sesi 386 kalau row tidak
+          // pernah kirim kedua kolom baru itu (row CSV lama tanpa
+          // berat_kg/catatan tetap 0 perubahan shape).
+          if (r.berat) product.beratPerUnit = r.berat;
+          if (r.catatan) product.catatan = r.catatan;
+          D.products.push(product);
+          created++;
+        }
       }
     });
     save();
@@ -88,14 +184,37 @@ const ShopDataIO = {
 
   // Parser CSV sederhana (§B.3.3): String.split('\n')+split(',') — codebase
   // belum pakai papaparse, konsisten prinsip "no extra dependency kalau tidak
-  // perlu" (kalau nanti ada quoting koma di nama produk, baru upgrade).
-  // Header wajib: nama,kategori,harga_beli,harga_jual,stok,satuan (urutan
-  // kolom bebas, cocokkan lewat nama header, bukan posisi tetap).
+  // perlu". Header wajib: nama (kolom lain opsional, urutan bebas, dicocokkan
+  // lewat nama header, bukan posisi tetap): kategori, harga_beli, harga_jual,
+  // stok, satuan, berat_kg, catatan.
+  //
+  // Sesi 386 (audit CSV import — kolom berat_kg/catatan hilang, lihat
+  // FIX-v1084-to-v1085-s404-lint-overlay-open-reflow-guard.md):
+  //  1. `berat_kg`/`catatan` ditambah ke daftar kolom yang dikenali (dulu
+  //     cuma nama/kategori/harga_beli/harga_jual/stok/satuan — file katalog
+  //     nyata (mis. katalog batu Merapi) yang punya kolom berat_kg & catatan
+  //     dulu diimpor tapi kedua kolom itu DIABAIKAN diam-diam, tidak ada
+  //     warning). `berat_kg` dipetakan ke `berat` (row) -> `beratPerUnit`
+  //     (field fisik produk yang SUDAH ADA, dipakai OngkirCalc/Smart
+  //     Delivery Engine — lihat attribute-store.js), BUKAN field baru.
+  //     `catatan` dipetakan ke field baru `product.catatan` (teks bebas,
+  //     lihat ProductRepository.mutateSetField() & createProduct()).
+  //  2. `_splitCsvLine()` (baru, dipakai gantikan `line.split(',')` mentah)
+  //     — parser CSV per-baris yang MENGHORMATI tanda kutip ganda (field yg
+  //     dibungkus `"..."` boleh berisi koma literal & `""` sbg escape utk
+  //     kutip literal di dalamnya, sesuai RFC4180 dasar). Ini FIX bug nyata
+  //     yang ditemukan di file katalog-batu-merapi-v2_3-lengkap.csv: baris
+  //     kolom catatan berisi koma di dalam kutip (mis. `">30cm: harga
+  //     sengaja kosong (belum ditetapkan, sesuai master)"`) — split(',')
+  //     polos memecah baris itu jadi kolom yang salah/bergeser. TIDAK
+  //     menangani field kutip yang mengandung newline (baris dipecah lebih
+  //     dulu lewat `text.split(/\r?\n/)` di atas) — di luar cakupan data
+  //     nyata yang pernah ditemukan, bisa diperluas nanti kalau perlu.
   parseShopCSV(text) {
     if (!text || !text.trim()) return [];
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     if (lines.length < 1) return [];
-    const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    const header = this._splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
     const idx = {
       nama: header.indexOf('nama'),
       kategori: header.indexOf('kategori'),
@@ -103,15 +222,22 @@ const ShopDataIO = {
       hargaJual: header.indexOf('harga_jual'),
       stok: header.indexOf('stok'),
       satuan: header.indexOf('satuan'),
+      berat: header.indexOf('berat_kg'),
+      catatan: header.indexOf('catatan'),
     };
     if (idx.nama === -1) return [];
     const toInt = (v) => {
       const digits = String(v || '').replace(/[^\d]/g, '');
       return digits ? parseInt(digits, 10) : 0;
     };
+    const toFloat = (v) => {
+      const s = String(v || '').trim().replace(',', '.');
+      const n = parseFloat(s.replace(/[^\d.]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
     const rows = [];
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',');
+      const cols = this._splitCsvLine(lines[i]);
       const nama = (cols[idx.nama] || '').trim();
       if (!nama) continue;
       rows.push({
@@ -121,9 +247,45 @@ const ShopDataIO = {
         hargaJual: idx.hargaJual > -1 ? toInt(cols[idx.hargaJual]) : 0,
         stok: idx.stok > -1 ? toInt(cols[idx.stok]) : 0,
         satuan: idx.satuan > -1 ? (cols[idx.satuan] || '').trim() : '',
+        berat: idx.berat > -1 ? toFloat(cols[idx.berat]) : 0,
+        catatan: idx.catatan > -1 ? (cols[idx.catatan] || '').trim() : '',
       });
     }
     return rows;
+  },
+
+  // _splitCsvLine(line) — pecah SATU baris CSV jadi array kolom, menghormati
+  // tanda kutip ganda (RFC4180 dasar): field yang dibungkus `"..."` boleh
+  // berisi koma literal, dan `""` di dalam field berkutip jadi karakter `"`
+  // literal (escape standar). Field TANPA kutip diperlakukan sama seperti
+  // `split(',')` biasa (tidak ada perubahan perilaku utk file lama yang tidak
+  // pakai kutip sama sekali). Baru dipakai oleh parseShopCSV() (Sesi 386) —
+  // tidak menyentuh parser CSV lain di luar Shop (mis. sparepart-servis.js
+  // punya parser CSV sendiri, sengaja tidak disatukan sesi ini, di luar
+  // scope perbaikan yang diminta).
+  _splitCsvLine(line) {
+    const cols = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; }
+        } else {
+          cur += ch;
+        }
+      } else if (ch === '"' && cur === '') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        cols.push(cur);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    cols.push(cur);
+    return cols;
   },
 
   // exportShopJSON() (§B.3.4, item terakhir Bagian B) — subset Shop-only
@@ -191,10 +353,39 @@ const ShopDataIO = {
         ? ProductStore.findByName(nama)
         : D.products.find((p) => p.name.toLowerCase() === nama.toLowerCase());
       if (product) {
-        copyFields.forEach((f) => { if (src[f] !== undefined && src[f] !== null) product[f] = src[f]; });
+        // Modul 16 (sesi ini): Import JSON Product Mutation Gate — reroute
+        // titik TULIS `product[f]=src[f]` mentah (update produk existing saat
+        // Import JSON mode 'gabung') lewat ProductRepository, field per
+        // field ke gate yang SUDAH ADA (Modul 3-15) sesuai jenisnya (harga ->
+        // mutateSetPrice(), stock -> mutateSetStock(), diskonPersen ->
+        // mutateSetDiskon(), kategoriId/produsenId/satuan -> mutateSetField())
+        // — pola & fallback PERSIS SAMA dgn ImportShopExcel.commit()
+        // (cobek-io.js, target 'etalase', Modul 14/15): guard typeof
+        // ProductRepository saja (module belum dimuat -> raw assignment
+        // lama); TIDAK ada fallback raw tambahan kalau gate menolak nilai
+        // (fail-safe gate itu sendiri sudah ada & sengaja dipertahankan —
+        // sama perilaku call site lain). 0 gate baru, 0 validasi baru.
+        copyFields.forEach((f) => {
+          if (src[f] === undefined || src[f] === null) return;
+          if (typeof ProductRepository === 'undefined') { product[f] = src[f]; return; }
+          if (f === 'hargaBeli' || f === 'hargaJual' || f === 'hargaReseller') { ProductRepository.mutateSetPrice(product, f, src[f]); return; }
+          if (f === 'diskonPersen') { ProductRepository.mutateSetDiskon(product, src[f]); return; }
+          if (f === 'kategoriId' || f === 'produsenId' || f === 'satuan') { ProductRepository.mutateSetField(product, f, src[f]); return; }
+          if (f === 'stock') { ProductRepository.mutateSetStock(product, src[f]); return; }
+        });
         updated++;
       } else {
-        D.products.push({
+        // Modul 16 (sesi ini): create produk BARU saat Import JSON dialihkan
+        // lewat ProductRepository.createProduct()+saveProduct() — SSOT yang
+        // SUDAH ADA (Tahap 4/6), pola & fallback PERSIS SAMA dgn Modul 13/14
+        // (shop-data-io-api.js commitShopRows() / cobek-io.js
+        // ImportShopExcel.commit()): id TETAP pakai generator LOKAL
+        // 'prod_'+Date.now()+'_'+uid() (bukan ProductRepository._genId()),
+        // ditimpa SETELAH createProduct(); kalau ProductRepository belum
+        // dimuat ATAU createProduct()/saveProduct() menolak, fallback ke
+        // object literal mentah PERSIS spt sebelum Modul 16 supaya baris
+        // tidak pernah hilang.
+        const rawProduct = {
           id: 'prod_' + Date.now() + '_' + uid(),
           name: nama,
           stock: src.stock || 0,
@@ -206,7 +397,30 @@ const ShopDataIO = {
           produsenId: src.produsenId || '',
           hargaByProdusen: src.hargaByProdusen || {},
           satuan: src.satuan || '',
-        });
+        };
+        if (typeof ProductRepository !== 'undefined') {
+          const cr = ProductRepository.createProduct({
+            name: nama,
+            stock: src.stock || 0,
+            hargaBeli: src.hargaBeli || 0,
+            hargaJual: src.hargaJual || 0,
+            hargaReseller: src.hargaReseller || null,
+            diskonPersen: src.diskonPersen || 0,
+            kategoriId: src.kategoriId || '',
+            produsenId: src.produsenId || '',
+            hargaByProdusen: src.hargaByProdusen || {},
+            satuan: src.satuan || '',
+          });
+          if (cr.ok) {
+            const newProduct = { ...cr.product, id: rawProduct.id };
+            const sr = ProductRepository.saveProduct(D.products, newProduct);
+            if (sr.ok) D.products = sr.products; else D.products.push(newProduct);
+          } else {
+            D.products.push(rawProduct);
+          }
+        } else {
+          D.products.push(rawProduct);
+        }
         created++;
       }
     });
@@ -214,12 +428,27 @@ const ShopDataIO = {
     // update produsen existing, konsisten prinsip Gabung = additive utk
     // data yang berpotensi konflik (kontak/catatan tidak ada penanda
     // "field kosong" yang jelas seperti pada produk).
+    // Modul 16 (sesi ini): create produsen BARU saat Import JSON dialihkan
+    // lewat SupplierStore.mutateCreate() — SSOT yang SUDAH ADA (Modul 7),
+    // pola & fallback PERSIS SAMA dgn create produk di atas: id TETAP
+    // generator LOKAL 'prd_'+Date.now()+'_'+uid(), ditimpa SETELAH
+    // mutateCreate(); guard typeof SupplierStore + fallback object literal
+    // mentah kalau module belum dimuat ATAU mutateCreate() menolak (nama
+    // kosong — sudah difilter `if(!p||!p.name)return;` di atas, jadi kasus
+    // ini praktis tidak pernah terjadi, tapi fallback tetap dijaga sesuai
+    // pola fail-safe seluruh gate lain).
     let produsenCreated = 0;
     produsenList.forEach((p) => {
       if (!p || !p.name) return;
       const exists = D.produsen.find((x) => x.name.toLowerCase() === String(p.name).toLowerCase());
       if (!exists) {
-        D.produsen.push({ id: 'prd_' + Date.now() + '_' + uid(), name: p.name, contact: p.contact || '', note: p.note || '' });
+        const rawSupplier = { id: 'prd_' + Date.now() + '_' + uid(), name: p.name, contact: p.contact || '', note: p.note || '' };
+        if (typeof SupplierStore !== 'undefined') {
+          const sr = SupplierStore.mutateCreate({ name: p.name, contact: p.contact || '', note: p.note || '' });
+          if (sr.ok) D.produsen.push({ ...sr.supplier, id: rawSupplier.id }); else D.produsen.push(rawSupplier);
+        } else {
+          D.produsen.push(rawSupplier);
+        }
         produsenCreated++;
       }
     });
@@ -268,7 +497,7 @@ const ShopCsvImport = {
     const btn = document.getElementById('shopCsvImportCommitBtn');
     if (!box) return;
     if (!this.parsedRows.length) {
-      box.innerHTML = '<div class="u-fs12 u-t2">Tidak ada baris valid terbaca. Pastikan file CSV punya header: nama,kategori,harga_beli,harga_jual,stok,satuan (kolom "nama" wajib ada).</div>';
+      box.innerHTML = '<div class="u-fs12 u-t2">Tidak ada baris valid terbaca. Pastikan file CSV punya header: nama,kategori,harga_beli,harga_jual,stok,satuan,berat_kg,catatan (kolom "nama" wajib ada, sisanya opsional).</div>';
       if (btn) btn.disabled = true;
       return;
     }
@@ -279,7 +508,7 @@ const ShopCsvImport = {
         : D.products.find((p) => p.name.toLowerCase() === r.nama.toLowerCase());
       if (exists) updated++; else created++;
       const statusLabel = exists ? '🔄 update' : '🆕 baru';
-      const sub = (r.stok || 0) + (r.satuan ? ' ' + r.satuan : '') + ' · ' + fmtFull(r.hargaJual || 0);
+      const sub = (r.stok || 0) + (r.satuan ? ' ' + r.satuan : '') + ' · ' + fmtFull(r.hargaJual || 0) + (r.berat ? ' · ' + r.berat + ' kg' : '');
       return `<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px"><span>${escapeHtml(r.nama)}</span><span style="white-space:nowrap">${escapeHtml(sub)} <span class="u-t2">(${statusLabel})</span></span></div>`;
     }).join('');
     const moreNote = this.parsedRows.length > 50 ? `<div class="u-fs11 u-t2" style="margin-top:6px">+${this.parsedRows.length - 50} baris lain tidak ditampilkan di pratinjau (tetap ikut diimpor)</div>` : '';
