@@ -116,6 +116,34 @@ function isAssetOwnershipSelf(a){
 if(typeof OwnershipEngine==='undefined')return true;
 return OwnershipEngine.resolve(a).type==='SELF';
 }
+// syncLinkedAssetNilaiFromAkun() -- Sesi 422f: lengkapi arah sync yang selama
+// ini BELUM ADA (dicatat sejak Sesi C: "arah sync SATU ARAH dari Aset->Akun,
+// bukan sebaliknya"). Transaksi (bayar/terima/transfer) yang terjadi LANGSUNG
+// di akun yang tertaut ke Aset (a.accountId) mengubah recalcAccBalance()
+// akun itu, tapi `a.nilai` di Buku Aset sebelumnya tidak pernah ketarik balik
+// -- user harus edit manual. Fix: dipanggil dari save() (titik tunggal,
+// pola sama invalidateAccBalCache()), tiap aset yang py accountId di-cek:
+// kalau saldo akun tertaut (ownPortion aktual) BEDA dari ownPortion yang
+// konsisten dgn a.nilai+porsi SEKARANG, `a.nilai` dikoreksi supaya kembali
+// konsisten -- porsi TIDAK diubah, cuma nilai TOTAL instrumen yang di-scale
+// balik dari ownPortion aktual (nilai = ownPortion/selfPorsi%). Idempotent:
+// kalau akun tertaut baru saja disamakan oleh Aset.save()/saveOwners()
+// (txDelta pattern), ownPortion aktual = ownPortion konsisten -> 0 perubahan.
+// Guard: skip aset tanpa accountId, akun yang sudah dihapus, atau selfPorsi
+// 0 (tidak bisa dibagi/tidak representatif).
+function syncLinkedAssetNilaiFromAkun(){
+if(!Array.isArray(D.assets)||typeof recalcAccBalance!=='function')return;
+D.assets.forEach((a)=>{
+if(!a.accountId)return;
+const acc=(D.accounts||[]).find(x=>sameId(x.id,a.accountId));
+if(!acc)return;
+const selfPorsi=(typeof MultiOwnerEngine!=='undefined')?MultiOwnerEngine.selfPorsi(a):100;
+if(!(selfPorsi>0))return;
+const ownPortionAktual=recalcAccBalance(acc.id);
+const nilaiBaru=Math.round(ownPortionAktual/(selfPorsi/100));
+if(nilaiBaru!==a.nilai)a.nilai=nilaiBaru;
+});
+}
 // AssetInsight — kartu "💡 Insight Aset" di paling atas halaman Aset (page-aset).
 // Tujuan: kasih ringkasan cepat yg butuh perhatian, TANPA user perlu buka semua
 // card di bawahnya satu-satu (Dashboard Aset, Performa Investasi, Histori
@@ -237,18 +265,13 @@ Aset._zakatableState=a?!!a.zakatable:false;
 const btn=document.getElementById('assetZakatableBtn');
 btn.textContent=Aset._zakatableState?'✓ Aktif':'Nonaktif';
 btn.className='chip-btn'+(Aset._zakatableState?' active':'');
-// Dana Titipan (permintaan user): satu instrumen investasi bisa campuran dana sendiri
-// & dana titipan investor/keluarga -- toggle + field terpisah, pola sama dgn
-// billShared/txCicilanShared (toggle -> tampilkan wrap). Nominal titipan disimpan apa
-// adanya (bukan %), disinkron ke Buku Utang lewat Aset._syncTitipanDebt() di save().
-const titipanToggle=document.getElementById('assetTitipanToggle');
-const titipanHasAmount=!!(a&&a.titipanAmount>0);
-if(titipanToggle)titipanToggle.checked=titipanHasAmount;
-document.getElementById('assetTitipanOwnerType').value=a&&a.titipanOwnerType?a.titipanOwnerType:'investor';
-document.getElementById('assetTitipanOwnerName').value=a&&a.titipanOwnerName?a.titipanOwnerName:'';
-document.getElementById('assetTitipanAmount').value=titipanHasAmount?a.titipanAmount:'';
-document.getElementById('assetTitipanWrap').classList.toggle('u-dnone',!titipanHasAmount);
-Aset.onTitipanOwnerTypeChange();
+// Dana Titipan -- Sesi C (tahap terakhir migrasi Dana Titipan -> Multi-Owner Engine):
+// dulu di sini toggle+field titipan (bisa diedit langsung) diisi ulang tiap modal
+// dibuka. Sekarang PURE read-only lewat _renderTitipanSummary() -- mengatur porsi
+// kepemilikan (termasuk dana titipan/patungan) SATU PINTU lewat tombol "⚖️ Atur Porsi
+// Kepemilikan" (openOwnersModal(), S392a+), bukan lagi 2 tempat terpisah yang bisa
+// gampang divergen satu sama lain.
+Aset._renderTitipanSummary(a);
 Aset.renderJenisFields(a);
 Aset.updateProfitPreview();
 // Ownership (S231) — reuse OwnershipEngine, sama pola dgn Akun/Kendaraan. Aset lama tanpa
@@ -319,55 +342,454 @@ const btn=document.getElementById('assetZakatableBtn');
 btn.textContent=Aset._zakatableState?'✓ Aktif':'Nonaktif';
 btn.className='chip-btn'+(Aset._zakatableState?' active':'');
 },
-toggleTitipan(){
-const on=document.getElementById('assetTitipanToggle').checked;
-document.getElementById('assetTitipanWrap').classList.toggle('u-dnone',!on);
-if(on)Aset.onTitipanOwnerTypeChange();
+// _renderTitipanSummary(a) -- SESI C (tahap terakhir migrasi Dana Titipan -> Multi-
+// Owner Engine): gantiin toggleTitipan()/onTitipanOwnerTypeChange()/
+// TITIPAN_OWNER_LABELS lama (dihapus sesi ini) yang dulu render field titipan bisa-
+// diedit langsung di assetModal. Sekarang PURE read-only -- cuma nunjukin ringkasan
+// singkat pemilik non-SELF aset ini SAAT INI (kalau ada), baca lewat
+// MultiOwnerEngine.getOwners() (toleran data lama/baru -- baik yang sudah py `a.owners`
+// eksplisit MAUPUN yang masih legacy `titipanAmount` & belum sempat auto-migrate,
+// 0 rumus baru ditulis di sini). Mengatur porsi (termasuk titipan/patungan) sekarang
+// SATU PINTU lewat tombol "⚖️ Atur Porsi Kepemilikan" (openOwnersModal(), S392a+).
+_renderTitipanSummary(a){
+const box=document.getElementById('assetTitipanSummary');
+if(!box)return;
+if(!a||typeof MultiOwnerEngine==='undefined'){box.textContent='';box.classList.add('u-dnone');return;}
+const res=MultiOwnerEngine.getOwners(a);
+if(!res||!res.ok||!res.isMultiOwner){box.textContent='';box.classList.add('u-dnone');return;}
+const nonSelf=res.owners.filter(o=>!o.isSelf);
+if(!nonSelf.length){box.textContent='';box.classList.add('u-dnone');return;}
+const parts=nonSelf.map(o=>escapeHtml(o.ownerName)+' '+o.porsi+'%').join(', ');
+box.innerHTML='💰 Ada dana titipan/patungan: '+parts+' — atur lewat tombol "⚖️ Atur Porsi Kepemilikan" di bawah.';
+box.classList.remove('u-dnone');
 },
-// TITIPAN_OWNER_LABELS / onTitipanOwnerTypeChange() -- label & placeholder field Nama
-// berubah sesuai jenis pemberi Dana Titipan dipilih (pola sama persis Debt.JENIS_DEFAULTS/
-// Debt.onJenisChange() di modules/finance/piutang-utang.js). Cuma UI copy yang berubah,
-// TIDAK ada field/skema data baru -- titipanOwnerName tetap 1 field yang sama.
-TITIPAN_OWNER_LABELS:{
-investor:{label:'Nama Investor',placeholder:'Pak Budi, PT Modal Jaya, dll'},
-keluarga:{label:'Nama Anggota Keluarga',placeholder:'Kakak, Ibu, Om Budi, dll'},
-lainnya:{label:'Nama/Keterangan',placeholder:'Koperasi, teman, dll'}
+// openOwnersModal(id) -- SESI 392a+392b ("atur porsi kepemilikan majemuk"): baca
+// pemilik aset yang sedang tercatat lewat MultiOwnerEngine.getOwners() (S390, 100%
+// reuse), disalin ke Aset._ownersDraft (array di memori, BUKAN referensi ke D.assets
+// langsung) supaya bisa ditambah/dihapus/diedit lewat addOwnerRow()/removeOwnerRow()/
+// onOwnerNameInput()/onOwnerPorsiInput() (392b) sebelum benar-benar disimpan.
+// Indikator total porsi interaktif (updateOwnersTotal) & tombol simpan/reset
+// (saveOwners/resetOwners) SENGAJA ditunda ke sesi berikutnya (disiplin "1 task = 1
+// sesi", sama pola S390->S391->392a->392b). Dipanggil dari tombol "⚖️ Atur Porsi
+// Kepemilikan" di assetModal -- tersedia untuk aset yang sudah ada (Aset.editId terisi
+// dari openModal()); kalau belum ada aset tersimpan (mis. lagi isi form Tambah Aset
+// baru), modal menampilkan pesan supaya aset disimpan dulu.
+// selfOwnedNilai(a) -- SESI 393: porsi `a.nilai` yang jadi milik SENDIRI
+// (bukan porsi pemilik lain kalau aset ini multi-pemilik), 100% reuse
+// MultiOwnerEngine.selfOwnedValue() (S390/393) -- 0 rumus baru di sini.
+// Guard typeof MultiOwnerEngine: kalau engine belum dimuat, fallback nilai
+// penuh (perilaku SEBELUM Sesi 393, aman & tidak pernah lebih rendah dari
+// yang seharusnya). Dipakai PajakAset (Zakat Maal per Aset) & bisa dipakai
+// modul lain (mis. Zakat.hitungMaal() di pajak-pbb-zakat.js lewat
+// MultiOwnerEngine langsung, tidak perlu import Aset).
+selfOwnedNilai(a){
+if(typeof MultiOwnerEngine==='undefined')return(a&&a.nilai)||0;
+return MultiOwnerEngine.selfOwnedValue(a,(a&&a.nilai)||0);
 },
-onTitipanOwnerTypeChange(){
-const type=document.getElementById('assetTitipanOwnerType').value;
-const cfg=Aset.TITIPAN_OWNER_LABELS[type]||Aset.TITIPAN_OWNER_LABELS.investor;
-const lbl=document.getElementById('assetTitipanOwnerNameLabel');
-const inp=document.getElementById('assetTitipanOwnerName');
-if(lbl)lbl.textContent=cfg.label+' (opsional)';
-if(inp)inp.placeholder=cfg.placeholder;
-},
-// _syncTitipanDebt(a) — jaga entry Buku Utang (D.debts) tetap sinkron dgn porsi
-// titipan aset ini, pola SAMA PERSIS dgn Investment._syncTitipanDebt()
-// (modules/asset/investasi.js) -- 0 rumus baru, cuma dipindah ke domain Aset supaya
-// 1 instrumen investasi bisa campuran dana sendiri & dana titipan investor/keluarga.
-// nilai aset (a.nilai) TETAP dicatat penuh & apa adanya; porsi titipan (a.titipanAmount)
-// otomatis jadi 1 entry utang bernama pemilik dana, sehingga Kekayaan Bersih = Nilai
-// Aset − Utang Titipan (tidak overstated). titipanAmount 0/toggle mati -> entry utang
-// lama (kalau ada) otomatis dihapus, tidak menyisakan sampah.
-_syncTitipanDebt(a){
-if(!a||typeof D==='undefined'||!D.debts)return;
-if(a.titipanAmount>0){
-const typeLabel=a.titipanOwnerType==='keluarga'?'Keluarga':(a.titipanOwnerType==='lainnya'?'Pihak Lain':'Investor');
-const owner=(a.titipanOwnerName&&String(a.titipanOwnerName).trim())?(String(a.titipanOwnerName).trim()+' ('+typeLabel+')'):typeLabel;
-const amount=a.titipanAmount;
-const catatan='Dana titipan aset: '+a.name;
-let debt=a.titipanDebtLinkId?D.debts.find(d=>String(d.id)===String(a.titipanDebtLinkId)):null;
-if(debt){
-Object.assign(debt,{name:owner,nilai:amount,catatan,lunas:amount<=0});
-}else{
-debt={id:uid(),name:owner,nilai:amount,bunga:0,cicilanBulanan:0,tanggal:todayStr(),jatuhTempo:'',catatan,lunas:amount<=0};
-D.debts.push(debt);
-a.titipanDebtLinkId=debt.id;
+openOwnersModal(){
+const id=Aset.editId;
+const a=id?D.assets.find(x=>sameId(x.id,id)):null;
+document.getElementById('assetOwnersAssetName').textContent=a?('📋 '+a.name):'';
+Aset._ownersModalAsset=a;
+if(!a){
+Aset._ownersDraft=[];
+Aset._renderOwnersList();
+openModal('assetOwnersModal');
+return;
 }
-}else if(a.titipanDebtLinkId){
-D.debts=D.debts.filter(d=>String(d.id)!==String(a.titipanDebtLinkId));
+const res=typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.getOwners(a):null;
+if(!res||!res.ok){
+Aset._ownersDraft=[];
+Aset._renderOwnersList();
+openModal('assetOwnersModal');
+return;
+}
+// Salinan (bukan referensi) -- aman diubah lewat addOwnerRow/removeOwnerRow/
+// onOwnerNameInput/onOwnerPorsiInput tanpa menyentuh data asli aset sampai
+// saveOwners() (ditunda ke sesi berikutnya) benar-benar dipanggil.
+Aset._ownersDraft=res.owners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf}));
+Aset._renderOwnersList();
+openModal('assetOwnersModal');
+},
+// _ownersAssetNilai() -- SESI 429: nilai dasar (Rp) dipakai konversi
+// porsi%<->nominal Rp di modal ini, ambil dari `Aset._ownersModalAsset.nilai`
+// (field `assetNilai` yang SUDAH ADA di aset.js -- 0 field baru). Balik 0
+// kalau aset belum ada/nilai bukan angka positif -- caller (_renderOwnersList/
+// onOwnerPorsiInput/onOwnerNominalInput) pakai 0 sbg sinyal "field Nominal
+// dinonaktifkan" (lihat _renderOwnersList di bawah), krn tanpa nilai dasar
+// konversi Rp<->% tidak bisa dihitung.
+_ownersAssetNilai(){
+const a=Aset._ownersModalAsset;
+return (a&&typeof a.nilai==='number'&&isFinite(a.nilai)&&a.nilai>0)?a.nilai:0;
+},
+// _renderOwnersList() -- SESI 392b: render ulang #assetOwnersList dari Aset._ownersDraft.
+// Dipanggil tiap ada tambah/hapus baris (addOwnerRow/removeOwnerRow), TIDAK dipanggil tiap
+// karakter diketik di input nama/porsi/nominal (lihat onOwnerNameInput/onOwnerPorsiInput/
+// onOwnerNominalInput di bawah) supaya fokus/kursor input tidak hilang tiap ketik.
+// SESI 429: tiap baris sekarang juga menampilkan field "Nominal (Rp)" di
+// samping "Porsi (%)" -- otomatis terhitung dari porsi% x nilai aset (field
+// `nilai` yang sudah ada, 0 field D baru), dua arah (edit salah satu field,
+// yang lain ikut update realtime, pola sama persis "Porsi Saya (%)"/"Porsi
+// Saya (Rp)" yang sudah dipakai di txCicilanSharedPct/txCicilanSharedNominal
+// & billSharedPct). Kalau aset belum punya nilai (Estimasi Nilai Saat Ini
+// kosong/0), field Nominal dinonaktifkan (disabled) -- konversi Rp<->%
+// butuh nilai dasar, TIDAK ada cara aman menebaknya.
+_renderOwnersList(){
+const listBox=document.getElementById('assetOwnersList');
+if(!listBox){Aset.updateOwnersTotal();return;}
+const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
+if(!Aset._ownersModalAsset){
+listBox.innerHTML='<div class="empty"><div class="empty-text">Simpan aset ini dulu (tombol "Simpan Aset") sebelum mengatur porsi kepemilikan.</div></div>';
+Aset.updateOwnersTotal();
+return;
+}
+if(!draft.length){
+listBox.innerHTML='<div class="empty"><div class="empty-text">Belum ada pemilik. Tap "➕ Tambah Pemilik" di bawah.</div></div>';
+Aset.updateOwnersTotal();
+return;
+}
+const nilai=Aset._ownersAssetNilai();
+listBox.innerHTML=draft.map((o,i)=>{
+const porsiNum=typeof o.porsi==='number'&&isFinite(o.porsi)?o.porsi:null;
+const nominalVal=(nilai>0&&porsiNum!==null)?Math.round(nilai*porsiNum/100):'';
+return '<div style="margin-bottom:8px">'+
+'<div class="u-flex u-gap8" style="align-items:center;margin-bottom:6px">'+
+'<input type="text" class="fi" style="flex:1" placeholder="Nama pemilik" value="'+escapeHtml(o.ownerName||'')+'" oninput="Aset.onOwnerNameInput('+i+',this.value)">'+
+'<button type="button" class="btn btn-ghost btn-sm" data-action="Aset.removeOwnerRow" data-args=\'['+i+']\' aria-label="Hapus pemilik">✕</button>'+
+'</div>'+
+'<div class="u-grid2" style="margin-bottom:0">'+
+'<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Porsi (%)</label><input type="number" class="fi" id="ownerPorsi'+i+'" placeholder="%" inputmode="decimal" value="'+(porsiNum!==null?porsiNum:'')+'" oninput="Aset.onOwnerPorsiInput('+i+',this.value)"></div>'+
+'<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Nominal (Rp)</label><input type="text" class="fi" id="ownerNominal'+i+'" placeholder="0" inputmode="decimal"'+(nilai>0?'':' disabled')+' value="'+nominalVal+'" oninput="Aset.onOwnerNominalInput('+i+',this.value)"></div>'+
+'</div>'+
+(nilai>0?'':'<div style="font-size:10.5px;color:var(--text3);margin:-2px 0 4px">Isi "Estimasi Nilai Saat Ini" di form Aset dulu supaya Nominal bisa dihitung otomatis</div>')+
+'<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:4px;cursor:pointer">'+
+'<input type="checkbox" style="width:14px;height:14px"'+(o.isSelf?' checked':'')+' onchange="Aset.onOwnerIsSelfToggle('+i+',this.checked)"> 👤 Ini saya (porsi ini dihitung ke Zakat/Pajak milikmu)'+
+'</label>'+
+'</div>';
+}).join('');
+Aset.updateOwnersTotal();
+},
+// updateOwnersTotal() -- SESI 392c: hitung ulang & tampilkan total porsi Aset._ownersDraft
+// saat ini di #assetOwnersTotalBox, warna hijau kalau pas 100% / merah kalau belum (kurang
+// atau lebih). Dipanggil dari _renderOwnersList() (tiap baris ditambah/dihapus, ATAU tiap
+// modal dibuka lewat openOwnersModal->_renderOwnersList) DAN langsung dari atribut oninput
+// input porsi tiap baris (lihat _renderOwnersList di atas) supaya update realtime tiap
+// ketik tanpa perlu render ulang seluruh list (yang akan menghilangkan fokus input, sama
+// disiplin dgn onOwnerPorsiInput sejak 392b). 100% reuse MultiOwnerEngine.totalPorsi()/
+// remainingPorsi() (S390) -- TIDAK ada rumus baru, PURE UI (baca draft di memori saja,
+// tidak menulis apa pun ke D.assets).
+updateOwnersTotal(){
+const box=document.getElementById('assetOwnersTotalBox');
+// saveBtn -- SESI 392d: tombol Simpan Porsi cuma aktif kalau total porsi PAS 100%
+// (sinkron dgn syarat MultiOwnerEngine.validateOwners() yang dipanggil saveOwners()),
+// supaya user tidak coba simpan draft yang pasti akan ditolak. Ini PURE UI (baca
+// draft, set attribute disabled), 0 rumus baru -- reuse total/sisa yang sudah
+// dihitung di bawah untuk box yang sama.
+const saveBtn=document.getElementById('assetOwnersSaveBtn');
+if(!box){if(saveBtn)saveBtn.disabled=true;return;}
+if(!Aset._ownersModalAsset){box.textContent='';box.style.color='';if(saveBtn)saveBtn.disabled=true;return;}
+const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
+if(!draft.length){
+box.textContent='Belum ada pemilik ditambahkan.';
+box.style.color='var(--text2)';
+if(saveBtn)saveBtn.disabled=true;
+return;
+}
+if(typeof MultiOwnerEngine==='undefined'){box.textContent='';box.style.color='';if(saveBtn)saveBtn.disabled=true;return;}
+const total=MultiOwnerEngine.totalPorsi(draft);
+const sisa=MultiOwnerEngine.remainingPorsi(draft);
+const isValid=Math.abs(sisa)<=0.01;
+box.style.color=isValid?'var(--accent3)':'var(--accent2)';
+box.style.fontWeight='700';
+box.textContent=isValid?('✅ Total porsi: '+total+'% (pas 100%)'):('⚠️ Total porsi: '+total+'% ('+(sisa>0?('kurang '+sisa+'%'):('lebih '+Math.abs(sisa)+'%'))+')');
+if(saveBtn)saveBtn.disabled=!isValid;
+},
+// addOwnerRow() -- SESI 392b: tambah 1 baris pemilik kosong (nama & porsi kosong, diisi
+// user) ke Aset._ownersDraft, lalu render ulang list. Murni ubah draft di memori --
+// TIDAK menulis apa pun ke D.assets (sama seperti seluruh modal ini sampai saveOwners(),
+// ditunda ke sesi berikutnya).
+// SESI 393: baris pertama yang ditambahkan (draft masih kosong) default
+// ditandai "👤 Ini saya" (isSelf:true) -- asumsi wajar krn biasanya user
+// mulai isi porsi dari dirinya sendiri dulu, baru tambah pemilik lain
+// (bisa ditoggle off lewat onOwnerIsSelfToggle() kalau memang bukan).
+// Baris ke-2 dst default false supaya total porsi "milik sendiri" tidak
+// sengaja kedobel tanpa user sadar.
+addOwnerRow(){
+if(!Aset._ownersModalAsset){toast('⚠️ Simpan aset ini dulu sebelum mengatur porsi kepemilikan');return;}
+Aset._ownersDraft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
+Aset._ownersDraft.push({ownerId:'',ownerName:'',porsi:0,isSelf:Aset._ownersDraft.length===0});
+Aset._renderOwnersList();
+},
+// removeOwnerRow(i) -- SESI 392b: hapus 1 baris pemilik dari Aset._ownersDraft (index i),
+// lalu render ulang list. Sama seperti addOwnerRow(), murni ubah draft di memori.
+removeOwnerRow(i){
+if(!Array.isArray(Aset._ownersDraft))return;
+Aset._ownersDraft.splice(i,1);
+Aset._renderOwnersList();
+},
+// onOwnerNameInput(i,val) / onOwnerPorsiInput(i,val) -- SESI 392b: tulis perubahan
+// ketikan user ke Aset._ownersDraft[i], TANPA render ulang list (render ulang hanya
+// perlu saat baris ditambah/dihapus, bukan tiap karakter diketik, supaya fokus/kursor
+// input tidak hilang). SESI 392c: onOwnerPorsiInput() sekarang juga memanggil
+// updateOwnersTotal() supaya indikator total porsi (hijau/merah) ikut update realtime
+// tiap ketik -- updateOwnersTotal() sendiri PURE baca #assetOwnersTotalBox +
+// Aset._ownersDraft, tidak menyentuh list input lain, jadi aman dipanggil tiap karakter
+// tanpa kena masalah fokus/kursor yang sama seperti _renderOwnersList().
+onOwnerNameInput(i,val){
+if(!Array.isArray(Aset._ownersDraft)||!Aset._ownersDraft[i])return;
+Aset._ownersDraft[i].ownerName=val;
+},
+onOwnerPorsiInput(i,val){
+if(!Array.isArray(Aset._ownersDraft)||!Aset._ownersDraft[i])return;
+const n=parseFloat(val);
+const porsi=isFinite(n)?n:0;
+Aset._ownersDraft[i].porsi=porsi;
+// SESI 429: sync field Nominal (Rp) baris ini realtime -- ubah value DOM
+// langsung (BUKAN _renderOwnersList ulang), sama disiplin dgn kenapa
+// _renderOwnersList tidak dipanggil tiap ketik (lihat komentar di atasnya):
+// render ulang akan menghilangkan fokus/kursor input yang sedang diketik.
+const nilai=Aset._ownersAssetNilai();
+if(nilai>0){
+const nomEl=document.getElementById('ownerNominal'+i);
+if(nomEl)nomEl.value=Math.round(nilai*porsi/100);
+}
+Aset.updateOwnersTotal();
+},
+// onOwnerNominalInput(i,val) -- SESI 429: arah sebaliknya dari
+// onOwnerPorsiInput() -- user isi Nominal (Rp), porsi% baris ini dihitung
+// ulang (nominal/nilaiAset*100, dibulatkan 2 desimal spt remainingPorsi())
+// & ditulis ke Aset._ownersDraft[i].porsi (SAMA persis field yang dibaca
+// saveOwners()/updateOwnersTotal() -- 0 field baru di draft/D.assets,
+// Nominal murni tampilan turunan dari porsi% + nilai aset, TIDAK pernah
+// disimpan sbg field sendiri). Field Nominal disabled kalau aset belum
+// punya nilai (lihat _renderOwnersList), jadi guard nilai<=0 di sini
+// murni jaga-jaga kalau handler terpanggil manual saat disabled.
+// SESI 431: setelah porsi baris ini ditulis, sisa nilai aset (nilaiAset -
+// nominal baris ini, dijepit ke >=0 -- "sampai 0", TIDAK pernah negatif)
+// dibagi RATA ke SEMUA baris pemilik lain lewat _autoDistributeRemaining()
+// (baru) supaya total porsi otomatis balik ke 100% tanpa user hitung
+// manual tiap baris lain -- lihat komentar _autoDistributeRemaining() utk
+// detail rumus & alasan pembulatan sisa ke baris terakhir.
+onOwnerNominalInput(i,val){
+if(!Array.isArray(Aset._ownersDraft)||!Aset._ownersDraft[i])return;
+const nilai=Aset._ownersAssetNilai();
+if(nilai<=0)return;
+const n=parseFloat(String(val).replace(/[^0-9.-]/g,''));
+const nominal=isFinite(n)?n:0;
+const porsi=Math.round((nominal/nilai*100)*100)/100;
+Aset._ownersDraft[i].porsi=porsi;
+const porsiEl=document.getElementById('ownerPorsi'+i);
+if(porsiEl)porsiEl.value=porsi;
+Aset._autoDistributeRemaining(i);
+Aset.updateOwnersTotal();
+},
+// _autoDistributeRemaining(editedIndex) -- SESI 431: bagi RATA sisa nilai
+// aset ke SEMUA baris pemilik SELAIN `editedIndex` (baris yang baru saja
+// diisi nominalnya oleh user lewat onOwnerNominalInput()), supaya total
+// porsi seluruh pemilik otomatis kembali ke 100% tanpa user hitung manual
+// baris lain satu-satu. Permintaan user: "total aset dikurangi nominal
+// pemilik [yang baru diisi] sampai 0 dibagi semua pemilik [lain]".
+// Rumus (0 rumus baru di luar yang sudah ada -- reuse `nilai`/`porsi` yang
+// sudah dihitung caller):
+//   sisaRp = MAX(0, nilaiAset - nominalBarisEdited)   -- dijepit ke >=0,
+//     "sampai 0" berarti tidak pernah jadi sisa negatif walau baris yang
+//     diedit nominalnya melebihi nilai aset (over-alokasi baris lain jadi
+//     0%, bukan minus, konsisten dgn validateOwner() yang menolak porsi<=0).
+//   bagianRp = sisaRp / jumlahBarisLain   -- dibagi rata, jumlahBarisLain =
+//     draft.length - 1 (SEMUA baris lain, terlepas porsi lama mereka apa).
+//   porsiBarisLain = ROUND((bagianRp/nilaiAset*100) * 100) / 100 -- pola
+//     pembulatan 2 desimal SAMA PERSIS onOwnerNominalInput()/
+//     MultiOwnerEngine.remainingPorsi(), supaya toleransi float konsisten
+//     satu tempat (PORSI_EPSILON di multi-owner-engine.js).
+// Baris terakhir (index tertinggi di antara baris lain) SENGAJA dapat sisa
+// pembulatan (100 - porsi_edited - SUM(porsi baris lain kecuali terakhir))
+// alih-alih porsiBarisLain hasil bagi rata mentah -- supaya total PERSIS
+// 100% (bukan 99.99/100.01 akibat akumulasi pembulatan 2 desimal tiap
+// baris, pola sama dgn kenapa _synthesizeFromTitipan() menghitung
+// selfPorsi sbg SISA, bukan dibagi terpisah -- lihat komentar fungsi itu
+// di multi-owner-engine.js).
+// TIDAK dipanggil dari onOwnerPorsiInput() (SENGAJA) -- trigger auto-bagi
+// cuma dari isi Nominal (Rp), sesuai permintaan eksplisit user ("ketika
+// mengisi nominal"); edit Porsi (%) manual tetap perilaku lama 0 regresi
+// (cuma sync Nominal baris itu sendiri, baris lain TIDAK ikut berubah).
+// Parameter:
+//   editedIndex (number) -- index baris di Aset._ownersDraft yang baru
+//     saja diisi nominalnya (porsi-nya SUDAH ditulis oleh caller sebelum
+//     method ini dipanggil).
+// Return: tidak ada (void) -- method ini menulis LANGSUNG ke
+//   Aset._ownersDraft[*].porsi + DOM #ownerPorsi{i}/#ownerNominal{i} baris
+//   lain (pola sama seperti onOwnerPorsiInput/onOwnerNominalInput sendiri:
+//   ubah DOM langsung, BUKAN _renderOwnersList ulang, supaya fokus/kursor
+//   input yang sedang diketik user tidak hilang).
+_autoDistributeRemaining(editedIndex){
+const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
+if(!draft[editedIndex])return;
+const nilai=Aset._ownersAssetNilai();
+if(nilai<=0)return;
+const otherIdx=[];
+for(let k=0;k<draft.length;k++){if(k!==editedIndex)otherIdx.push(k);}
+if(!otherIdx.length)return;
+const editedPorsi=typeof draft[editedIndex].porsi==='number'&&isFinite(draft[editedIndex].porsi)?draft[editedIndex].porsi:0;
+const sisaPorsi=Math.max(0,100-editedPorsi);
+const sharePorsi=Math.round((sisaPorsi/otherIdx.length)*100)/100;
+const lastIdx=otherIdx[otherIdx.length-1];
+let usedPorsi=0;
+otherIdx.forEach((k)=>{
+if(k===lastIdx)return;
+draft[k].porsi=sharePorsi;
+usedPorsi+=sharePorsi;
+});
+draft[lastIdx].porsi=Math.round((sisaPorsi-usedPorsi)*100)/100;
+otherIdx.forEach((k)=>{
+const porsiEl=document.getElementById('ownerPorsi'+k);
+if(porsiEl)porsiEl.value=draft[k].porsi;
+const nomEl=document.getElementById('ownerNominal'+k);
+if(nomEl)nomEl.value=Math.round(nilai*draft[k].porsi/100);
+});
+},
+// onOwnerIsSelfToggle(i,checked) -- SESI 393: tandai/lepas baris ke-i draft
+// sebagai porsi milik sendiri (dipakai Zakat Maal/Pajak Aset lewat
+// MultiOwnerEngine.selfOwnedValue()). TIDAK ada batasan cuma-1-baris --
+// user bisa tandai lebih dari 1 baris kalau memang beberapa baris itu
+// sama-sama "aku" (mis. dicatat terpisah karena alasan lain), totalnya
+// dijumlah apa adanya oleh selfPorsi().
+onOwnerIsSelfToggle(i,checked){
+if(!Array.isArray(Aset._ownersDraft)||!Aset._ownersDraft[i])return;
+Aset._ownersDraft[i].isSelf=!!checked;
+},
+// saveOwners() -- SESI 392d: tulis Aset._ownersDraft ke D.assets[].owners (baru
+// benar-benar tersimpan, sebelumnya cuma draft di memori sejak 392a-392c). Validasi
+// & normalisasi 100% reuse MultiOwnerEngine.setOwners() (S390, yang di dalamnya
+// panggil validateOwners()) -- TIDAK ada rumus/logic validasi baru ditulis di sini.
+// Baris draft yang ownerId-nya masih kosong (baris baru dari addOwnerRow(), belum
+// pernah tersimpan) diberi id via uid() (helper global, sudah dipakai di seluruh
+// aset.js) sebelum divalidasi -- ownerId dari data lama (hasil MultiOwnerEngine.
+// getOwners() di openOwnersModal) tetap dipakai apa adanya.
+saveOwners(){
+if(!Aset._ownersModalAsset){toast('⚠️ Simpan aset ini dulu sebelum mengatur porsi kepemilikan');return;}
+if(typeof MultiOwnerEngine==='undefined'){toast('⚠️ Fitur porsi kepemilikan belum siap dimuat');return;}
+const a=D.assets.find(x=>sameId(x.id,Aset._ownersModalAsset.id));
+if(!a){toast('⚠️ Aset tidak ditemukan, coba tutup dan buka lagi');return;}
+const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
+if(!draft.length){toast('⚠️ Tambahkan minimal 1 pemilik sebelum menyimpan');return;}
+for(let i=0;i<draft.length;i++){
+if(!draft[i].ownerName||!draft[i].ownerName.trim()){toast('⚠️ Nama pemilik baris ke-'+(i+1)+' wajib diisi');return;}
+}
+const owners=draft.map((o)=>({
+ownerId:(o.ownerId&&String(o.ownerId).trim())?String(o.ownerId).trim():String(uid()),
+ownerName:o.ownerName.trim(),
+porsi:o.porsi,
+isSelf:!!o.isSelf,
+}));
+const res=MultiOwnerEngine.setOwners(a,owners);
+if(!res.ok){toast('⚠️ '+res.reason);return;}
+Object.assign(a,{owners:res.entity.owners});
+// Sesi 422e: SYNC SALDO AKUN TERTAUT ke porsi BARU -- sebelumnya saveOwners()
+// cuma nulis owners[]/render ulang tampilan (S422c), tapi baseBalance akun
+// tertaut (kalau ADA, lihat assetAccId) tetap pakai ownPortion porsi LAMA
+// sampai form Aset utama dibuka & disimpan ulang secara terpisah. Reuse
+// PERSIS pola txDelta dari Aset.save() (baris ~681) -- riwayat transaksi akun
+// (kalau sudah ada, mis. sudah dipakai bayar/terima) TIDAK diubah, cuma
+// baseBalance-nya digeser supaya recalcAccBalance() = ownPortion porsi baru.
+if(a.accountId){
+const linkedAcc=D.accounts.find(x=>sameId(x.id,a.accountId));
+if(linkedAcc){
+const ownPortion=MultiOwnerEngine.selfOwnedValue(a,a.nilai||0);
+const txDelta=recalcAccBalance(linkedAcc.id)-(linkedAcc.baseBalance!==undefined?linkedAcc.baseBalance:(linkedAcc.balance||0));
+linkedAcc.baseBalance=ownPortion-txDelta;
+linkedAcc.balance=ownPortion;
+}
+}
+save();
+if(typeof AIBus!=="undefined")AIBus.emit("asset.updated",{ownersUpdated:true,editId:a.id});
+Aset._ownersModalAsset=a;
+Aset._ownersDraft=res.entity.owners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf}));
+Aset._renderOwnersList();
+// Sesi 422c: sebelumnya cuma Aset.renderList() -- porsi berubah juga
+// mempengaruhi Kekayaan Bersih/Zakat (lewat Aset.totalValue(), S422c) &
+// akun tertaut (badge/saldo di Akun Uang/Laporan/Dashboard), tapi 3 render
+// itu TIDAK ikut dipanggil, jadi angkanya baru "sinkron beneran" setelah
+// pindah halaman. Fix: samakan pola sync-nya dgn Aset.save() (baris ~739)
+// -- 0 rumus baru, cuma nambah pemanggilan fungsi render yang sudah ada.
+Aset.renderList();
+if(typeof renderKekayaanBersih==='function')renderKekayaanBersih();
+if(typeof hitungZakatMaal==='function')hitungZakatMaal();
+if(typeof renderAccGrid==='function')renderAccGrid();
+if(typeof renderDashAccList==='function')renderDashAccList();
+if(typeof renderLapAccList==='function')renderLapAccList();
+if(typeof renderDebtList==='function')renderDebtList();
+toast('✅ Porsi kepemilikan tersimpan');
+},
+// resetOwners() -- SESI 392d: buang perubahan draft yang belum disimpan, muat ulang
+// Aset._ownersDraft dari data TERSIMPAN di D.assets (via MultiOwnerEngine.getOwners(),
+// sama persis logic yang dipakai openOwnersModal() -- 0 rumus baru). Dipakai kalau
+// user salah edit & mau mulai ulang dari data terakhir tersimpan TANPA menutup modal.
+resetOwners(){
+if(!Aset._ownersModalAsset){return;}
+const res=typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.getOwners(Aset._ownersModalAsset):null;
+Aset._ownersDraft=res&&res.ok?res.owners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf})):[];
+Aset._renderOwnersList();
+toast('↺ Draft direset ke data yang terakhir tersimpan');
+},
+// _syncOwnerDebts(a) — Sesi B (lanjutan MultiOwnerEngine S390/406b): gantiin
+// _syncTitipanDebt() lama -- BUKAN cuma 1 entry utang titipan per aset,
+// tapi 1 entry utang PER OWNER non-SELF dari MultiOwnerEngine.getOwners(a)
+// (toleran: baca `a.owners` eksplisit KALAU ADA, atau disintesis dari
+// titipanAmount legacy lewat cabang Sesi 406b -- 0 rumus baru dobel, murni
+// pakai apa yang getOwners() sudah balikin). Tiap entry utang ditandai
+// `linkedAssetId`/`linkedOwnerId` di OBJECT UTANGNYA SENDIRI (bukan pointer
+// tunggal di aset spt titipanDebtLinkId dulu) supaya bisa nampung BERAPA PUN
+// owner non-SELF sekaligus per aset -- 1 aset 3 pemilik non-SELF = 3 entry
+// utang, dicari/di-update lewat filter linkedAssetId+linkedOwnerId, bukan 1
+// field tunggal yang cuma muat 1 id.
+// nilai aset (a.nilai) TETAP dicatat penuh & apa adanya; porsi tiap owner
+// non-SELF (nilai * porsi/100) otomatis jadi 1 entry utang bernama owner
+// itu, sehingga Kekayaan Bersih = Nilai Aset − Utang tiap owner titipan
+// (tidak overstated). Owner yang dicabut (tidak ada lagi di getOwners() --
+// mis. porsi diubah jadi 0, atau baris ownernya dihapus) -> entry utang
+// tertautnya OTOMATIS DIHAPUS, tidak menyisakan sampah (0 UI utk hapus
+// manual perlu).
+// MIGRASI 1x dari field lama `a.titipanDebtLinkId` (peninggalan
+// _syncTitipanDebt() <=Sesi 406b): kalau field itu masih ada & debt-nya
+// masih ada di D.debts, debt itu di-TAG linkedAssetId/linkedOwnerId (owner
+// id disintesis deterministik persis sama dgn yang dipakai
+// MultiOwnerEngine._synthesizeFromTitipan(), jadi otomatis "ketemu" lagi di
+// loop di bawah tanpa bikin entry duplikat) lalu field lamanya di-null-kan
+// -- TIDAK ada entry utang baru dibuat/dihapus semata krn migrasi ini.
+// TIDAK ada wiring baru ke Aset.save() sesi ini di luar 1 rename call site
+// yang sudah ada (dari _syncTitipanDebt ke _syncOwnerDebts, supaya save()
+// tidak manggil fungsi yang sudah tidak ada) -- migrasi data
+// titipanAmount->a.owners yang SEBENARNYA (nulis field `owners` array) &
+// perubahan UI assetModal jadi kerjaan Sesi C, sesuai rencana 4 sesi.
+_syncOwnerDebts(a){
+if(!a||typeof D==='undefined'||!D.debts)return;
+if(a.titipanDebtLinkId){
+const legacyDebt=D.debts.find(d=>String(d.id)===String(a.titipanDebtLinkId));
+if(legacyDebt&&!legacyDebt.linkedAssetId){
+legacyDebt.linkedAssetId=a.id;
+legacyDebt.linkedOwnerId='titipan_'+(a.titipanOwnerType||'investor');
+}
 a.titipanDebtLinkId=null;
 }
+const res=typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.getOwners(a):null;
+const owners=(res&&res.ok)?res.owners:[];
+const nilai=typeof a.nilai==='number'&&isFinite(a.nilai)?a.nilai:0;
+const nonSelfOwners=owners.filter(o=>!o.isSelf&&o.porsi>0);
+const existingLinked=D.debts.filter(d=>d.linkedAssetId===a.id);
+const keepIds=new Set();
+nonSelfOwners.forEach(o=>{
+const amount=nilai*(o.porsi/100);
+const catatan='Dana titipan aset: '+a.name;
+let debt=existingLinked.find(d=>d.linkedOwnerId===o.ownerId);
+if(debt){
+Object.assign(debt,{name:o.ownerName,nilai:amount,catatan,lunas:amount<=0});
+}else{
+debt={id:uid(),name:o.ownerName,nilai:amount,bunga:0,cicilanBulanan:0,tanggal:todayStr(),jatuhTempo:'',catatan,lunas:amount<=0,linkedAssetId:a.id,linkedOwnerId:o.ownerId};
+D.debts.push(debt);
+}
+keepIds.add(o.ownerId);
+});
+D.debts=D.debts.filter(d=>!(d.linkedAssetId===a.id&&!keepIds.has(d.linkedOwnerId)));
 },
 save(){
 const name=document.getElementById('assetName').value.trim();
@@ -380,21 +802,18 @@ const hargaBeli=parseDecStr(document.getElementById('assetHargaBeli').value);
 const jumlahUnit=parseDecStr(document.getElementById('assetJumlahUnit').value);
 const tanggal=document.getElementById('assetTanggal').value||'';
 let accountId=document.getElementById('assetAccId').value||null;
-// Dana Titipan (permintaan user): nominal titipan dijepit ke [0, nilai] -- titipan
-// TIDAK BOLEH lebih besar dari Estimasi Nilai instrumen ini sendiri. Toggle mati =
-// titipanAmount 0 (Aset._syncTitipanDebt() di bawah otomatis lepas tautan utang lama).
-// Dipindah ke SINI (sebelum blok __new__/SYNC AKUN di bawah, bukan sesudahnya
-// seperti semula) supaya akun tertaut bisa langsung pakai ownPortion (lihat bawah).
-const titipanOn=document.getElementById('assetTitipanToggle')?.checked;
-let titipanAmount=titipanOn?parsePzNum(document.getElementById('assetTitipanAmount').value):0;
-if(titipanAmount<0)titipanAmount=0;
-if(titipanAmount>nilai)titipanAmount=nilai;
-// ownPortion (permintaan user): akun tertaut (Akun Transaksi) HARUS nunjukin cuma
-// uang milik sendiri, BUKAN nilai penuh instrumen -- kalau ada Dana Titipan, porsi
-// titipan itu bukan uang yang boleh dipakai bayar/terima transaksi pribadi. nilai
-// aset di Buku Aset TETAP dicatat penuh (variabel `nilai` di atas, tidak disentuh
-// di sini) -- cuma akun tertaut yang disinkron ke porsi sendiri.
-const ownPortion=nilai-titipanAmount;
+// ownPortion -- SESI C (tahap terakhir migrasi Dana Titipan -> Multi-Owner Engine):
+// akun tertaut (Akun Transaksi) HARUS nunjukin cuma uang milik sendiri, BUKAN nilai
+// penuh instrumen. SEBELUM sesi ini dihitung dari toggle+nominal Dana Titipan manual
+// (dihapus dari assetModal sesi ini). Sekarang dihitung dari porsi SELF EFEKTIF aset
+// yang SUDAH TERSIMPAN (kalau sedang Edit Aset) lewat MultiOwnerEngine.selfOwnedValue()
+// (S390/393, 100% reuse -- 0 rumus baru), diterapkan ke `nilai` yang BARU diketik di
+// form ini. Aset BARU (Aset.editId belum ada, jadi belum py owners tersimpan) selalu
+// 100% SELF di titik simpan pertama ini -- porsi kepemilikan majemuk/titipan diatur
+// SETELAHNYA lewat tombol "⚖️ Atur Porsi Kepemilikan" (pola sama sejak S392a, cuma
+// sekarang jadi SATU-SATUNYA pintu, tidak lagi ada jalur toggle titipan terpisah).
+const existingForPorsi=Aset.editId?D.assets.find(x=>sameId(x.id,Aset.editId)):null;
+const ownPortion=(existingForPorsi&&typeof MultiOwnerEngine!=='undefined')?MultiOwnerEngine.selfOwnedValue(existingForPorsi,nilai):nilai;
 // BUGFIX-FEATURE: opsi "__new__" = bukan menautkan ke akun yang SUDAH ADA, tapi
 // bikin akun baru otomatis dari aset ini -- biar akun itu langsung nongol di
 // daftar 🏦 Akun & bisa langsung dipakai buat transaksi (bayar/terima) seperti
@@ -441,9 +860,12 @@ linkedAcc.balance=ownPortion;
 const keuntungan=modalInvestasi?(nilai-modalInvestasi):null;
 const keuntunganPct=modalInvestasi?((nilai-modalInvestasi)/modalInvestasi*100):null;
 const extra={modalInvestasi,hargaBeli,jumlahUnit,keuntungan,keuntunganPct};
-extra.titipanAmount=titipanAmount;
-extra.titipanOwnerType=titipanAmount>0?(document.getElementById('assetTitipanOwnerType').value||'investor'):'';
-extra.titipanOwnerName=titipanAmount>0?document.getElementById('assetTitipanOwnerName').value.trim():'';
+// CATATAN Sesi C: extra.titipanAmount/titipanOwnerType/titipanOwnerName SENGAJA TIDAK
+// diisi ulang di sini lagi (field itu sudah tidak ada di assetModal) -- Object.assign()
+// di bawah cuma menimpa key yang ADA di extra, jadi titipanAmount lama (aset yang
+// belum sempat auto-migrate) TIDAK ikut ke-reset ke 0 tiap kali aset ini disimpan --
+// tetap utuh sampai blok AUTO-MIGRATE di bawah benar-benar memindahkannya ke
+// `savedAsset.owners`.
 // Field kategori-spesifik (lihat Aset.renderJenisFields) -- selalu di-reset dulu
 // ke null lalu diisi ULANG sesuai jenis yg dipilih SEKARANG, supaya kalau user
 // ganti kategori pas Edit Aset (mis. dari Kendaraan ke Tanah), field kategori
@@ -477,7 +899,26 @@ savedAsset=a;
 savedAsset=Object.assign({id:uid(),name,jenis,lokasi,nilai,tanggal,zakatable:Aset._zakatableState,accountId,ownership},extra);
 D.assets.push(savedAsset);
 }
-Aset._syncTitipanDebt(savedAsset);
+// AUTO-MIGRATE (Sesi C -- sesi TERAKHIR dari 4 migrasi Dana Titipan -> Multi-Owner
+// Engine, lihat s406b/s407/s408/s409-SESSION-NOTE.md utk 3 sesi sebelumnya): aset yang
+// masih py titipanAmount>0 legacy TAPI belum py `owners` eksplisit ditulis PERMANEN ke
+// `savedAsset.owners` di titik simpan ini. SEBELUM sesi ini cuma disintesis on-the-fly
+// tiap dibaca (MultiOwnerEngine.getOwners()->_synthesizeFromTitipan(), Sesi 406b) --
+// TIDAK PERNAH benar-benar ditulis ke data. 100% reuse getOwners()+setOwners() (S390,
+// 0 rumus baru) -- getOwners() yang mensintesis 2 baris (SELF+titipan) dari nilai/
+// titipanAmount SEBELUM disimpan, lalu setOwners() menormalisasi & menulisnya.
+// titipanAmount/titipanOwnerType/titipanOwnerName legacy dikosongkan SETELAH migrasi
+// sukses -- representasinya sudah pindah penuh ke `owners` (getOwners() prioritas
+// baca #1 ada di `entity.owners`, jadi field lama TIDAK dibaca lagi setelah ini,
+// dikosongkan murni buat kebersihan data, bukan krn masih dipakai).
+if(typeof MultiOwnerEngine!=='undefined'&&!Array.isArray(savedAsset.owners)&&savedAsset.titipanAmount>0){
+const migRes=MultiOwnerEngine.getOwners(savedAsset);
+if(migRes&&migRes.ok&&migRes.owners.length>1){
+const setRes=MultiOwnerEngine.setOwners(savedAsset,migRes.owners);
+if(setRes.ok)Object.assign(savedAsset,{owners:setRes.entity.owners,titipanAmount:0,titipanOwnerType:'',titipanOwnerName:''});
+}
+}
+Aset._syncOwnerDebts(savedAsset);
 save();
 if(typeof AIBus!=="undefined")AIBus.emit("asset.updated",{jenis,nilai,editId:Aset.editId});
 closeModal('assetModal');
@@ -550,7 +991,16 @@ const a=D.assets.find(x=>sameId(x.id,id));
 if(!a)return;
 document.getElementById('assetActionsTitle').textContent=`${Aset.ICON[a.jenis]||'📦'} ${a.name}`;
 const linkedAcc=a.accountId?D.accounts.find(x=>sameId(x.id,a.accountId)):null;
-const linkMeta=linkedAcc?('🔗 Akun tertaut: '+escapeHtml(linkedAcc.name)):(a.accountId?'🔗 Akun tertaut: (akun terhapus)':'');
+// Sesi 434 (audit "nominal akun tertaut selalu 0"): akun tertaut SENGAJA cuma
+// menampung porsi Milik Sendiri (MultiOwnerEngine.selfOwnedValue(), lihat komentar
+// panjang di totalSaldoAkun()/Aset.save() -- supaya tidak dobel hitung sama Buku
+// Aset). Ini benar secara hitungan, TAPI dari sisi user gejalanya sama persis
+// spt bug ("kok saldonya 0?") kalau field Kepemilikan bukan Milik Sendiri, atau
+// porsi Milik Sendiri di "⚖️ Atur Porsi Kepemilikan" 0%. Tambah 1 baris info
+// numerik di sini (0 perubahan hitungan/logic, cuma tampilan) supaya user
+// langsung lihat SEBABNYA tiap buka menu ini, bukan cuma nama akun tertaut.
+const ownPortionMeta=(linkedAcc&&typeof MultiOwnerEngine!=='undefined')?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):null;
+const linkMeta=linkedAcc?('🔗 Akun tertaut: '+escapeHtml(linkedAcc.name)+(ownPortionMeta!=null?(' (saldo '+fmt(ownPortionMeta)+(ownPortionMeta<(a.nilai||0)?' — porsi Milik Sendiri dari nilai aset '+fmt(a.nilai||0):'')+')'):'')):(a.accountId?'🔗 Akun tertaut: (akun terhapus)':'');
 const ownResolved=(typeof OwnershipEngine!=='undefined')?OwnershipEngine.resolve(a):null;
 const ownMeta=ownResolved?('👤 Kepemilikan: '+escapeHtml(OwnershipEngine.label(ownResolved.type))):'';
 const titipanLabel=a.titipanOwnerType==='keluarga'?'Keluarga':(a.titipanOwnerType==='lainnya'?'Pihak Lain':'Investor');
@@ -578,7 +1028,17 @@ openQS('qsAssetActions');
 // Aset (dipakai jg oleh Kekayaan.currentNetWorth() & AssetPortfolioAPI —
 // keduanya ikut ter-fix otomatis lewat titik ini, 0 perubahan tambahan di
 // modul lain), tapi TETAP muncul apa adanya di Aset.renderList() (Buku Aset).
-totalValue(){return(D.assets||[]).filter(isAssetOwnershipSelf).reduce((s,a)=>s+(a.nilai||0),0);},
+// Sesi 422d (fix #3, lanjutan revert S396 di s422c): filter isAssetOwnershipSelf
+// di atas cuma cek field `ownership` (legacy, single value) -- TIDAK tahu soal
+// aset MULTI-OWNER (`a.owners[]`, MultiOwnerEngine) yang porsinya kepisah per
+// baris. Sebelum sesi ini, aset lolos filter (ownership efektifnya SELF) selalu
+// disumbang PENUH `a.nilai`, walau ternyata porsi SELF-nya cuma sebagian (mis.
+// 60%) -- overstate Kekayaan Bersih. Fix: reuse PERSIS
+// MultiOwnerEngine.selfOwnedValue(a,a.nilai) (S393, pola sama Zakat Maal di
+// pajak-pbb-zakat.js) per aset, bukan `a.nilai` mentah. Aset single-owner
+// (mayoritas/legacy) TIDAK berubah -- selfOwnedValue() balik nilai penuh kalau
+// selfPorsi 100%, 0 regresi.
+totalValue(){return(D.assets||[]).filter(isAssetOwnershipSelf).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);},
 // FITUR BARU: Dashboard Aset — ringkasan Total Aset / Nilai Buku / Nilai Pasar +
 // breakdown per kategori (jenis). Nilai Pasar = total a.nilai (estimasi nilai saat
 // ini, sesuai yang diisi user di modal Aset). Nilai Buku = total modal/harga
@@ -1162,9 +1622,16 @@ return(D.assets||[]).filter(a=>a.zakatable);
 },
 // Breakdown Zakat Maal 2,5% khusus aset zakatable di Buku Aset (TANPA cek
 // haul/nishab terpisah — itu urusan kalkulator Zakat Maal utama di tab Pajak).
+// SESI 393: totalNilai sekarang dihitung dari PORSI MILIK SENDIRI tiap aset
+// (Aset.selfOwnedNilai(), 100% reuse MultiOwnerEngine.selfOwnedValue() S390)
+// -- BUKAN nilai penuh lagi. Aset single-owner (mayoritas — default/legacy)
+// tetap balik nilai penuh (selfPorsi 100%, 0 regresi). Aset multi-pemilik yg
+// porsi user belum ditandai "👤 Saya" di modal porsi (assetOwnersModal)
+// otomatis TIDAK ikut disumbang ke Zakat -- sesuai temuan audit: nilai
+// pemilik lain tidak seharusnya kena zakat kamu.
 hitungZakatAset(){
 const list=PajakAset.zakatableAssets();
-const totalNilai=list.reduce((s,a)=>s+(a.nilai||0),0);
+const totalNilai=list.reduce((s,a)=>s+Aset.selfOwnedNilai(a),0);
 const totalZakat=Math.round(totalNilai*0.025);
 return{list,totalNilai,totalZakat};
 },
@@ -1200,7 +1667,7 @@ totalPBB+=r.terutang;
 return `<div class="u-flex u-jcb u-aifs u-gap8 u-fs12 u-mb6"><span class="u-flex1">${Aset.ICON[a.jenis]||'📦'} ${escapeHtml(a.name)}</span><span class="u-fw700 u-tar" style="white-space:nowrap">${fmtFull(r.terutang)}/th</span></div>`;
 }).join('')):'';
 const zakatHtml=zakat.list.length?('<div class="u-fs12t2 u-fw700 u-mb6 u-mt10">🕌 Zakat Maal per Aset (bukan Kekayaan Bersih)</div>'+zakat.list.map(a=>{
-const z=Math.round((a.nilai||0)*0.025);
+const z=Math.round(Aset.selfOwnedNilai(a)*0.025);
 return `<div class="u-flex u-jcb u-aifs u-gap8 u-fs12 u-mb6"><span class="u-flex1">${Aset.ICON[a.jenis]||'📦'} ${escapeHtml(a.name)}</span><span class="u-fw700 u-tar" style="white-space:nowrap">${fmtFull(z)}</span></div>`;
 }).join('')):'';
 box.innerHTML=(pbbHtml+zakatHtml)||'<div class="u-fs12 u-t2">Belum ada aset Tanah/Rumah-Bangunan atau aset zakatable.</div>';
@@ -1787,6 +2254,38 @@ const fmt=typeof fmtFull==='function'?fmtFull:(n=>'Rp '+Math.round(n||0).toLocal
 return{message:`Estimasi Zakat Maal dari ${c.jumlah} aset zakatable (total nilai ${fmt(c.totalNilai)}) sekitar ${fmt(c.totalZakat)} — cek kartu 🧾 Pajak Aset kalau belum dibayar tahun ini.`};
 },
 });
+if(typeof AssetOwnershipSplitPresenter!=='undefined'){
+AIDecision.rules.register({
+id:'asset-multi-owner-porsi-incomplete',
+category:'asset',
+severity:'warning',
+weight:4,
+cooldownHours:72,
+description:'Ada aset dgn porsi kepemilikan (owners) sudah mulai diisi tapi belum valid/belum total 100%.',
+condition:()=>AssetOwnershipSplitPresenter.incompletePortions().items.length>0,
+action:()=>{
+const items=AssetOwnershipSplitPresenter.incompletePortions().items;
+const names=items.slice(0,3).map(x=>x.name).join(', ');
+return{message:`${items.length} aset punya porsi kepemilikan belum lengkap (${names}${items.length>3?', dst':''}) — cek & lengkapi jadi total 100%.`};
+},
+});
+AIDecision.rules.register({
+id:'asset-multi-owner-profit-split-info',
+category:'asset',
+severity:'info',
+weight:2,
+cooldownHours:168,
+description:'Ringkasan pembagian keuntungan otomatis utk aset multi-pemilik (>=2 pemilik dgn porsi valid).',
+condition:()=>AssetOwnershipSplitPresenter.summary().items.some(x=>x.keuntungan>0),
+action:()=>{
+const items=AssetOwnershipSplitPresenter.summary().items.filter(x=>x.keuntungan>0);
+const fmt=typeof fmtFull==='function'?fmtFull:(n=>'Rp '+Math.round(n||0).toLocaleString('id-ID'));
+const top=items[0];
+const rincian=top.splits.map(s=>`${s.ownerName} ${s.porsi}% (${fmt(s.bagian)})`).join(', ');
+return{message:`${items.length} aset multi-pemilik untung — "${top.name}" untung ${fmt(top.keuntungan)}, dibagi: ${rincian}.`};
+},
+});
+}
 _assetAIRulesRegistered=true;
 return true;
 }
