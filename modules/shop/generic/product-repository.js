@@ -459,7 +459,7 @@ const ProductRepository = {
   // Menggantikan `p.kategoriId=...`/`p.produsenId=...`/`product.satuan=...`
   // mentah yang sebelumnya ditulis tanpa validasi di
   // shop-data-io-api.js/cobek-io.js.
-  // `catatan` (Sesi 386, FIX-v1084-to-v1085-s422-fuel-estimation-partial-fill-drift-guard.md)
+  // `catatan` (Sesi 386, FIX-v1084-to-v1085-s422i-revert-hitungzakatmaal-guard.md)
   // ditambah ke whitelist yang SUDAH ADA — field teks bebas baru dari kolom
   // CSV/Excel "Catatan" (produk, bukan produsen — produsen sudah punya
   // `catatan` sendiri lewat SupplierStore, tidak disentuh sesi ini), pola
