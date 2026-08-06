@@ -37,6 +37,55 @@
 // TIDAK lagi memanggil FuelFleetSelector sama sekali (lihat vehicle-daily-
 // brief.js) — #vehBriefBody sekarang HANYA berisi ringkasan armada harian,
 // bukan detail BBM 1 kendaraan.
+//
+// SESI FUEL-AUTOSYNC (badge sumber estimasi): tambah _sourceBadgeHtml(),
+// dipasang tepat di bawah gauge (_gaugeHtml()) di _body(). 100% presenter
+// -- baca ulang veh.fuelState.estimatedSource/correctedAt yang SUDAH
+// ditulis FuelBarCorrection.save() (TASK-144) & syncFuelStateFromFullTankBbm()
+// (tx-bbm.js, sesi s412), 0 field baru ditulis ke D, 0 rumus baru.
+//
+// SESI 416-lanjutan (FUEL-AUTOSYNC-06, "Sesi 3" rencana "Fuel Estimation
+// Auto-Update"): gauge (_gaugeHtml()) sekarang baca liter via
+// _liveEstimate() (BARU) -- 100% REUSE FuelStateEstimator.
+// estimateCurrentLiter() (s415) kalau tersedia & ok:true. Bedanya dgn
+// snapshot lama (FuelBarCorrection._currentEstimate(), yang cuma balikin
+// veh.fuelState.currentFuelLiter APA ADANYA -- angka beku sejak BBM log/
+// koreksi manual terakhir): estimator MENGHITUNG ULANG akumulasi km sejak
+// titik acuan SETIAP kali render() dipanggil (tab switch/dashboard
+// refresh) -- gauge jadi "hidup" (bar bisa turun seiring km jalan) TANPA
+// nunggu BBM log baru maupun koreksi manual baru. 0 rumus baru di sini
+// (estimator s415 sudah 100% ngerjain hitungannya), FuelCard cuma pilih
+// sumber & tetap presenter murni. Fallback ke snapshot lama
+// (FuelBarCorrection._currentEstimate()) kalau FuelStateEstimator belum
+// dimuat ATAU belum ada titik acuan sama sekali (ok:false) -- gauge TIDAK
+// PERNAH gagal render gara-gara sumber baru ini, pola guard sama persis
+// field lain di file ini.
+//
+// SESI 5 (FUEL-AUTOSYNC-08, confidence decay dinamis): _lowConfidenceHint()
+// sekarang baca skor lewat _currentConfidence() (BARU) -- 100% REUSE
+// FuelStateEstimator.estimateCurrentLiter().decayedConfidenceScore, jadi
+// rekomendasi "sinkronkan dengan speedometer" ikut muncul otomatis
+// seiring km ditempuh (bukan cuma nunggu confidenceScore statis rendah
+// dari sumber tulis). Fallback ke confidenceScore mentah tetap ada.
+//
+// SESI 421 (lanjutan "saran tambahan" rencana "Fuel Estimation
+// Auto-Update", 2 item sisa dari s420): dua tambahan MURNI presenter, 0
+// rumus baru, 0 field D baru:
+//   1. _kmClampedHint() -- guard km non-monoton (s415) sebelumnya cuma
+//      clamp diam-diam (kmClamped:true di estimator, TIDAK pernah
+//      diberitahukan ke user). Sekarang FuelCard baca ulang flag itu &
+//      tampilkan nudge pasif "cek odometer", pola identik
+//      _lowConfidenceHint() (guard typeof, {ok:false} kalau estimator
+//      belum dimuat/ok:false/kmClamped falsy).
+//   2. _sourceBadgeHtml() sekarang tambah "Skor N/100" (100% REUSE
+//      _currentConfidence(), SUDAH ADA sejak Sesi 5) di belakang label
+//      sumber + umur estimasi -- transparansi angka, bukan cuma trigger
+//      hint low-confidence tersembunyi.
+//
+// SESI 422 (item TERAKHIR tersisa dari "saran tambahan" rencana yang
+// sama): _partialFillDriftHint() (BARU) -- 100% REUSE
+// FuelStateEstimator.partialFillDriftRisk (BARU), pola identik
+// _kmClampedHint() di atas.
 const FuelCard = {
 
 render() {
@@ -69,17 +118,125 @@ _money(n) {
 // sudah ada.
 LOW_CONFIDENCE_THRESHOLD: 50,
 
-// _lowConfidenceHint(vehicleId) — {ok:false} kalau belum ada fuelState
-// tersimpan sama sekali (kendaraan belum pernah dikoreksi — tidak ada
-// confidenceScore utk dibandingkan) ATAU skornya masih >= ambang. Baca
-// LANGSUNG dari D.vehicles (field opsional TASK-144, guard typeof D),
-// 0 kalkulasi ulang skor di sini.
-_lowConfidenceHint(vehicleId) {
+// _currentConfidence(vehicleId) — SESI 5 (FUEL-AUTOSYNC-08, confidence
+// decay dinamis): 100% REUSE FuelStateEstimator.estimateCurrentLiter().
+// decayedConfidenceScore (BARU, pola sama persis
+// FuelPredictionEngine._confidence()/FuelCostAnalytics._confidenceScore())
+// kalau tersedia & ok:true — jadi rekomendasi low-confidence di bawah
+// ikut "hidup" seiring km ditempuh sejak titik acuan, TANPA nunggu BBM
+// log/koreksi manual baru (selaras _liveEstimate() gauge s417). Fallback
+// ke veh.fuelState.confidenceScore APA ADANYA (pola lama) kalau
+// FuelStateEstimator belum dimuat ATAU estimator ok:false.
+_currentConfidence(vehicleId) {
+  if (typeof FuelStateEstimator !== 'undefined' && typeof FuelStateEstimator.estimateCurrentLiter === 'function') {
+    const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+    if (est && est.ok && typeof est.decayedConfidenceScore === 'number') return est.decayedConfidenceScore;
+  }
   const vehicles = (typeof D !== 'undefined' && D.vehicles) ? D.vehicles : [];
   const veh = vehicles.find((v) => v.id === vehicleId);
   const score = veh && veh.fuelState ? veh.fuelState.confidenceScore : null;
+  return (typeof score === 'number') ? score : null;
+},
+
+// _lowConfidenceHint(vehicleId) — {ok:false} kalau belum ada fuelState
+// tersimpan sama sekali (kendaraan belum pernah dikoreksi — tidak ada
+// confidenceScore utk dibandingkan) ATAU skornya (SEKARANG hasil decay,
+// lihat _currentConfidence() di atas) masih >= ambang.
+_lowConfidenceHint(vehicleId) {
+  const score = this._currentConfidence(vehicleId);
   if (typeof score !== 'number' || score >= this.LOW_CONFIDENCE_THRESHOLD) return { ok: false };
   return { ok: true };
+},
+
+// _kmClampedHint(vehicleId) — SESI 421: sisi PROAKTIF guard km
+// non-monoton (versi dasar/clamp diam-diam sudah ada sejak s415,
+// FuelStateEstimator.kmClamped). Kalau delta km sejak titik acuan
+// terakhir NEGATIF (odometer kendaraan terbaca lebih kecil -- trip
+// meter di-reset, ganti kendaraan, atau salah input manual), estimator
+// SUDAH clamp ke 0 (matematis benar, liter tidak "nambah" gara-gara
+// dianggap mundur) tapi sebelum sesi ini user tidak pernah diberi tahu
+// kalau ini terjadi -- angka liter jadi diam-diam "macet" tanpa
+// penjelasan. 100% REUSE FuelStateEstimator.estimateCurrentLiter()
+// (0 rumus baru) -- {ok:false} kalau estimator belum dimuat, ok:false,
+// atau kmClamped falsy (pola sama persis _lowConfidenceHint()/
+// _currentConfidence()).
+_kmClampedHint(vehicleId) {
+  if (typeof FuelStateEstimator === 'undefined' || typeof FuelStateEstimator.estimateCurrentLiter !== 'function') {
+    return { ok: false };
+  }
+  const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+  if (!est || !est.ok || !est.kmClamped) return { ok: false };
+  return { ok: true };
+},
+
+// _partialFillDriftHint(vehicleId) — SESI 422: sisi UI dari guard
+// akumulasi error fill-parsial berturut-turut (FuelStateEstimator.
+// partialFillDriftRisk, BARU). BEDA penyebab dari _kmClampedHint() di
+// atas (odometer non-monoton) -- ini soal terlalu banyak partial fill
+// (liter input manual, bukan terukur) numpuk sejak titik acuan terakhir
+// tanpa pernah di-reset lewat full-tank fill/koreksi manual baru. 100%
+// REUSE FuelStateEstimator.estimateCurrentLiter() (0 rumus baru) --
+// {ok:false} kalau estimator belum dimuat, ok:false, atau
+// partialFillDriftRisk falsy (pola sama persis _kmClampedHint()/
+// _lowConfidenceHint()).
+_partialFillDriftHint(vehicleId) {
+  if (typeof FuelStateEstimator === 'undefined' || typeof FuelStateEstimator.estimateCurrentLiter !== 'function') {
+    return { ok: false };
+  }
+  const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+  if (!est || !est.ok || !est.partialFillDriftRisk) return { ok: false };
+  return { ok: true };
+},
+
+// SOURCE_BADGE_LABEL — Sesi FUEL-AUTOSYNC (badge sumber estimasi, murni
+// presenter). Peta estimatedSource -> label singkat. 100% REUSE nilai
+// yang SUDAH ditulis field lain (FuelBarCorrection.ESTIMATED_SOURCE_MANUAL
+// = 'manual-bar-correction', TASK-144; 'auto-bbm-log-full' dari
+// recordBbmLog()/syncFuelStateFromFullTankBbm(), sesi s412) — 0 field baru
+// ditulis ke D, 0 rumus baru, cuma menyusun ulang apa yang sudah tersimpan
+// di veh.fuelState supaya user langsung tahu seberapa bisa dipercaya
+// angkanya tanpa buka detail (permintaan eksplisit user, "Saran tambahan"
+// rencana Fuel Estimation Auto-Update).
+SOURCE_BADGE_LABEL: {
+  'manual-bar-correction': '🔧 Manual',
+  'auto-bbm-log-full': '⛽ Auto dari BBM log',
+},
+
+// _daysSince(iso) — selisih hari (integer, floor) antara sekarang & iso
+// string. null kalau iso tidak valid/kosong (presenter diam, bukan
+// menampilkan "NaN hari lalu"). Kalau selisih negatif (jam klien
+// nyeleneh/correctedAt di masa depan), clamp ke 0 — bukan tampil minus.
+_daysSince(iso) {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (Number.isNaN(t)) return null;
+  const diffMs = Date.now() - t;
+  return diffMs > 0 ? Math.floor(diffMs / 86400000) : 0;
+},
+
+// _sourceBadgeHtml(vehicleId) — badge kecil "sumber estimasi" (Manual/
+// Auto dari BBM log/fallback generik) + umur estimasi ("X hari lalu") +
+// SESI 421: skor kepercayaan eksplisit ("Skor N/100", 100% REUSE
+// _currentConfidence() SUDAH ADA sejak Sesi 5 -- decayedConfidenceScore
+// kalau tersedia, fallback confidenceScore mentah, 0 rumus baru di sini),
+// dipasang tepat di bawah gauge (_gaugeHtml()). Baca LANGSUNG dari
+// veh.fuelState.estimatedSource/correctedAt (field yang SUDAH ada &
+// ditulis modul lain) — 0 kalkulasi baru di sini utk bagian label/umur.
+// '' (tidak render apa pun) kalau belum ada fuelState/estimatedSource/
+// correctedAt sama sekali — TIDAK PERNAH menebak sumber yang sebenarnya
+// kosong. Bagian skor sendiri OPSIONAL (dihilangkan diam-diam, bukan
+// tampil "—") kalau _currentConfidence() balikin bukan angka.
+_sourceBadgeHtml(vehicleId) {
+  const vehicles = (typeof D !== 'undefined' && D.vehicles) ? D.vehicles : [];
+  const veh = vehicles.find((v) => v.id === vehicleId);
+  const fs = veh && veh.fuelState;
+  if (!fs || !fs.estimatedSource) return '';
+  const days = this._daysSince(fs.correctedAt);
+  if (days === null) return '';
+  const label = this.SOURCE_BADGE_LABEL[fs.estimatedSource] || '📉 Estimasi';
+  const ageText = days === 0 ? 'hari ini' : (days === 1 ? '1 hari lalu' : `${days} hari lalu`);
+  const score = this._currentConfidence(vehicleId);
+  const scorePart = (typeof score === 'number') ? ` · Skor ${Math.round(score)}/100` : '';
+  return `<div class="u-fs11 u-t2" style="margin:4px 0 0">${escapeHtml(label)} · ${escapeHtml(ageText)}${escapeHtml(scorePart)}</div>`;
 },
 
 // _briefingHtml(vehicleId) — Sesi 156d: section "Fuel Briefing" (dulu
@@ -128,20 +285,37 @@ _briefingHtml(vehicleId) {
   return html;
 },
 
+// _liveEstimate(vehicleId) — lihat catatan header file (SESI
+// 416-lanjutan, "Sesi 3"). Balikin {liter, source, estimationLimited?}
+// atau null (0 sumber estimasi apa pun tersedia). estimator diutamakan
+// (auto-refresh berbasis km), fallback ke snapshot beku lama.
+_liveEstimate(vehicleId) {
+  if (typeof FuelStateEstimator !== 'undefined' && typeof FuelStateEstimator.estimateCurrentLiter === 'function') {
+    const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+    if (est && est.ok && typeof est.liter === 'number') {
+      return { liter: est.liter, source: 'estimator', estimationLimited: !!est.estimationLimited };
+    }
+  }
+  if (typeof FuelBarCorrection !== 'undefined' && typeof FuelBarCorrection._currentEstimate === 'function') {
+    return FuelBarCorrection._currentEstimate(vehicleId);
+  }
+  return null;
+},
+
 // _gaugeHtml(vehicleId) — mini gauge visual (blok terisi/kosong, warna
-// beda utk area cadangan), 100% REUSE FuelBarCorrection._currentEstimate()
-// (TASK-144, SUDAH ADA) utk ambil estimasi liter saat ini +
-// FuelGaugeEngine.calculateFuelBar()/FuelTankProfile.get() (SUDAH ADA) utk
-// konversi ke posisi bar & posisi cadangan — 0 rumus konversi baru di
-// sini, murni presenter (pola sama _segmentHtml() di fuel-intelligence-
-// ui.js, cuma dipakai read-only, tanpa tombol). '' (tidak render apa pun)
-// kalau profil tangki belum diatur atau belum ada estimasi sama sekali —
-// TIDAK PERNAH menampilkan gauge kosong yang menyesatkan.
+// beda utk area cadangan), 100% REUSE _liveEstimate() (di atas) utk ambil
+// estimasi liter saat ini + FuelGaugeEngine.calculateFuelBar()/
+// FuelTankProfile.get() (SUDAH ADA) utk konversi ke posisi bar & posisi
+// cadangan — 0 rumus konversi baru di sini, murni presenter (pola sama
+// _segmentHtml() di fuel-intelligence-ui.js, cuma dipakai read-only,
+// tanpa tombol). '' (tidak render apa pun) kalau profil tangki belum
+// diatur atau belum ada estimasi sama sekali — TIDAK PERNAH menampilkan
+// gauge kosong yang menyesatkan.
 _gaugeHtml(vehicleId) {
-  if (typeof FuelTankProfile === 'undefined' || typeof FuelGaugeEngine === 'undefined' || typeof FuelBarCorrection === 'undefined') return '';
+  if (typeof FuelTankProfile === 'undefined' || typeof FuelGaugeEngine === 'undefined') return '';
   const profile = FuelTankProfile.get(vehicleId);
   if (!profile || !profile.tankCapacityLiter) return '';
-  const est = FuelBarCorrection._currentEstimate(vehicleId);
+  const est = this._liveEstimate(vehicleId);
   if (!est) return '';
   const barRes = FuelGaugeEngine.calculateFuelBar(vehicleId, est.liter);
   if (!barRes.ok) return '';
@@ -174,6 +348,12 @@ _gaugeHtml(vehicleId) {
 // disisipkan SETELAH baris rekomendasi low-confidence & SEBELUM baris CTA
 // — satu card gabungan, tombol CTA tetap di paling bawah pola sama persis
 // sebelumnya.
+//
+// SESI 421: baris nudge km-clamped (_kmClampedHint(), BARU) disisipkan
+// SEBELUM baris low-confidence — beda penyebab (odometer non-monoton vs
+// skor kepercayaan meluruh krn jarak), jadi pesan beda & bisa tampil
+// BERSAMAAN kalau keduanya kebetulan true (0 dibuat saling eksklusif,
+// masing-masing presenter independen baca kondisinya sendiri).
 _body(insight) {
   const overdue = insight.reminders.find((r) => r.severity === 'overdue');
   const dueSoon = insight.reminders.find((r) => r.severity === 'due-soon');
@@ -184,6 +364,14 @@ _body(insight) {
     : 'Data efisiensi belum cukup';
   const statusText = alertItem ? alertItem.message : (eff ? '✅ Efisiensi BBM terpantau normal' : 'Catat isi BBM (Full Tank) biar dapat insight efisiensi');
   const statusCls = overdue ? 'red' : (dueSoon ? 'orange' : '');
+  const kmClamped = this._kmClampedHint(insight.vehicleId);
+  const kmClampedHtml = kmClamped.ok
+    ? `<div class="u-fs12 orange" style="margin:0 0 10px;line-height:1.5">⚠️ Estimasi mulai kurang akurat, cek odometer.</div>`
+    : '';
+  const partialFillDrift = this._partialFillDriftHint(insight.vehicleId);
+  const partialFillDriftHtml = partialFillDrift.ok
+    ? `<div class="u-fs12 orange" style="margin:0 0 10px;line-height:1.5">⚠️ Sudah beberapa kali isi BBM parsial berturut-turut. Disarankan Full Tank atau koreksi manual biar akurat lagi.</div>`
+    : '';
   const lowConfidence = this._lowConfidenceHint(insight.vehicleId);
   const lowConfidenceHtml = lowConfidence.ok
     ? `<div class="u-fs12 orange" style="margin:0 0 10px;line-height:1.5">⚠️ Estimasi mulai kurang akurat. Disarankan sinkronkan dengan speedometer.</div>`
@@ -198,6 +386,9 @@ _body(insight) {
     </div>
     <div class="u-fs12${statusCls ? ' ' + statusCls : ''}" style="margin:6px 0 10px;line-height:1.5">${escapeHtml(statusText)}</div>
     ${this._gaugeHtml(insight.vehicleId)}
+    ${this._sourceBadgeHtml(insight.vehicleId)}
+    ${kmClampedHtml}
+    ${partialFillDriftHtml}
     ${lowConfidenceHtml}
     ${this._briefingHtml(insight.vehicleId)}
     <div class="btn-row3" style="margin:10px 0 0">
