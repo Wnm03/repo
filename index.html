@@ -80,9 +80,9 @@
 <link rel="preconnect" href="https://accounts.google.com" crossorigin>
 <link rel="dns-prefetch" href="https://accounts.google.com">
 <title>Keluarga W</title>
-<link rel="stylesheet" href="styles.css?v=1087">
-<link rel="stylesheet" href="modern-ui-layer.css?v=1087">
-<script src="nav-scroll.js?v=1087" defer></script>
+<link rel="stylesheet" href="styles.css?v=1111">
+<link rel="stylesheet" href="modern-ui-layer.css?v=1111">
+<script src="nav-scroll.js?v=1111" defer></script>
 <script>
 /* Debug console (Eruda) — aktifkan sekali lewat ?debug=1 di URL, nempel via localStorage.
    Matikan lagi lewat ?debug=0. Tidak aktif buat user biasa. */
@@ -148,17 +148,17 @@ function ensureZXing(){return _loadScriptOnce('https://cdn.jsdelivr.net/npm/@zxi
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn CDN di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // > Proyek Renovasi pertama dibuka.
-function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1087');}
+function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1111');}
 // sewakios.js dikeluarkan dari app-bundle-a.min.js (scripts/build.js GROUP_A),
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn Renov di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // pertama dibuka.
-function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1087');}
+function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1111');}
 // business-intelligence-presenter.js dikeluarkan dari app-bundle-b.min.js
 // (scripts/build.js GROUP_B), dimuat on-demand lewat pola sama.
 // Dipanggil dari setShopTab() (cobek-io.js) saat tab Shop > Business
 // Intelligence pertama dibuka.
-function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1087');}
+function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1111');}
 </script>
 <script>
 window.__moduleLoadFail=function(name){
@@ -247,8 +247,8 @@ window.location.reload();
 }catch(e){}
 })();
 </script>
-<script src="app-bundle-a.min.js?v=1087" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
-<script src="modules/shared/smoke-test.js?v=1087" defer></script>
+<script src="app-bundle-a.min.js?v=1111" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
+<script src="modules/shared/smoke-test.js?v=1111" defer></script>
 <link rel="manifest" id="pwaManifestLink" href="manifest.json">
 </head>
 <body data-theme="fresh">
@@ -2470,6 +2470,13 @@ window.location.reload();
   </div>
 
   <div class="card">
+    <div class="card-title">💰 Saran Alokasi Gaji</div>
+    <div class="u-hint10">Dihitung dari rata-rata transaksi Pemasukan asli kamu (bukan dari field "Gaji Pokok Harian" di atas, yang khusus utk kalkulator upah harian/lembur). Rumus umum: Dana Darurat 6× & Target Pensiun/FI ikut asumsi SWR-mu = target, sisanya saran alokasi bulanan 50% biaya hidup / 30% investasi / 20% self-reward. Cuma saran hitung-hitungan — tidak otomatis tersimpan ke mana pun.</div>
+    <button type="button" class="btn btn-ghost btn-full" data-action="renderSalaryAllocationSuggestion">💡 Hitung Saran Alokasi</button>
+    <div class="u-fs12 u-t2 u-lh15 u-mt8 u-dnone" id="salaryAllocHint"></div>
+  </div>
+
+  <div class="card">
     <div class="card-title">🤖 AI Asisten</div>
     <div class="fg u-mb6"><label class="fl">Provider AI</label>
       <select class="fs" id="sApiProvider" oninput="autoSaveProfile();toggleApiKeyHint()">
@@ -3856,6 +3863,6 @@ window.location.reload();
 <script>document.write(MODAL_HTML[89]);</script><!-- modal:purchaseOrderBatchModal (S381) -->
 <script>document.write(MODAL_HTML[90]);</script><!-- modal:shopKatalogDinamisModal (fix: sebelumnya tidak pernah di-write) -->
 
-<script src="app-bundle-b.min.js?v=1087" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
+<script src="app-bundle-b.min.js?v=1111" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
 </body>
 </html>
