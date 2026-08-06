@@ -4,7 +4,7 @@
 // TARGET EKSPLISIT USER sesi ini: "audit ownership agar 1 aset bisa
 // dimiliki beberapa orang dengan porsi beda-beda, hitung otomatis
 // keuntungan berdasarkan porsi, tambahkan reko AI." Setelah audit source
-// (lihat FIX-s422i-revert-hitungzakatmaal-guard.md), disepakati scope sesi ini
+// (lihat FIX-s433-audit-fix-renov-edit-not-saving.md), disepakati scope sesi ini
 // DIPERSEMPIT jadi FONDASI DULU: engine porsi kepemilikan murni. Split
 // keuntungan otomatis (baca dari `keuntungan`/`keuntunganPct` yang sudah
 // ada di modules/asset/aset.js) dan rule reko AI (register ke
