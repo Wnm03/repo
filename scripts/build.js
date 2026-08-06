@@ -163,6 +163,26 @@ const GROUP_B = [
   // ini). Dipanggil dari renderSettings() (modules-render.js) via guard
   // typeof, pola sama persis DashboardSettings.renderSettingsUI() (S129).
   'modules/shared/ownership-settings-presenter.js',
+  // Sesi 390: Multi-Owner Engine — fondasi porsi kepemilikan pecahan
+  // (1 aset -> banyak pemilik, porsi %). Ditaruh SETELAH
+  // ownership-settings-presenter.js (0 dependency wajib ke situ — hanya
+  // baca OwnershipEngine via guard typeof opsional utk backward-compat
+  // legacy `entity.ownership`, lihat komentar getOwners() di file itu).
+  // TIDAK disinkronkan/dipanggil dari modul lain mana pun sesi ini (field
+  // `owners` baru TIDAK ditambahkan ke D.assets/dst, tidak ada UI) —
+  // pola sama persis ownership-engine.js S191. Split keuntungan otomatis
+  // & rule reko AI jadi kerjaan sesi berikutnya.
+  'modules/shared/multi-owner-engine.js',
+  // Sesi 391: split keuntungan aset otomatis per pemilik (lanjutan S390).
+  // Ditaruh SETELAH multi-owner-engine.js (dependency wajib: splitFor()/
+  // summary() panggil MultiOwnerEngine.getOwners()/splitByPorsi()/
+  // validateOwners() lewat guard typeof). registerAssetAIRules() di
+  // aset.js (GROUP_A, dimuat lebih dulu) mereferensikan
+  // AssetOwnershipSplitPresenter TAPI hanya di dalam closure
+  // condition/action yang baru DIPANGGIL saat runtime (self-test.js
+  // init()) — jadi urutan load ttp aman meski aset.js secara TEKS
+  // duluan (sama pola forward-reference lain di project ini).
+  'modules/asset/asset-ownership-split-presenter.js',
   'modules/shared/features-helpers-global-security.js',
   // S264: Security Hardening — wrapper functions utk eks data-onclick,
   // dipanggil lewat data-action. Ditaruh langsung setelah dispatcher
@@ -1769,6 +1789,46 @@ function lintOverlayOpenBypassesGuard() {
   return problems;
 }
 
+// lintOverlayOpenReflowGuard() — sisa rekomendasi terbuka dari
+// FIX-s368-overlay-open-animation-reflow-race.md ("Lint baru yang
+// memastikan tiap classList.add('open') baru selalu diikuti reflow").
+//
+// lintOverlayOpenBypassesGuard() (di atas) sudah menutup 1 celah: overlay
+// yang classList.add('open') di LUAR modules/shared/modal-navigasi.js
+// ketahuan build. Tapi di DALAM file itu sendiri (satu-satunya file yang
+// di-allowlist utk classList.add('open')) tidak ada jaring pengaman kalau
+// nanti ada jalur buka-overlay ke-4/ke-5 ditambahkan TANPA reflow paksa
+// (`void el.offsetWidth`) — race "animation overlayIn gagal terinstansiasi,
+// opacity macet 0 permanen" (lihat komentar lengkap di openModal()) bisa
+// terulang lewat jalur baru itu, lolos dari lint bypass di atas krn memang
+// file-nya sudah di-whitelist.
+//
+// Lint ini scan KHUSUS file itu: tiap classList.add('open') harus diikuti
+// `offsetWidth` dalam REFLOW_LOOKAHEAD_LINES baris setelahnya (cukup longgar
+// utk komentar penjelasan panjang di antaranya, spt pola openModal() yang
+// sudah ada — 15 baris dipilih krn openModal() punya jarak terjauh, ~15
+// baris komentar, antara classList.add('open') & void el.offsetWidth).
+const OVERLAY_OPEN_REFLOW_FILE = 'modules/shared/modal-navigasi.js';
+const OVERLAY_OPEN_REFLOW_LOOKAHEAD_LINES = 15;
+
+function lintOverlayOpenReflowGuard() {
+  const problems = [];
+  if (!ALL_SOURCE.includes(OVERLAY_OPEN_REFLOW_FILE)) return problems;
+  const content = readFile(OVERLAY_OPEN_REFLOW_FILE);
+  const lines = content.split('\n');
+  const OPEN_RE = /\.classList\.add\(\s*['"]open['"]\s*\)/;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith('//')) continue; // skip baris komentar (mis. penjelasan yang MENYEBUT classList.add('open'), bukan kode sungguhan)
+    if (!OPEN_RE.test(lines[i])) continue;
+    const windowEnd = Math.min(lines.length, i + 1 + OVERLAY_OPEN_REFLOW_LOOKAHEAD_LINES);
+    const hasReflow = lines.slice(i, windowEnd).some((l) => l.includes('offsetWidth'));
+    if (!hasReflow) {
+      problems.push(`${OVERLAY_OPEN_REFLOW_FILE}:${i + 1} — classList.add('open') tanpa reflow paksa (offsetWidth) dalam ${OVERLAY_OPEN_REFLOW_LOOKAHEAD_LINES} baris setelahnya`);
+    }
+  }
+  return problems;
+}
+
 function lintOversizedSourceFiles() {
   const skipDirs = new Set(['node_modules', '.git', 'backups', 'tests']);
   const results = [];
@@ -1923,6 +1983,22 @@ const LINT_REGISTRY = [
       'openQS() (untuk dialog custom baru) alih-alih classList.add(\'open\') langsung. Kalau baris\n' +
       'di atas MEMANG bukan overlay yang dipicu tap user (mis. harness test internal), tambahkan\n' +
       'file-nya ke OVERLAY_OPEN_BYPASS_ALLOWLIST di scripts/build.js.',
+  },
+  {
+    name: 'overlay-open-reflow-guard',
+    severity: 'blocking',
+    checkingMsg: "Mengecek regresi \"classList.add('open') tanpa reflow paksa\" di modal-navigasi.js (sisa rekomendasi FIX-s368-overlay-open-animation-reflow-race.md)...",
+    successMsg: "✓ Semua classList.add('open') di modal-navigasi.js diikuti reflow paksa (offsetWidth)\n",
+    run: lintOverlayOpenReflowGuard,
+    label: (n) => `ditemukan ${n} classList.add('open') tanpa reflow paksa di modal-navigasi.js:`,
+    advice:
+      "\nTanpa reflow paksa (`void el.offsetWidth;` segera setelah classList.add('open')), browser\n" +
+      "bisa menggabungkan perubahan display & mulai-animasi jadi 1 style recalc — Animation utk\n" +
+      "animasi overlayIn bisa gagal terinstansiasi total, elemen macet permanen di opacity:0 (lihat\n" +
+      "komentar lengkap FIX-s368-overlay-open-animation-reflow-race.md & openModal() di\n" +
+      "modules/shared/modal-navigasi.js). Perbaiki dengan menambahkan `void el.offsetWidth;` segera\n" +
+      "setelah classList.add('open') pada jalur baru itu (contoh pola: openModal()/openQS()/\n" +
+      "_openDialogOverlay()), atau reuse _openDialogOverlay(el) kalau memang overlay generik.",
   },
   {
     name: 'oversized-source-files',
