@@ -53,8 +53,8 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's422-fuel-estimation-partial-fill-drift-guard';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's422-fuel-estimation-partial-fill-drift-guard';
+const APP_BUILD_VERSION = 's422i-revert-hitungzakatmaal-guard';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's422i-revert-hitungzakatmaal-guard';
 let D = {
 schemaVersion:SCHEMA_VERSION,
 transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],
@@ -232,8 +232,33 @@ function save(){
 // Invalidate cache saldo akun di sini supaya burst render sesudahnya baca data akun terbaru,
 // tapi tiap fungsi di dalam burst yang sama tidak hitung ulang dari nol. Lihat akun.js.
 if(typeof invalidateAccBalCache==='function')invalidateAccBalCache();
+if(typeof syncLinkedAssetNilaiFromAkun==='function')syncLinkedAssetNilaiFromAkun();
 if(typeof invalidateCashflowForecastCache==='function')invalidateCashflowForecastCache();
 if(typeof FinanceIntelligence!=='undefined'&&typeof FinanceIntelligence.invalidateCache==='function')FinanceIntelligence.invalidateCache();
+// s422g: guard di titik tunggal ini (bukan nambal tiap pemanggil save() satu-satu)
+// supaya panel/kalkulasi turunan yang bergantung ke nilai aset/saldo akun (mis.
+// Kekayaan Bersih) otomatis ikut refresh tiap ada mutasi data -- pola sama dgn
+// invalidateAccBalCache() di atas.
+// s422h: guard DOM (#kbNetWorth) SEBELUM manggil renderKekayaanBersih() --
+// save() dipanggil dari SEMUA halaman, bukan cuma yang nampilin panel Kekayaan
+// Bersih, dan renderBersih() (beda dari 3 guard cache di atas) beneran hitung
+// ulang totalSaldoAkun()+totalAssetValue()+totalInventoriBisnisValue()+
+// totalPiutangValue() tiap dipanggil (bukan cuma baca cache) -- guard ini bikin
+// hitungan itu cuma jalan kalau panelnya memang lagi di-render, bukan di tiap
+// mutasi data di halaman manapun.
+// s422i: sengaja TIDAK menambahkan guard utk hitungZakatMaal() di sini (sempat
+// ditambahkan lalu di-revert sesi ini) -- beda dari renderKekayaanBersih(),
+// Zakat.hitungMaal() (modules/finance/pajak-pbb-zakat.js): (1) baca
+// document.getElementById('zmUtang').value TANPA guard `if(el)` -- throw
+// TypeError kalau modal Zakat Maal tidak sedang terbuka, yaitu praktis di
+// SEMUA pemanggilan save() lain di seluruh app; (2) memanggil save() lagi di
+// dalam dirinya sendiri (pz.utangJT=...; save();) -- kalau dipanggil dari
+// save(), ini bikin rekursi save()->hitungZakatMaal()->save()->... tak
+// terbatas. Auto-refresh Zakat Maal dari save() TIDAK dikerjakan sesi ini;
+// perlu refactor Zakat.hitungMaal() dulu (pisahkan baca input DOM dari
+// kalkulasi murni, hilangkan panggilan save() rekursif) sebelum aman
+// digerbangi dari titik tunggal ini. Lihat FIX-...-s422i-*.md.
+if(typeof renderKekayaanBersih==='function'&&typeof document!=='undefined'&&document.getElementById('kbNetWorth'))renderKekayaanBersih();
 if(_saveDebounceTimer)clearTimeout(_saveDebounceTimer);
 _saveDebounceTimer=setTimeout(()=>{_saveDebounceTimer=null;_saveImmediate();},400);
 }
