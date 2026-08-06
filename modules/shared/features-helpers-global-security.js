@@ -53,8 +53,8 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's387-calc-modal-overflow-safearea';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's387-calc-modal-overflow-safearea';
+const APP_BUILD_VERSION = 's422-fuel-estimation-partial-fill-drift-guard';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's422-fuel-estimation-partial-fill-drift-guard';
 let D = {
 schemaVersion:SCHEMA_VERSION,
 transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],
@@ -525,6 +525,28 @@ showAlertModal('Terjadi error saat membuka data tersimpan: '+(e&&e.message?e.mes
 }
 }
 function todayStr(){const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');}
+// addMonthsClamped() — BUG-015 (s406): pengganti pola native `d.setMonth(d.getMonth()+n)` yang
+// dipakai di berbagai tempat untuk menghitung jatuh tempo bulanan berikutnya (cicilan/langganan/
+// tagihan/sewa). Masalahnya: Date.setMonth() TIDAK clamp -- kalau tanggal asal tidak ada di bulan
+// tujuan (mis. 31 Jan +1 bulan -> Februari cuma py 28/29 hari), JS overflow otomatis ke bulan
+// berikutnya (31 Jan -> 3 Mar, BUKAN 28/29 Feb seperti ekspektasi user). Fungsi ini mereplikasi
+// hasil kalender yang wajar: clamp ke hari TERAKHIR bulan tujuan kalau hari asal melebihi jumlah
+// hari bulan itu (31 Jan -> 28 Feb / 29 Feb kabisat -> 31 Mar dst). Berlaku juga utk months negatif
+// (mundur -1 bulan, dipakai di jalur "batalkan pembayaran" tagihan-kalender.js).
+// Mutasi in-place & return objek Date yang sama (bukan clone baru) supaya kompatibel drop-in dgn
+// pola pemanggilan lama `d.setMonth(...)` yang sering dipakai di tengah ekspresi/const d.
+// Algoritma: geser dulu ke tanggal 1 (setDate(1)) SEBELUM setMonth() supaya perpindahan bulan itu
+// sendiri tidak pernah overflow (tanggal 1 selalu valid di bulan manapun), baru hitung jumlah hari
+// di bulan tujuan lalu clamp tanggal asli ke situ.
+function addMonthsClamped(base,months){
+if(!(base instanceof Date)||isNaN(base.getTime()))return base;
+const day=base.getDate();
+base.setDate(1);
+base.setMonth(base.getMonth()+months);
+const lastDayOfTargetMonth=new Date(base.getFullYear(),base.getMonth()+1,0).getDate();
+base.setDate(Math.min(day,lastDayOfTargetMonth));
+return base;
+}
 function applyDashHubMainGridDefaultCollapse(){
 let prefs={};
 try{prefs=JSON.parse(localStorage.getItem('cardCollapsePrefs')||'{}');}catch(e){}
