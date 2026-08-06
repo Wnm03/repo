@@ -53,11 +53,11 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's370-produk-inline-create-tx-cart-mutation-gate-modul11';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's370-produk-inline-create-tx-cart-mutation-gate-modul11';
+const APP_BUILD_VERSION = 's404-lint-overlay-open-reflow-guard';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's404-lint-overlay-open-reflow-guard';
 let D = {
 schemaVersion:SCHEMA_VERSION,
-transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],
+transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],
 catatan:{anak:[]},
 milestones:[false,false,false,false,false],
 nextPulang:'',lastBackup:null,lastResetPromptDate:null,
@@ -395,6 +395,10 @@ if(D.pajakZakat.simTarifD===undefined) D.pajakZakat.simTarifD=30000;
 if(!D.assets) D.assets=[];
 if(!D.piutang) D.piutang=[];
 if(!D.inventoryTransfers) D.inventoryTransfers=[];
+if(!D.productMovementOverride) D.productMovementOverride={};
+// Sesi 378 — Purchase Order (record beli dari supplier, module Inventory
+// Movement lanjutan S377). Pola migration guard SAMA PERSIS inventoryTransfers.
+if(!D.purchaseOrders) D.purchaseOrders=[];
 if(!D.debts) D.debts=[];
 D.debts.forEach(d=>{try{if(typeof Debt!=='undefined')Debt.syncBill(d);}catch(e){}});
 if(!D.renovProjects) D.renovProjects=[];

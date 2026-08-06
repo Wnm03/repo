@@ -1,12 +1,12 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s370-produk-inline-create-tx-cart-mutation-gate-modul11';
+const MODULE_CALC_VERSION='s404-lint-overlay-open-reflow-guard';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){
 const fi=D.finansialFreedom||{};
 if((fi.assetScope||'zakatable')==='semua') return totalAssetValue();
-return (D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(a.nilai||0),0);
+return (D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);
 },
 assetFund(){ return totalSaldoAkun()+FI.investmentAssetValue()+totalPiutangValue(); },
 totalDebt(){
@@ -283,6 +283,39 @@ function fiCalcAge(iso){return FI.calcAge(iso);}
 function selectFiAssetScope(v,el){return FI.selectAssetScope(v,el);}
 function openFiSettingsModal(){return FI.openSettingsModal();}
 function onFiCatTotalToggle(el){return FI.onCatTotalToggle(el);}
+
+// SalaryAllocation — kalkulator SARAN (murni hitung, tidak nulis/simpan data
+// apa pun) buat 5 pos alokasi dari rata-rata Pemasukan bulanan aktual (bukan
+// dari field Gaji Pokok Harian di Profil, yang khusus utk kalkulator upah
+// harian/lembur pekerja). Basis "Bulanan" dipakai konsisten dgn pola FI:
+// rata-rata transaksi type='income' selama window FI.effectiveMonths(), SAMA
+// window yang dipakai FI.annualExpense() supaya kedua sisi (income vs
+// expense) apple-to-apple. Ditambahkan sebagai objek baru terpisah dari FI
+// (bukan modifikasi FI) supaya additive & tidak mengganggu SSOT FI yang ada.
+const SalaryAllocation={
+avgMonthlyIncome(){
+const months=FI.effectiveMonths();
+const now=new Date();
+const from=new Date(now.getFullYear(),now.getMonth()-months+1,1);
+const total=D.transactions.filter(t=>t.type==='income'&&new Date(t.date)>=from&&new Date(t.date)<=now).reduce((s,t)=>s+(t.amount||0),0);
+return total/months;
+},
+suggest(){
+const bulanan=SalaryAllocation.avgMonthlyIncome();
+const {swr}=FI.getAssumptions();
+const fiMultiplier=100/swr;
+return {
+bulanan,
+danaDaruratTarget:bulanan*6,
+pensiunFiTarget:bulanan*fiMultiplier,
+fiMultiplier,
+biayaHarian:bulanan*0.5,
+investasi:bulanan*0.3,
+selfReward:bulanan*0.2
+};
+}
+};
+function salaryAllocationSuggest(){return SalaryAllocation.suggest();}
 function getSelectedFiCatIds(){return FI.getSelectedCatIds();}
 function saveFiSettings(){return FI.saveSettings();}
 const DanaDaruratAI={
