@@ -110,6 +110,7 @@ const ProductRepository = {
       ownership: defaultOwnership,
       produsenId: '',
       hargaByProdusen: {},
+      catatan: '', // Sesi 386: field teks bebas baru, diisi dari kolom CSV/Excel "Catatan"
       ...src,
       id: newId, // id SELALU dari generator, tidak boleh dioverride via fields (jaga keunikan)
     };
@@ -451,18 +452,46 @@ const ProductRepository = {
   },
 
   // mutateSetField(product, field, value) — GATE utk field id/teks
-  // (kategoriId/produsenId/satuan), 1 gate dipakai ke-3nya (bukan 3 gate
-  // terpisah — hindari duplikasi validasi, sama semangat instruksi sesi
-  // ini) SAMA POLA mutateSetPrice() (field whitelist + fail-safe: field
-  // tidak disentuh sama sekali kalau value tidak valid). Menggantikan
-  // `p.kategoriId=...`/`p.produsenId=...`/`product.satuan=...` mentah yang
-  // sebelumnya ditulis tanpa validasi di shop-data-io-api.js/cobek-io.js.
+  // (kategoriId/produsenId/satuan/catatan), 1 gate dipakai bareng (bukan
+  // gate terpisah per field — hindari duplikasi validasi, sama semangat
+  // instruksi sesi ini) SAMA POLA mutateSetPrice() (field whitelist +
+  // fail-safe: field tidak disentuh sama sekali kalau value tidak valid).
+  // Menggantikan `p.kategoriId=...`/`p.produsenId=...`/`product.satuan=...`
+  // mentah yang sebelumnya ditulis tanpa validasi di
+  // shop-data-io-api.js/cobek-io.js.
+  // `catatan` (Sesi 386, FIX-v1084-to-v1085-s404-lint-overlay-open-reflow-guard.md)
+  // ditambah ke whitelist yang SUDAH ADA — field teks bebas baru dari kolom
+  // CSV/Excel "Catatan" (produk, bukan produsen — produsen sudah punya
+  // `catatan` sendiri lewat SupplierStore, tidak disentuh sesi ini), pola
+  // validasi SAMA PERSIS satuan (lewat validateTextValue() yang sudah ada).
   mutateSetField(product, field, value) {
     if (!product || typeof product !== 'object' || Array.isArray(product)) {
       return { ok: false, reason: 'Produk tidak valid — harus berupa object' };
     }
-    if (field !== 'kategoriId' && field !== 'produsenId' && field !== 'satuan') {
+    if (field !== 'kategoriId' && field !== 'produsenId' && field !== 'satuan' && field !== 'catatan') {
       return { ok: false, reason: `field tidak didukung gate ini: ${field}` };
+    }
+    // Modul 15 (sesi ini): Clear Field Mutation Gate — SATU pengecualian
+    // eksplisit ditambahkan ke gate yang sudah ada (SAMA POLA
+    // mutateSetPrice() Modul 5 utk hargaReseller=null): `value===''` VALID
+    // khusus utk kategoriId/produsenId (artinya "dikosongkan" — kategori/
+    // produsen produk ini sudah dihapus, atau input kategori kasir
+    // whitespace-only). Sebelum sesi ini, gate ini (validateTextValue()
+    // Modul 5) MEWAJIBKAN teks non-kosong sehingga 3 titik sisi-efek clear
+    // yang sudah ADA SEBELUM sesi ini (Etalase.delKategori() Modul 8,
+    // Produsen.delete() Modul 7, applyTxShopStockFromTx() cabang
+    // kategoriInput whitespace-only Modul 6) SENGAJA dibiarkan raw —
+    // didokumentasikan eksplisit di CHANGELOG-MODUL5/6/7/8.md sbg known
+    // issue yang butuh perluasan gate (bukan gate baru) utk ditutup.
+    // `satuan` TIDAK ikut pengecualian ini (tidak ada jalur existing yang
+    // butuh clear satuan ke kosong — menambah pengecualian utk field yang
+    // tidak butuh berarti melebarkan gate di luar apa yang benar-benar
+    // dipakai). Nilai lain (null/undefined/NaN/angka/whitespace-only)
+    // TETAP ditolak sama seperti sebelumnya — HANYA string kosong literal
+    // `''` yang dikecualikan.
+    if (value === '' && (field === 'kategoriId' || field === 'produsenId')) {
+      product[field] = '';
+      return { ok: true, field, value: '' };
     }
     const v = this.validateTextValue(value);
     if (!v.ok) return v;
