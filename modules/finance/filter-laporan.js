@@ -202,7 +202,14 @@ return true;
 // aset.js). SENGAJA tidak exclude transfer_in/transfer_out spt scope 'laporan' di atas,
 // karena di sini tujuannya lihat riwayat LENGKAP akun tsb (termasuk transfer keluar/masuk),
 // bukan cuma pemasukan/pengeluaran biasa.
-txs=D.transactions.filter(t=>t.accountId===accId);
+// BUGFIX (Sesi 434, audit "riwayat transaksi tidak muncul saat akun diklik"): sebelumnya
+// pakai strict equality (t.accountId===accId) -- accId yang masuk ke fungsi ini kadang
+// berupa angka (dari data lama/import) sedangkan t.accountId string (atau sebaliknya),
+// jadi tidak pernah match & list selalu kosong walau transaksinya ADA. Ganti ke sameId()
+// (helper global, sudah dipakai HAMPIR di semua tempat lain di codebase ini persis untuk
+// menghindari bug tipe data id berbeda ini -- lihat mis. aset.js/akun.js) -- 0 logic baru,
+// cuma reuse pola yang sudah ada.
+txs=D.transactions.filter(t=>sameId(t.accountId,accId));
 }
 if(type==='income')txs=txs.filter(t=>t.type==='income');
 else if(type==='expense')txs=txs.filter(t=>t.type==='expense');
