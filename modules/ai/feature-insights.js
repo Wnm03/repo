@@ -316,6 +316,26 @@ Object.entries(VEHTAX_ITEMS||{}).forEach(([key,cfg])=>{
 const d=daysUntilDate(v[cfg.tglKey]);
 if(d===null)return;
 if(d<=30){
+// Sesi 385 (Sync Insight Pajak Kendaraan <-> Transaksi Keuangan): kalau pajak jenis ini
+// SUDAH tercatat dibayar via transaksi expense di Keuangan (mis. dicatat manual lewat
+// Tambah Transaksi, bukan cuma lewat tombol ✅ Bayar di modal Pajak Kendaraan yg auto-advance
+// v[cfg.tglKey]), jangan tampilkan lagi item ini di AI Insight — walau field tanggal jatuh
+// tempo di kendaraan belum sempat ke-refresh. Match: transaksi expense yang note-nya
+// mengandung label pajak (tanpa emoji) + nama kendaraan, tanggal transaksi dlm rentang wajar
+// di sekitar jatuh tempo SAAT INI (maks H-45 sebelum s/d H+30 sesudah tanggal jatuh tempo)
+// supaya pembayaran periode SEBELUMNYA (siklus lama yg sudah di-advance) tidak ikut
+// nge-exclude keliru siklus yg sekarang.
+const labelClean=cfg.label.replace(/^\S+\s/,'');
+const dueDateObj=new Date(v[cfg.tglKey]);
+const sudahDibayar=(D.transactions||[]).some(t=>{
+if(t.type!=='expense'||!t.note)return false;
+if(!t.note.includes(labelClean)||!t.note.includes(v.name))return false;
+const txDateObj=new Date(t.date);
+if(isNaN(txDateObj))return false;
+const selisihHari=Math.round((dueDateObj-txDateObj)/86400000);
+return selisihHari>=-30&&selisihHari<=45;
+});
+if(sudahDibayar)return;
 const late=d<0;
 const kapan=late?`sudah lewat ${Math.abs(d)} hari dari`:(d===0?'jatuh tempo hari ini untuk':`jatuh tempo ${d} hari lagi untuk`);
 out.push({id:'mobil-tax-'+v.id+'-'+key,level:late?'danger':'warning',icon:late?'🔴':'🟠',text:`${cfg.label} ${escapeHtml(v.name)} ${kapan.includes('hari ini')?kapan:kapan+' tanggal jatuh tempo'}.`,action:{label:'Lihat Pajak Kendaraan',page:'carnotes',navIdx:4}});
