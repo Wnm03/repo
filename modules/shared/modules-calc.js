@@ -1,6 +1,6 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s465-investment-owners-modal-ui';
+const MODULE_CALC_VERSION='s474-virtual-bill-item-final';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){

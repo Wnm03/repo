@@ -2,7 +2,7 @@
 // Dipindah ke modules/shared/modules-render.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
 // Semua fungsi ini murni definisi function global (bukan module), jadi tetap bisa dipanggil dari file manapun
 // yang loadnya belakangan (sama seperti modules-calc.js/features-*.js).
-const MODULE_RENDER_VERSION='s465-investment-owners-modal-ui';
+const MODULE_RENDER_VERSION='s474-virtual-bill-item-final';
 
 function renderPageContent(name){
 // KW perf fix: jaring pengaman selain hook di save() -- pastikan cache saldo akun juga fresh
@@ -33,6 +33,14 @@ if(typeof PropertyManagementPresenter!=='undefined')PropertyManagementPresenter.
 if(typeof RentalManagementPresenter!=='undefined')RentalManagementPresenter.render();
 if(typeof AssetPortfolioPresenter!=='undefined')AssetPortfolioPresenter.render();
 if(typeof AssetMaintenancePresenter!=='undefined')AssetMaintenancePresenter.render();
+// Investasi (S466, Fase 1 BUG-INV-001 Opsi 3) — dipanggil di sini SEKALI tiap
+// #page-aset dibuka (sama pola presenter Manajemen di atas), TERLEPAS dari tab mana
+// yang lagi aktif -- konsisten dgn komentar lama di file ini "Semua card di dalam
+// pane tetap dirender penuh...TERLEPAS dari tab mana yang lagi aktif" (lihat
+// setAsetTab() di aset.js). setAsetTab('investasi') JUGA memanggil ulang render()
+// ini saat tab-nya benar2 dibuka (fresh data), jadi pemanggilan ganda di sini aman
+// & murah (render() murni baca D.investments, 0 side-effect).
+if(typeof InvestmentListUI!=='undefined')InvestmentListUI.render();
 }
 if(name==='settings'){renderSettings();renderBillList();}
 }
@@ -1183,6 +1191,30 @@ const sorted=[...txList].sort((a,b)=>new Date(b.date)-new Date(a.date));
 const hasFilter=Object.values(kf).some(v=>v&&v!=='semua');
 const visibleCount=Math.min(sorted.length,txListPage*TX_PAGE_SIZE);
 const visible=sorted.slice(0,visibleCount);
+// S468c (lanjutan s468-PLAN-virtual-bill-item-tx-list.md, s471/s472):
+// section "⏳ Akan Jatuh Tempo" -- item virtual tagihan (belum dibayar,
+// dari generateVirtualBillItemsForMonth(), txHTML() sudah siap merender
+// sejak s468b) DIRENDER TERPISAH DI ATAS #allTx, TIDAK disisipkan ke
+// sorted/visible/pagination di atas -- jadi 0 risiko ke mIncome/mExpense/
+// mNet (dihitung dari txM, tidak disentuh) & 0 risiko ke hitungan
+// "Tampilkan lebih banyak (N lagi)" (visibleCount/sorted.length di atas
+// juga tidak disentuh). Guard WAJIB (temuan #7 plan): section HANYA
+// tampil kalau txListPeriode==='bulan' DAN curYear/curMonth == bulan/
+// tahun aktual SEKARANG (new Date()) -- di luar kondisi itu section
+// TIDAK dirender sama sekali (bukan dirender kosong), supaya user yang
+// nav ‹bulan› ke bulan lain atau ganti periode ke hari/minggu/tahun/
+// selamanya tidak lihat proyeksi tagihan yang menyesatkan.
+const vBillWrapEl=document.getElementById('allTxVirtualBills');
+if(vBillWrapEl){
+const nowVB=new Date();
+const showVBill=txListPeriode==='bulan'&&curYear===nowVB.getFullYear()&&curMonth===nowVB.getMonth();
+if(showVBill&&typeof generateVirtualBillItemsForMonth==='function'){
+const vItems=generateVirtualBillItemsForMonth(curYear,curMonth);
+vBillWrapEl.innerHTML=vItems.length?`<div class="u-fw600 u-mb6">⏳ Akan Jatuh Tempo</div>`+vItems.map(txHTML).join(''):'';
+} else {
+vBillWrapEl.innerHTML='';
+}
+}
 document.getElementById('allTx').innerHTML=visible.length?visible.map(txHTML).join(''):`<div class="empty"><div class="empty-icon">💸</div><div class="empty-text">${hasFilter?'Tidak ada transaksi yang cocok dengan filter':'Belum ada transaksi di periode ini'}</div></div>`;
 const moreWrap=document.getElementById('allTxLoadMoreWrap');
 if(moreWrap){
