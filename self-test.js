@@ -420,7 +420,7 @@ const pz=D.pajakZakat;
 const expectedNisab=85*pz.hargaEmasPerGram;
 _selfTestAssert(parsePzNum(nisabEl.textContent)===expectedNisab,'Nisab zakat maal tertampil harus = 85 × harga emas/gram ('+fmtFull(expectedNisab)+')');
 const saldoAkun=totalSaldoAkun();
-const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(a.nilai||0),0);
+const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);
 const piutangZakatable=totalPiutangValue();
 const utang=(pz.utangJT||0)+totalDebtValue()+totalCicilanOutstanding();
 const expectedHarta=Math.max(0,saldoAkun+asetZakatable+piutangZakatable-utang);
@@ -1766,6 +1766,12 @@ call:()=>HondaPdfImportUI.open(),close:()=>closeModal('hondaPdfImportModal')},
 call:()=>VehicleCatalogWebImportUI.open(),close:()=>closeModal('vehCatWebImportModal')},
 {label:'BusinessFlowPresenter.openTransferModal()',id:'inventoryTransferModal',
 call:()=>BusinessFlowPresenter.openTransferModal(),close:()=>closeModal('inventoryTransferModal')},
+// S388: purchaseOrderBatchModal (S381) belum terdaftar di sweep manapun --
+// terdeteksi "(kelengkapan cakupan) modal belum terdaftar" di Tes Buka/Tutup
+// Modal. Pola sama persis openTransferModal() tepat di atas (reset state
+// form lalu openModal()), jadi didaftarkan dengan cara yang sama.
+{label:'BusinessFlowPresenter.openPurchaseOrderBatchModal()',id:'purchaseOrderBatchModal',
+call:()=>BusinessFlowPresenter.openPurchaseOrderBatchModal(),close:()=>closeModal('purchaseOrderBatchModal')},
 // openSubCatModal butuh (catId, type) valid -- kalau dipanggil tanpa argumen
 // (lewat auto-detect computeModalSweepFnNames) D.categories[undefined].find()
 // akan throw. Pakai kategori default 'cat_ki' (expense) yg SELALU ada dari
@@ -1847,6 +1853,19 @@ call:()=>{ BBM.openModal(); }},
 call:()=>{ Servis.openModal(); }},
 {label:'Aset.openModal()',id:'assetModal',
 call:()=>{ Aset.openModal(); }},
+// Sesi 434: assetOwnersModal ("⚖️ Atur Porsi Kepemilikan", S392a+) ada di
+// halaman tapi belum terdaftar di sweep manapun -- terdeteksi
+// "(kelengkapan cakupan) modal belum terdaftar" di Tes Buka/Tutup Modal.
+// openOwnersModal() baca Aset.editId (lihat komentar fungsinya di
+// aset.js) -- kalau kosong tetap render (mode "aset belum tersimpan"),
+// tapi biar representatif dgn pemanggilan asli dari UI (tombol di
+// assetModal saat Edit Aset), before/after set+restore Aset.editId ke
+// aset dummy sementara, pola sama persis openCicilanHistoryFromTx di
+// RISKY_OPENER_SPECS atas.
+{label:'Aset.openOwnersModal()',id:'assetOwnersModal',
+before:()=>{ const backup=Aset.editId; D.assets.push({id:'__sweep_dummy_asset_owners__',name:'(tes sweep)',nilai:0,jenis:'Lainnya'}); Aset.editId='__sweep_dummy_asset_owners__'; return backup; },
+call:()=>{ Aset.openOwnersModal(); },
+after:(backup)=>{ Aset.editId=backup; D.assets=D.assets.filter(a=>a.id!=='__sweep_dummy_asset_owners__'); }},
 {label:'Piutang.openModal()',id:'piutangModal',
 call:()=>{ Piutang.openModal(); }},
 {label:'Debt.openModal()',id:'debtModal',

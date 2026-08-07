@@ -29,6 +29,19 @@ issues.push({level:'error',title:'Transaksi dengan jumlah tidak valid',detail:`"
 if(!t.date || isNaN(new Date(t.date).getTime())){
 issues.push({level:'error',title:'Transaksi dengan tanggal tidak valid',detail:`"${t.note||t.category||t.id}" punya tanggal kosong/rusak.`});
 }
+// PERUBAHAN SESI 402 (audit ringan, gap sama persis pola assetId Piutang/
+// Utang di S401b): D.transactions[].assetId (dipilih via dropdown "Kaitkan
+// ke Aset Multi-Owner" di modal Transaksi, lihat modules/finance/
+// transaksi.js resolveTxAssetSplit()) bisa jadi orphan kalau asetnya sudah
+// dihapus -- rincian pembagian ke pemilik (badge/preview "👥 N pemilik")
+// otomatis "hilang" diam-diam (resolveTxAssetSplit balikin {ok:false},
+// bukan crash), jadi user tidak pernah diberi tahu tautannya putus. Murni
+// baca, sameId() sama persis cek assetId Piutang/Utang di atas (field ini
+// juga dibaca lewat sameId() di resolveTxAssetSplit()), 0 perubahan ke cek
+// lain.
+if(t.assetId && !(D.assets||[]).some(a=>sameId(a.id,t.assetId))){
+issues.push({level:'warn',title:'Transaksi tertaut ke Aset Multi-Owner yang sudah dihapus',detail:`"${t.note||t.category||t.id}" (${t.date||'?'}) masih menyimpan tautan ke aset multi-owner yang sudah dihapus -- rincian pembagian ke pemilik tidak lagi ditampilkan, cek/lepas tautannya di modal Transaksi.`});
+}
 });
 if(dupTxIds.length){
 issues.push({level:'error',title:'ID transaksi duplikat',detail:`${dupTxIds.length} transaksi punya ID yang sama (bisa bikin data ganda/salah hitung). ID: ${[...new Set(dupTxIds)].slice(0,5).join(', ')}${dupTxIds.length>5?'...':''}`});
@@ -51,6 +64,22 @@ issues.push({level:'warn',title:'Aset dengan akun tautan tidak valid',detail:`"$
 (D.targets||[]).forEach(t=>{
 if(t.accountId && !accIds.has(t.accountId)){
 issues.push({level:'warn',title:'Target Tabungan dengan akun tautan tidak valid',detail:`"${escapeHtml(t.name||'?')}" ditautkan ke akun yang sudah dihapus — saldo tautan otomatis dianggap kosong, cek/lepas tautannya di modal Target Tabungan.`});
+}
+});
+// PERUBAHAN SESI 401b (audit ringan, gap sama persis pola D.targets di atas):
+// D.eduFunds[].accountId (Dana Pendidikan) & D.sewaKios.units[].accountId
+// (akun tujuan pembayaran sewa) belum pernah dicek orphan, walau field-nya
+// sudah ada & dipakai sync saldo (lihat modules/finance/edukasi-dana.js &
+// modules/business/sewakios.js). Pola & level SAMA PERSIS cek Target di
+// atas. Murni baca, 0 perubahan ke cek lain.
+(D.eduFunds||[]).forEach(f=>{
+if(f.accountId && !accIds.has(f.accountId)){
+issues.push({level:'warn',title:'Dana Pendidikan dengan akun tautan tidak valid',detail:`"${escapeHtml(f.name||'?')}" ditautkan ke akun yang sudah dihapus — "Sudah Terkumpul" tautan otomatis dianggap kosong, cek/lepas tautannya di modal Dana Pendidikan.`});
+}
+});
+((D.sewaKios&&D.sewaKios.units)||[]).forEach(u=>{
+if(u.accountId && !accIds.has(u.accountId)){
+issues.push({level:'warn',title:'Unit Sewa Kios dengan akun tujuan tidak valid',detail:`"${escapeHtml(u.name||'?')}" menunjuk ke akun tujuan pembayaran sewa yang sudah dihapus, cek/lepas tautannya di modal Unit Kios.`});
 }
 });
 D.bbmLogs.forEach(b=>{
@@ -146,6 +175,13 @@ issues.push({level:'error',title:'Piutang dengan nilai tidak valid',detail:`Piut
 if(p.jatuhTempo && isNaN(new Date(p.jatuhTempo).getTime())){
 issues.push({level:'warn',title:'Piutang dengan tanggal jatuh tempo tidak valid',detail:`Piutang "${p.name||'?'}" punya tanggal jatuh tempo yang tidak terbaca sebagai tanggal.`});
 }
+// PERUBAHAN SESI 401b (audit ringan): assetId (Kaitkan ke Aset Multi-Owner,
+// lihat modules/finance/piutang-utang.js resolveEntryAssetSelfPorsi()) bisa
+// jadi orphan kalau asetnya sudah dihapus -- porsi kepemilikan jadi salah
+// hitung diam-diam. Pola sama persis cek assetId lain di file ini.
+if(p.assetId && !(D.assets||[]).some(a=>sameId(a.id,p.assetId))){
+issues.push({level:'warn',title:'Piutang tertaut ke Aset Multi-Owner yang sudah dihapus',detail:`Piutang "${p.name||'?'}" masih menyimpan tautan ke aset multi-owner yang sudah dihapus -- porsi kepemilikan yang dihitung bisa salah, cek/lepas tautannya di modal Piutang.`});
+}
 });
 (D.partsStock||[]).forEach(p=>{
 if((p.qty||0)<0){
@@ -198,6 +234,11 @@ issues.push({level:'error',title:'Utang dengan nilai tidak valid',detail:`Utang 
 }
 if(d.jatuhTempo && isNaN(new Date(d.jatuhTempo).getTime())){
 issues.push({level:'warn',title:'Utang dengan tanggal jatuh tempo tidak valid',detail:`Utang "${d.name||'?'}" punya tanggal jatuh tempo yang tidak terbaca sebagai tanggal.`});
+}
+// PERUBAHAN SESI 401b (audit ringan): sama persis cek assetId Piutang di
+// atas, utk Utang.
+if(d.assetId && !(D.assets||[]).some(a=>sameId(a.id,d.assetId))){
+issues.push({level:'warn',title:'Utang tertaut ke Aset Multi-Owner yang sudah dihapus',detail:`Utang "${d.name||'?'}" masih menyimpan tautan ke aset multi-owner yang sudah dihapus -- porsi kepemilikan yang dihitung bisa salah, cek/lepas tautannya di modal Utang.`});
 }
 });
 // Cek tambahan (S283 — audit data integrity, temuan gap): D.renovProjects[].

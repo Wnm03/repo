@@ -275,7 +275,7 @@ const pz=D.pajakZakat;
 const zpWajib=inc>=pz.nisabPenghasilanBulan;
 const zpJumlah=zpWajib?Math.round(inc*0.025):0;
 const zpInfo=`Zakat Penghasilan bulan ini: pemasukan ${fmtFull(inc)} vs nisab ${fmtFull(pz.nisabPenghasilanBulan)} → ${zpWajib?'✅ WAJIB zakat '+fmtFull(zpJumlah):'⬜ belum wajib (di bawah nisab)'}`;
-const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(a.nilai||0),0);
+const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);
 const totalHartaZakat=Math.max(0,totalSaldoAkun()+asetZakatable-(pz.utangJT||0)-totalDebtValue()-totalCicilanOutstanding());
 const nisabMaal=85*pz.hargaEmasPerGram;
 const cukupNisabMaal=totalHartaZakat>=nisabMaal;
