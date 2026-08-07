@@ -75,3 +75,18 @@
 
 - **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak bisa npm install; perubahan sudah diverifikasi manual mengikuti style existing (indentasi/pola sama file aset.js sekitarnya)
 - **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa npm install; bundle unminified tapi valid sintaks (node --check lolos)
+
+## 2026-08-07T04:48:10.754Z — versi s452-tx-renov-edit-checkbox-restore
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak bisa npm install; perubahan sesi 452 cuma editTx() (transaksi.js): tambah pengecekan renovProjectLinkId/renovItemLinkId sebelum set checkbox txAddRenov (pola identik dgn hasShopStock/shopChk tepat di baris bawahnya), + 1 file test baru (3 test, semua pass); 2937/2937 node --test pass (naik dari 2934)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa npm install; bundle unminified tapi valid sintaks (node --check lolos), konsisten dgn rilis-rilis sebelumnya
+
+## 2026-08-07T06:28:19.991Z — versi s453-owners-nominal-dom-resync
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak bisa ter-install (sama kondisi spt s424/s452, lihat docs/RELEASE-GATE-LOG.md)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa ter-install (sama kondisi spt s424/s452) -- bundle tetap valid (node --check lolos), cuma belum diminify
+
+## 2026-08-07T07:19:12.491Z — versi s456-goal-adapter-exclude-titipan
+
+- **lint-unavailable**: override dipakai. Alasan: Sandbox network egress DISABLED -- eslint tidak pernah terpasang di environment ini (konsisten sesi2 sebelumnya). Perubahan sesi 456 cuma 1 baris filter tambahan (!d.linkedAssetId) di goalSourceDebt() + 1 file test baru, gaya kode identik pola S455 yg sudah lolos review manual sebelumnya, tidak ada pola yg biasa ditangkap eslint (no-undef/unused-vars) krn semua identifier sudah ada & dipakai lengkap.
+- **unminified-bundle**: override dipakai. Alasan: Sandbox yg sama: esbuild tidak terpasang, tidak ada akses jaringan utk install. Bundle unminified tetap 100% valid (node --check lolos). Diterima sesuai docs/ZIP_RULES.md -- prioritas ZIP fungsional, bukan ukuran file.
