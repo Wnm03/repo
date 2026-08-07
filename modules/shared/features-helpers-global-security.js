@@ -53,8 +53,8 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's451-porsi-proporsional-linked-akun-nilai-penuh';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's451-porsi-proporsional-linked-akun-nilai-penuh';
+const APP_BUILD_VERSION = 's456-goal-adapter-exclude-titipan';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's456-goal-adapter-exclude-titipan';
 let D = {
 schemaVersion:SCHEMA_VERSION,
 transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],
