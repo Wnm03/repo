@@ -402,6 +402,12 @@ openOwnersModal(){
 const id=Aset.editId;
 const a=id?D.assets.find(x=>sameId(x.id,id)):null;
 document.getElementById('assetOwnersAssetName').textContent=a?('📋 '+a.name):'';
+// FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
+// buang draft nilai tersirat (lihat _ownersDraftNilai) tiap kali modal
+// dibuka ulang -- draft ini HANYA berlaku selama 1 sesi modal terbuka
+// (pola sama _ownersDraft), supaya tidak nyangkut dari sesi buka-modal
+// sebelumnya kalau user tutup modal tanpa Simpan Porsi.
+Aset._ownersDraftNilai=null;
 Aset._ownersModalAsset=a;
 if(!a){
 Aset._ownersDraft=[];
@@ -431,6 +437,13 @@ openModal('assetOwnersModal');
 // dinonaktifkan" (lihat _renderOwnersList di bawah), krn tanpa nilai dasar
 // konversi Rp<->% tidak bisa dihitung.
 _ownersAssetNilai(){
+// FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
+// kalau user sudah menurunkan nilai dasar dari Nominal (Rp) baris manapun
+// (lihat onOwnerNominalInput, cabang nilai<=0 -- aset ini belum py
+// "Estimasi Nilai Saat Ini"), pakai nilai tersirat itu DULUAN drpd a.nilai
+// asli (yang masih 0/kosong) supaya field Nominal baris LAIN & indikator
+// total ikut kehitung benar tanpa harus keluar modal & isi form Aset dulu.
+if(typeof Aset._ownersDraftNilai==='number'&&isFinite(Aset._ownersDraftNilai)&&Aset._ownersDraftNilai>0)return Aset._ownersDraftNilai;
 const a=Aset._ownersModalAsset;
 return (a&&typeof a.nilai==='number'&&isFinite(a.nilai)&&a.nilai>0)?a.nilai:0;
 },
@@ -443,9 +456,19 @@ return (a&&typeof a.nilai==='number'&&isFinite(a.nilai)&&a.nilai>0)?a.nilai:0;
 // `nilai` yang sudah ada, 0 field D baru), dua arah (edit salah satu field,
 // yang lain ikut update realtime, pola sama persis "Porsi Saya (%)"/"Porsi
 // Saya (Rp)" yang sudah dipakai di txCicilanSharedPct/txCicilanSharedNominal
-// & billSharedPct). Kalau aset belum punya nilai (Estimasi Nilai Saat Ini
-// kosong/0), field Nominal dinonaktifkan (disabled) -- konversi Rp<->%
-// butuh nilai dasar, TIDAK ada cara aman menebaknya.
+// & billSharedPct).
+// FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
+// SEBELUMNYA, kalau aset belum punya nilai (Estimasi Nilai Saat Ini
+// kosong/0), field Nominal dinonaktifkan (disabled) -- alasan lama:
+// konversi Rp<->% butuh nilai dasar, dianggap "tidak ada cara aman
+// menebaknya". Ternyata SALAH utk kasus nyata yang dilaporkan user: Porsi
+// (%) tiap pemilik SUDAH diisi manual & totalnya SUDAH pas 100%, tapi
+// field Nominal tetap kekunci cuma krn "Estimasi Nilai Saat Ini" di form
+// Aset utama belum diisi -- padahal justru sebaliknya yang user mau: isi
+// Nominal salah satu baris (yang porsinya sudah diketahui) buat MENURUNKAN
+// nilai total instrumen itu sendiri. Field Nominal sekarang SELALU
+// enabled; arah derivasi baru ini ditangani di onOwnerNominalInput()
+// (cabang nilai<=0) lewat _ownersDraftNilai -- lihat komentar di sana.
 _renderOwnersList(){
 const listBox=document.getElementById('assetOwnersList');
 if(!listBox){Aset.updateOwnersTotal();return;}
@@ -471,9 +494,9 @@ return '<div style="margin-bottom:8px">'+
 '</div>'+
 '<div class="u-grid2" style="margin-bottom:0">'+
 '<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Porsi (%)</label><input type="number" class="fi" id="ownerPorsi'+i+'" placeholder="%" inputmode="decimal" value="'+(porsiNum!==null?porsiNum:'')+'" oninput="Aset.onOwnerPorsiInput('+i+',this.value)"></div>'+
-'<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Nominal (Rp)</label><input type="text" class="fi" id="ownerNominal'+i+'" placeholder="0" inputmode="decimal"'+(nilai>0?'':' disabled')+' value="'+nominalVal+'" oninput="Aset.onOwnerNominalInput('+i+',this.value)"></div>'+
+'<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Nominal (Rp)</label><input type="text" class="fi" id="ownerNominal'+i+'" placeholder="0" inputmode="decimal" value="'+nominalVal+'" oninput="Aset.onOwnerNominalInput('+i+',this.value)"></div>'+
 '</div>'+
-(nilai>0?'':'<div style="font-size:10.5px;color:var(--text3);margin:-2px 0 4px">Isi "Estimasi Nilai Saat Ini" di form Aset dulu supaya Nominal bisa dihitung otomatis</div>')+
+(nilai>0?'':'<div style="font-size:10.5px;color:var(--text3);margin:-2px 0 4px">Estimasi Nilai Saat Ini aset ini belum diisi -- isi Nominal (Rp) baris yang porsinya sudah kamu tahu, nilai total otomatis dihitung dari situ</div>')+
 '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:4px;cursor:pointer">'+
 '<input type="checkbox" style="width:14px;height:14px"'+(o.isSelf?' checked':'')+' onchange="Aset.onOwnerIsSelfToggle('+i+',this.checked)"> 👤 Ini saya (porsi ini dihitung ke Zakat/Pajak milikmu)'+
 '</label>'+
@@ -585,9 +608,40 @@ Aset.updateOwnersTotal();
 onOwnerNominalInput(i,val){
 if(!Array.isArray(Aset._ownersDraft)||!Aset._ownersDraft[i])return;
 const nilai=Aset._ownersAssetNilai();
-if(nilai<=0)return;
 const n=parseFloat(String(val).replace(/[^0-9.-]/g,''));
 const nominal=isFinite(n)?n:0;
+// FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
+// SEBELUMNYA method ini `return` langsung kalau nilai<=0 (aset belum py
+// "Estimasi Nilai Saat Ini") -- field Nominal dulu memang disabled di
+// kondisi ini jadi handler ini "tidak pernah" kepanggil, TAPI itu blokir
+// use-case nyata: user SUDAH tahu Porsi (%) tiap pemilik (total pas 100%,
+// lihat baris ini punya draft[i].porsi terisi), yang belum ada cuma total
+// Rp instrumennya. Cabang baru ini membalik arah derivasi: dari Nominal +
+// Porsi (%) baris INI (bukan nominal/nilai spt cabang normal di bawah),
+// tarik nilai TOTAL instrumen tersirat = nominal / (porsi/100), simpan ke
+// Aset._ownersDraftNilai (dibaca _ownersAssetNilai(), dipakai saveOwners()
+// utk nulis a.nilai beneran). Kalau porsi baris ini JUGA belum diisi
+// (0/kosong) -- 0 persamaan 2 unknown, tidak ada cara aman menebak nilai
+// dasar, dibiarkan (field tetap bisa diketik, cuma belum ada efek sampai
+// Porsi (%)-nya diisi juga).
+if(nilai<=0){
+const porsiBaris=typeof Aset._ownersDraft[i].porsi==='number'&&isFinite(Aset._ownersDraft[i].porsi)?Aset._ownersDraft[i].porsi:0;
+if(porsiBaris<=0||nominal<=0)return;
+const nilaiTersirat=Math.round(nominal/(porsiBaris/100));
+if(!isFinite(nilaiTersirat)||nilaiTersirat<=0)return;
+Aset._ownersDraftNilai=nilaiTersirat;
+// Nominal (Rp) baris LAIN ikut tersinkron ke nilai yang baru tersirat --
+// porsi baris lain TIDAK berubah (beda dari cabang normal di bawah yang
+// panggil _autoDistributeRemaining -- di sini porsi semua baris memang
+// sudah fix/diketahui user, cuma tampilan Rp-nya yang menyusul).
+Aset._ownersDraft.forEach((o,k)=>{
+if(k===i)return;
+const nomEl=document.getElementById('ownerNominal'+k);
+if(nomEl&&typeof o.porsi==='number'&&isFinite(o.porsi))nomEl.value=Math.round(nilaiTersirat*o.porsi/100);
+});
+Aset.updateOwnersTotal();
+return;
+}
 const porsi=Math.round((nominal/nilai*100)*100)/100;
 Aset._ownersDraft[i].porsi=porsi;
 const porsiEl=document.getElementById('ownerPorsi'+i);
@@ -716,6 +770,16 @@ isSelf:!!o.isSelf,
 const res=MultiOwnerEngine.setOwners(a,owners);
 if(!res.ok){toast('⚠️ '+res.reason);return;}
 Object.assign(a,{owners:res.entity.owners});
+// FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
+// kalau user menurunkan nilai dasar lewat Nominal (Rp) selama modal ini
+// terbuka (aset belum py "Estimasi Nilai Saat Ini", lihat
+// onOwnerNominalInput cabang nilai<=0), tulis ke a.nilai beneran DI SINI --
+// SEBELUM blok sync saldo akun tertaut & _syncOwnerDebts() di bawah (yang
+// dua-duanya baca a.nilai), supaya keduanya langsung pakai nilai yang baru
+// diketahui, bukan 0/kosong seperti sebelumnya.
+if(typeof Aset._ownersDraftNilai==='number'&&isFinite(Aset._ownersDraftNilai)&&Aset._ownersDraftNilai>0){
+a.nilai=Aset._ownersDraftNilai;
+}
 // Sesi 422e: SYNC SALDO AKUN TERTAUT ke porsi BARU -- sebelumnya saveOwners()
 // cuma nulis owners[]/render ulang tampilan (S422c), tapi baseBalance akun
 // tertaut (kalau ADA, lihat assetAccId) tetap pakai nilai LAMA sampai form
@@ -756,6 +820,9 @@ if(typeof OwnershipEngine!=='undefined')linkedAcc.ownership=OwnershipEngine.reso
 Aset._syncOwnerDebts(a);
 save();
 if(typeof AIBus!=="undefined")AIBus.emit("asset.updated",{ownersUpdated:true,editId:a.id});
+// nilai tersirat sudah dikomit ke a.nilai di atas -- buang draft-nya supaya
+// _ownersAssetNilai() balik baca a.nilai asli (sekarang sudah terisi benar).
+Aset._ownersDraftNilai=null;
 Aset._ownersModalAsset=a;
 Aset._ownersDraft=res.entity.owners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf}));
 Aset._renderOwnersList();
@@ -782,6 +849,11 @@ resetOwners(){
 if(!Aset._ownersModalAsset){return;}
 const res=typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.getOwners(Aset._ownersModalAsset):null;
 Aset._ownersDraft=res&&res.ok?res.owners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf})):[];
+// FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
+// nilai tersirat dari Nominal (kalau ada, lihat _ownersDraftNilai) juga
+// bagian dari "perubahan draft yang belum disimpan" -- ikut dibuang saat
+// Reset Draft, pola sama _ownersDraft di atas.
+Aset._ownersDraftNilai=null;
 Aset._renderOwnersList();
 toast('↺ Draft direset ke data yang terakhir tersimpan');
 },
