@@ -85,7 +85,7 @@ const riwayat=u.riwayat||[];
 const baseStr=riwayat.length?riwayat.reduce((max,r)=>(r.tanggal>max?r.tanggal:max),riwayat[0].tanggal):(u.mulai||todayStr());
 const due=new Date(baseStr);
 if(isNaN(due.getTime()))return null;
-due.setMonth(due.getMonth()+1);
+addMonthsClamped(due,1); // BUG-015 (s406): clamp overflow tanggal, mis. sewa mulai 31 Jan -> jatuh tempo 28/29 Feb (bukan 3 Mar)
 due.setHours(0,0,0,0);
 const today=new Date();today.setHours(0,0,0,0);
 const diffDays=Math.round((due-today)/(1000*60*60*24));

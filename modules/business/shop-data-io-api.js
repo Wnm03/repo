@@ -189,7 +189,7 @@ const ShopDataIO = {
   // stok, satuan, berat_kg, catatan.
   //
   // Sesi 386 (audit CSV import — kolom berat_kg/catatan hilang, lihat
-  // FIX-v1084-to-v1085-s422i-revert-hitungzakatmaal-guard.md):
+  // FIX-v1084-to-v1085-s433-audit-fix-renov-edit-not-saving.md):
   //  1. `berat_kg`/`catatan` ditambah ke daftar kolom yang dikenali (dulu
   //     cuma nama/kategori/harga_beli/harga_jual/stok/satuan — file katalog
   //     nyata (mis. katalog batu Merapi) yang punya kolom berat_kg & catatan
