@@ -50,13 +50,18 @@
  *   node build.js nama-versi-baru   → paksa pakai string versi custom
  *
  * Minifikasi:
- *   Kalau paket `esbuild` terpasang (npm install --save-dev esbuild),
- *   skrip ini otomatis makai buat hasil yang benar-benar diminify
- *   (ukuran kecil, mirip build lama). Kalau esbuild TIDAK ada,
- *   skrip tetap jalan & tetap menghasilkan bundle yang 100% valid —
- *   cuma ukurannya lebih besar (source digabung apa adanya, belum
- *   diperkecil). Aman dipakai, tinggal upload; minifikasi tinggal
- *   ditambah belakangan kalau mau.
+ *   `esbuild` ada di `devDependencies` (package.json, sejak Sesi 424 --
+ *   sebelumnya `optionalDependencies`, yang bisa gagal terpasang DIAM-DIAM).
+ *   Kalau `npm install` sukses & esbuild kepakai, skrip ini otomatis
+ *   menghasilkan bundle yang benar-benar diminify (ukuran kecil). Kalau
+ *   esbuild TIDAK ada (mis. environment tanpa akses jaringan saat
+ *   `npm install`), skrip tetap jalan & tetap menghasilkan bundle yang
+ *   100% valid — cuma ukurannya lebih besar (source digabung apa adanya,
+ *   belum diperkecil). Build biasa (`node build.js` / `npm run build`)
+ *   TETAP boleh fallback ke non-minified (aman utk dev sehari-hari) —
+ *   TAPI sebelum bikin ZIP rilis, `scripts/verify-release-ready.js`
+ *   WAJIB dijalankan & akan BLOCK kalau fallback ini terjadi tanpa
+ *   konfirmasi manual eksplisit (lihat file itu utk detail).
  * =============================================================
  */
 'use strict';
@@ -578,6 +583,14 @@ const GROUP_B = [
   // (yang membuka modal itu) — pola sama persis urutan Vehicle Analytics
   // Foundation (Sesi 81) di atas.
   'modules/vehicle/fuel-storage.js',
+  // Fuel State History — ditaruh setelah fuel-storage.js (sama-sama lapisan
+  // data domain fuel murni simpan+baca, 0 dependency satu sama lain).
+  // Konsumennya (FuelBarCorrection.save() di fuel-intelligence-ui.js &
+  // syncFuelStateFromFullTankBbm() di tx-bbm.js/GROUP_B) baca lewat guard
+  // typeof di DALAM fungsi masing-masing (dipanggil runtime setelah bundle
+  // selesai dimuat) — jadi urutan tepatnya di sini tidak kritikal, ditaruh
+  // berdekatan murni supaya lapisan data domain fuel tetap mengelompok.
+  'modules/vehicle/fuel-state-history.js',
   // TASK-142: Fuel Tank Profile — ditaruh setelah fuel-storage.js (sama-sama
   // lapisan data domain fuel, 0 dependency satu sama lain) & SEBELUM
   // fuel-intelligence-engine.js (engine baca FuelTankProfile.get() opsional,
@@ -590,6 +603,15 @@ const GROUP_B = [
   // dependency ke arah situ, cuma jaga urutan lapisan data domain fuel tetap
   // berdekatan).
   'modules/vehicle/fuel-gauge-engine.js',
+  // Sesi 1 asli rencana "Fuel Estimation Auto-Update" (FUEL-AUTOSYNC-04):
+  // Fuel State Estimator — ditaruh setelah fuel-gauge-engine.js (dependency:
+  // FuelTankProfile.get() + fuelEfficiency() + getVehicleKm() global,
+  // semuanya sudah dimuat sebelum titik ini via FuelTankProfile di atas &
+  // vehicle-core.js di GROUP_A lebih awal) & SEBELUM fuel-history.js (tidak
+  // ada dependency ke arah situ, cuma jaga urutan lapisan data/engine domain
+  // fuel tetap berdekatan). FuelStorage (dependency lain) sudah dimuat lebih
+  // dulu (awal blok fuel-* ini).
+  'modules/vehicle/fuel-state-estimator.js',
   'modules/vehicle/fuel-history.js',
   'modules/vehicle/fuel-analytics.js',
   'modules/vehicle/fuel-modal.js',
@@ -2077,12 +2099,21 @@ function main() {
     console.log(`✓ Backup bundle lama disimpan di backups/ (${[resA.backupName, resB.backupName].filter(Boolean).join(', ')})`);
   }
 
-  // Guard: di CI/rilis produksi, esbuild WAJIB ada — `optionalDependencies` di
-  // npm bisa gagal terpasang secara DIAM-DIAM (mis. platform mismatch) tanpa
-  // bikin `npm install` exit non-zero, jadi CI bisa lolos & menghasilkan bundle
-  // TANPA minifikasi tanpa ada yang sadar. Aktifkan dgn flag --require-minify
-  // atau env REQUIRE_MINIFY=1 (dipakai oleh ci.yml). Build lokal tanpa flag ini
-  // tetap boleh fallback ke non-minified seperti biasa (aman utk dev sehari-hari).
+  // Guard: di CI/rilis produksi, esbuild WAJIB ada. Sesi 424: esbuild
+  // dipindah dari `optionalDependencies` ke `devDependencies` di
+  // package.json -- `optionalDependencies` bisa gagal terpasang secara
+  // DIAM-DIAM (mis. platform mismatch) tanpa bikin `npm install` exit
+  // non-zero, jadi CI bisa lolos & menghasilkan bundle TANPA minifikasi
+  // tanpa ada yang sadar. Sbg `devDependency` biasa, `npm install` yg
+  // gagal masang esbuild akan exit non-zero & terlihat jelas. Guard di
+  // bawah ini tetap dipertahankan sbg lapis kedua (defense in depth) --
+  // aktifkan dgn flag --require-minify atau env REQUIRE_MINIFY=1 (dipakai
+  // oleh ci.yml & scripts/release.sh). Build lokal tanpa flag ini tetap
+  // boleh fallback ke non-minified seperti biasa (aman utk dev sehari-
+  // hari). Utk alur ZIP-per-sesi project ini (docs/ZIP_RULES.md, TIDAK
+  // lewat release.sh/git), gate WAJIB yg setara ada di
+  // scripts/verify-release-ready.js -- lihat file itu utk detail lengkap
+  // kenapa gate terpisah ini perlu (env tanpa git/tanpa akses jaringan).
   const requireMinify = process.argv.includes('--require-minify') || process.env.REQUIRE_MINIFY === '1';
   if (requireMinify && (!resA.minified || !resB.minified)) {
     console.error(
@@ -2109,11 +2140,24 @@ function main() {
   }
   console.log('✓ Sintaks kedua bundle valid (node --check lolos)');
 
-  if (readFile('index.html') !== readFile('app_production.html')) {
-    writeFile('app_production.html', readFile('index.html'));
-    console.log('\n✓ app_production.html ditulis ulang jadi salinan persis index.html (sekarang index.html = satu-satunya sumber kebenaran, app_production.html cuma cermin otomatis).');
+  // Sesi 425 — index.html adalah SATU-SATUNYA sumber kebenaran untuk HTML;
+  // app_production.html cuma cermin yang di-generate otomatis di sini. Supaya
+  // tidak ada lagi yang tanpa sadar edit app_production.html langsung (edit
+  // itu akan HILANG diam-diam di build berikutnya — sebelum sesi ini tidak
+  // ada penanda apapun yang bilang begitu), setiap tulis ulang menyisipkan
+  // komentar HTML "AUTO-GENERATED" tepat setelah tag <head> pembuka.
+  // verify-release-ready.js (Gate 3) memblokir ZIP kalau file ini (setelah
+  // komentar ini dilepas) ternyata beda dari index.html — mis. karena lupa
+  // `npm run build` sebelum bikin ZIP.
+  const AUTOGEN_MARKER =
+    '<!-- AUTO-GENERATED oleh scripts/build.js dari index.html — JANGAN edit file ini langsung.\n' +
+    '     Edit index.html, lalu jalankan "node scripts/build.js" (file ini disalin ulang otomatis). -->\n';
+  const productionContent = readFile('index.html').replace('<head>', '<head>\n' + AUTOGEN_MARKER);
+  if (readFile('app_production.html') !== productionContent) {
+    writeFile('app_production.html', productionContent);
+    console.log('\n✓ app_production.html ditulis ulang jadi cermin index.html (+ penanda AUTO-GENERATED).');
   } else {
-    console.log('\n✓ index.html & app_production.html sudah identik.');
+    console.log('\n✓ index.html & app_production.html sudah sinkron.');
   }
 
   console.log(`\n✅ Build "${newVersion}" selesai & lolos cek sintaks. Siap di-upload (jangan lupa upload SEMUA file yang berubah, bukan cuma HTML).`);
