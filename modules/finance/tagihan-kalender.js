@@ -1310,6 +1310,44 @@ d=nd;i++;
 }
 return occurrences;
 }
+// generateVirtualBillItemsForMonth(year,month) — S471 (eksekusi s468a dari
+// s468-PLAN-virtual-bill-item-tx-list.md): generate "item virtual" tagihan
+// yang akan jatuh tempo bulan ini (belum dibayar), untuk disisipkan sbg
+// section terpisah di list transaksi tab Keuangan (bukan D.transactions
+// asli). PURE: tidak baca DOM, tidak menyentuh D.transactions/D.bills/
+// D.billsArchive sama sekali -- cuma return array baru.
+// Reuse getBillOccurrencesInMonth() (jadwal freq+sisaTenor, sudah ada) +
+// getBillPaidThisPeriodInfo() (exclude yg sudah lunas periode ini, sudah
+// ada) -- 0 logic baru. D.billsArchive TIDAK perlu dicek eksplisit: bill
+// lunas/arsip sudah pindah keluar dari D.bills lewat markBillPaid() (lihat
+// D.billsArchive.push di atas), jadi loop D.bills otomatis exclude arsip.
+// Nominal: b.amount apa adanya -- utk shared bill, amount SUDAH porsi user
+// sejak disimpan (lihat _saveBillInner, amt=Math.round(rawAmt*sharedPct/100)),
+// TIDAK perlu split ulang/OwnershipEngine (beda domain dari multi-owner aset).
+// Id prefix eksplisit 'vbill_' -- bukan cuma cegah collision dgn uid()
+// transaksi asli, tapi supaya txHTML()/delTx() (sesi lanjutan) tinggal cek
+// String(id).startsWith('vbill_') tanpa cross-check ke D.bills tiap kali.
+function generateVirtualBillItemsForMonth(year,month){
+const out=[];
+(D.bills||[]).forEach(function(b){
+if(!b||!b.id)return;
+if(getBillPaidThisPeriodInfo(b,month,year))return; // sudah lunas periode ini -- skip
+const occ=getBillOccurrencesInMonth(b,year,month);
+if(!occ.length)return;
+out.push({
+id:'vbill_'+b.id+'_'+year+String(month).padStart(2,'0'),
+billId:b.id,
+virtual:true,
+name:b.name||'Tagihan',
+category:b.category||'',
+amount:b.amount||0,
+date:occ[0].toISOString().split('T')[0],
+kind:b.kind||'',
+shared:!!b.shared
+});
+});
+return out;
+}
 function openBillCalendar(){
 const now=new Date();
 billCalYear=now.getFullYear();billCalMonth=now.getMonth();

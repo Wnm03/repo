@@ -20,7 +20,28 @@
 // `curMonth`/`curYear`/`txListPage` juga TIDAK dipindah -- sudah dipakai
 // modul lain (features-helpers-global-security.js, filter-laporan.js)
 // sebelum sesi ini, dibiarkan di tempat asalnya.
+// S468b (lanjutan s468-PLAN-virtual-bill-item-tx-list.md, s471a):
+// item virtual tagihan (dari generateVirtualBillItemsForMonth(), lihat
+// tagihan-kalender.js) dikirim ke txHTML() lewat array section terpisah
+// (bukan D.transactions/sorted/visible -- s468c). Router murni pakai
+// prefix eksplisit 'vbill_' di id, jadi TIDAK perlu cross-check ke D.bills
+// tiap kali. Klik kartu -> openBillModal(billId asli, hasil strip prefix),
+// tombol 🗑 diganti non-fungsional (data-action kosong via bill id null,
+// lihat cabang khusus di delTx()) supaya tidak memicu dialog "Hapus
+// transaksi?" yang menyesatkan (poin bahaya #2 di plan).
 function txHTML(t){
+if(t&&t.virtual&&String(t.id).startsWith('vbill_')){
+const cats=getAllCats();
+const cat=cats.find(c=>c.name===t.category);
+const icon=cat?cat.emoji:'⏳';
+return`<div class="tx-item u-pointer" data-action="openBillModal" data-args="${escapeHtml(JSON.stringify([t.billId]))}">
+    <div class="tx-icon" style="background:var(--accent-soft)">${icon}</div>
+    <div class="tx-info"><div class="tx-name">${escapeHtml(t.name)} <span class="acc-chip">⏳ Terjadwal</span></div><div class="tx-meta">${t.date}</div></div>
+    <div class="u-flex u-aic u-gap6">
+      <div class="tx-amount red">-${fmt(t.amount)}</div>
+    </div>
+  </div>`;
+}
 const cats=getAllCats();
 let icon='💰', bg='var(--accent-soft)';
 if(t.type==='transfer_out'||t.type==='transfer_in'){icon='⇄';bg='var(--accent-soft)';}
@@ -50,6 +71,14 @@ return`<div class="tx-item u-pointer" data-action="editTx" data-args="${escapeHt
   </div>`;
 }
 async function delTx(id){
+// S468b guard (defense in depth, lihat poin bahaya #2 di
+// s468-PLAN-virtual-bill-item-tx-list.md): id item virtual tagihan
+// (prefix 'vbill_', lihat txHTML()) BUKAN transaksi asli -- kalau
+// ke-trigger (mis. race re-render, atau dipanggil langsung bukan lewat
+// tombol yg sudah disembunyikan di txHTML()), JANGAN tampilkan dialog
+// "Hapus transaksi?" yang menyesatkan (tidak ada apa pun yang akan
+// terhapus). Guard di baris PERTAMA, sebelum askConfirm() dipanggil.
+if(String(id).startsWith('vbill_')){toast('Tagihan ini belum dibayar');return;}
 if(!await askConfirm('Hapus transaksi ini?'))return;
 const t=D.transactions.find(x=>x.id===id);
 // SESI 432 (audit fitur Transfer Antar Akun): transfer_out/transfer_in
