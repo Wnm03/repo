@@ -33,6 +33,7 @@ function makeCtx({ document, D, calls }) {
       fmtFull: (n) => 'Rp' + n,
       parsePzNum: (s) => parseFloat(s) || 0,
       recalcAccBalance: () => 0,
+      withSaveGuard: (key, modalId, fn) => fn(),
       save: () => calls.push('save'),
       openModal: (id) => calls.push('open:' + id),
       closeModal: (id) => calls.push('close:' + id),

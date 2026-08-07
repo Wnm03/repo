@@ -373,3 +373,56 @@ test('save() — Fuel Modal terbuka utk kendaraan LAIN -> tidak ikut di-refresh'
   ctx.FuelBarCorrection.save();
   assert.deepEqual(calls, []);
 });
+
+// --- save() -> FuelStateHistory.record() (lanjutan, histori estimasi) -----
+
+test('save() — FuelStateHistory disediakan -> record() dipanggil dgn fuelState yang barusan ditulis', () => {
+  const { doc } = makeFakeDoc();
+  const veh = { ...VEH };
+  const recorded = [];
+  const ctx = makeCtx({
+    document: doc,
+    D: { vehicles: [veh] },
+    FuelGaugeEngine: fakeGaugeEngine(),
+    FuelTankProfile: { get: () => PROFILE },
+    FuelStorage: { latest: () => null },
+    save: () => {},
+    closeModal: () => {},
+    toast: () => {},
+    FuelCard: { render: () => {} },
+    openModal: () => {},
+    FuelStateHistory: { record: (vehicleId, fuelState) => recorded.push({ vehicleId, fuelState }) },
+  });
+  ctx.FuelBarCorrection.open('v1');
+  ctx.FuelBarCorrection.selectBar(6);
+  ctx.FuelBarCorrection.save();
+
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].vehicleId, 'v1');
+  // Snapshot yang dikirim ke record() harus PERSIS objek yang barusan
+  // ditulis ke veh.fuelState (bukan copy manual/rumus baru).
+  assert.equal(recorded[0].fuelState, veh.fuelState);
+  assert.equal(recorded[0].fuelState.estimatedSource, 'manual-bar-correction');
+});
+
+test('save() — FuelStateHistory TIDAK disediakan -> tidak throw, save() manual tetap normal (guard typeof)', () => {
+  const { doc } = makeFakeDoc();
+  const veh = { ...VEH };
+  const ctx = makeCtx({
+    document: doc,
+    D: { vehicles: [veh] },
+    FuelGaugeEngine: fakeGaugeEngine(),
+    FuelTankProfile: { get: () => PROFILE },
+    FuelStorage: { latest: () => null },
+    save: () => {},
+    closeModal: () => {},
+    toast: () => {},
+    FuelCard: { render: () => {} },
+    openModal: () => {},
+    // FuelStateHistory SENGAJA tidak diinject.
+  });
+  ctx.FuelBarCorrection.open('v1');
+  ctx.FuelBarCorrection.selectBar(6);
+  assert.doesNotThrow(() => ctx.FuelBarCorrection.save());
+  assert.ok(veh.fuelState);
+});

@@ -12,13 +12,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadSource } = require('./helpers/loadSource');
 
-function makeCtx(D, { fuelEfficiencyImpl, predictionEngine } = {}) {
+function makeCtx(D, { fuelEfficiencyImpl, predictionEngine, FuelStateEstimator } = {}) {
   return loadSource(
     ['modules/vehicle/fuel-storage.js', 'modules/vehicle/fuel-cost-analytics.js'],
     {
       D,
       fuelEfficiency: fuelEfficiencyImpl,
       FuelPredictionEngine: predictionEngine,
+      FuelStateEstimator,
     },
     ['FuelStorage', 'FuelCostAnalytics'],
   );
@@ -184,6 +185,41 @@ test('projectedYearlyCost() — {ok:false} diteruskan apa adanya dari FuelPredic
   const res = ctx.FuelCostAnalytics.projectedYearlyCost('v1');
   assert.equal(res.ok, false);
   assert.equal(res.reason, 'Data BBM belum cukup');
+});
+
+// --- SESI 5 (FUEL-AUTOSYNC-08): _confidenceScore() reuse decayedConfidenceScore
+
+test('projectedMonthlyCost() — FuelStateEstimator ok:true -> confidenceScore pakai decayedConfidenceScore (bukan fuelState.confidenceScore mentah)', () => {
+  const D = { vehicles: [{ id: 'v1', fuelState: { confidenceScore: 90 } }] };
+  const ctx = makeCtx(D, {
+    predictionEngine: { predictMonthlyFuelUsage: () => ({ ok: true, estimatedLiter: 7.5, estimatedCost: 75000 }) },
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: true, liter: 3, decayedConfidenceScore: 55 }) },
+  });
+  const res = ctx.FuelCostAnalytics.projectedMonthlyCost('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.confidenceScore, 55);
+});
+
+test('projectedMonthlyCost() — FuelStateEstimator ok:false -> confidenceScore fallback ke fuelState.confidenceScore mentah', () => {
+  const D = { vehicles: [{ id: 'v1', fuelState: { confidenceScore: 90 } }] };
+  const ctx = makeCtx(D, {
+    predictionEngine: { predictMonthlyFuelUsage: () => ({ ok: true, estimatedLiter: 7.5, estimatedCost: 75000 }) },
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: false, reason: 'belum ada titik acuan' }) },
+  });
+  const res = ctx.FuelCostAnalytics.projectedMonthlyCost('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.confidenceScore, 90);
+});
+
+test('projectedYearlyCost() — FuelStateEstimator belum dimuat -> confidenceScore fallback ke fuelState.confidenceScore mentah (pola lama)', () => {
+  const D = { vehicles: [{ id: 'v1', fuelState: { confidenceScore: 60 } }] };
+  const ctx = makeCtx(D, {
+    predictionEngine: { predictYearlyFuelUsage: () => ({ ok: true, estimatedLiter: 90, estimatedCost: 900000 }) },
+    FuelStateEstimator: undefined,
+  });
+  const res = ctx.FuelCostAnalytics.projectedYearlyCost('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.confidenceScore, 60);
 });
 
 // --- refillFrequency() ---------------------------------------------------

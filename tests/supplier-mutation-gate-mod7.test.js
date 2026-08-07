@@ -174,7 +174,7 @@ test('integrasi: cobek-order.js Produsen.save() — CREATE lewat SupplierStore.m
   };
   const ctx = loadSource(
     ['modules/shop/generic/product-repository.js', 'modules/shop/generic/supplier-store.js', 'modules/shop/cobek-order.js'],
-    { D, document: fakeDocument, toast: () => {}, save: () => {}, closeModal: () => {}, askConfirm: async () => true },
+    { D, document: fakeDocument, toast: () => {}, save: () => {}, closeModal: () => {}, askConfirm: async () => true, withSaveGuard: (key, modalId, fn) => fn() },
     ['Produsen', 'SupplierStore'],
   );
   let createCalls = 0;
@@ -201,7 +201,7 @@ test('integrasi: cobek-order.js Produsen.save() — UPDATE lewat SupplierStore.m
   };
   const ctx = loadSource(
     ['modules/shop/generic/product-repository.js', 'modules/shop/generic/supplier-store.js', 'modules/shop/cobek-order.js'],
-    { D, document: fakeDocument, toast: () => {}, save: () => {}, closeModal: () => {}, askConfirm: async () => true },
+    { D, document: fakeDocument, toast: () => {}, save: () => {}, closeModal: () => {}, askConfirm: async () => true, withSaveGuard: (key, modalId, fn) => fn() },
     ['Produsen', 'SupplierStore'],
   );
   let updateCalls = 0;
@@ -279,7 +279,7 @@ test('integrasi: seluruh caller lama tetap bekerja tanpa SupplierStore (fallback
   };
   const ctxOrder = loadSource(
     ['modules/shop/cobek-order.js'],
-    { D, document: fakeDocumentOrder, toast: () => {}, save: () => {}, closeModal: () => {}, askConfirm: async () => true },
+    { D, document: fakeDocumentOrder, toast: () => {}, save: () => {}, closeModal: () => {}, askConfirm: async () => true, withSaveGuard: (key, modalId, fn) => fn() },
     ['Produsen'],
   );
   ctxOrder.Produsen.editId = null;

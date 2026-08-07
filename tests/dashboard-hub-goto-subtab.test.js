@@ -50,6 +50,13 @@ function makeEl(id, parent) {
     scrollIntoView() { el.scrollIntoViewCalls++; },
     get offsetWidth() { return 0; },
     dataset: {},
+    // S388 fix: applySectionTab() asli (dashboard-hub.js) menulis
+    // el.style.display = '' sebagai bagian fix cascade bug inline-style vs
+    // classList.toggle('u-dnone') (lihat AUDIT cascade bug). Mock DOM di
+    // test ini dibuat SEBELUM fix itu ada, jadi belum punya `style` ->
+    // "Cannot set properties of undefined (setting 'display')". Tambahan
+    // murni objek style kosong, tidak mengubah assertion manapun di bawah.
+    style: {},
   };
   return el;
 }

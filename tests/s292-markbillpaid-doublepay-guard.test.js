@@ -79,7 +79,8 @@ function loadSandbox(D, { confirmQueue = [], promptDefault = true } = {}) {
     hitungZakatMaal: () => {},
   };
   vm.createContext(context);
-  const snippet = `${extractFnSource('getBillPaidThisPeriodInfo')}
+  const snippet = `${extractFnSource('_amc015')}
+${extractFnSource('getBillPaidThisPeriodInfo')}
 ${extractFnSource('advanceBillNextDue')}
 ${extractFnSource('markBillPaid')}
 this.markBillPaid = markBillPaid;

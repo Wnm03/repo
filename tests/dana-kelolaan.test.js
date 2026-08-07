@@ -48,7 +48,7 @@ function makeD() {
 
 function makeCtx(D) {
   return loadSource(
-    ['modules/shared/ownership-engine.js', 'modules/finance/akun.js', 'modules/asset/aset.js', 'modules/asset/investasi.js', 'modules/shop/cobek-order.js', 'modules/finance/dana-kelolaan.js'],
+    ['modules/shared/ownership-engine.js', 'modules/shared/multi-owner-engine.js', 'modules/finance/akun.js', 'modules/asset/aset.js', 'modules/asset/investasi.js', 'modules/shop/cobek-order.js', 'modules/finance/dana-kelolaan.js'],
     {
       D,
       escapeHtml: (s) => String(s),
@@ -57,7 +57,7 @@ function makeCtx(D) {
       MONTHS: ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'],
       uid: () => 'x',
     },
-    ['OwnershipEngine', 'DanaKelolaan', 'Investment', 'recalcAccBalance', 'totalSaldoAkun', 'Aset'],
+    ['OwnershipEngine', 'MultiOwnerEngine', 'DanaKelolaan', 'Investment', 'recalcAccBalance', 'totalSaldoAkun', 'Aset'],
   );
 }
 
@@ -110,6 +110,26 @@ test('DanaKelolaan.summary() — titipanAset: jumlah titipanAmount aset SELF, TE
   const s = ctx.DanaKelolaan.summary();
   assert.equal(s.titipanAset, 1700000);
   assert.equal(s.titipan, 300000, 'titipan (THIRD_PARTY whole-asset) tidak berubah, tidak tercampur dgn titipanAset');
+  assert.equal(s.total, s.investor + s.titipan + s.dpCustomer + s.keluarga + s.titipanAset);
+});
+
+test('DanaKelolaan.summary() — titipanAset: Sesi D, baca via MultiOwnerEngine.selfPorsi() -- porsi majemuk `a.owners` (>1 baris non-SELF) ikut terhitung, bukan cuma titipanAmount tunggal', () => {
+  const D = makeD();
+  // aset SELF porsi majemuk: 60% SELF + 25% Budi + 15% Ayah (2 owner
+  // non-SELF sekaligus -- kasus yang TIDAK BISA direpresentasikan
+  // titipanAmount lama, cuma bisa lewat a.owners S390-392e).
+  D.assets.push({
+    id: 's6',
+    nilai: 4000000,
+    owners: [
+      { ownerId: 'SELF', porsi: 60, ownerName: 'Milik Sendiri', isSelf: true },
+      { ownerId: 'budi', porsi: 25, ownerName: 'Budi' },
+      { ownerId: 'ayah', porsi: 15, ownerName: 'Ayah' },
+    ],
+  });
+  const ctx = makeCtx(D);
+  const s = ctx.DanaKelolaan.summary();
+  assert.equal(s.titipanAset, 4000000 * 0.4, 'porsi non-SELF (25%+15%) dari nilai aset, dijumlah lintas 2 owner sekaligus');
   assert.equal(s.total, s.investor + s.titipan + s.dpCustomer + s.keluarga + s.titipanAset);
 });
 

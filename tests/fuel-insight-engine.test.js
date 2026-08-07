@@ -23,6 +23,7 @@ function makeCtx(D, mocks = {}) {
       FuelCostAnalytics: mocks.FuelCostAnalytics,
       FuelMaintenanceEngine: mocks.FuelMaintenanceEngine,
       FuelTankProfile: mocks.FuelTankProfile,
+      FuelStateEstimator: mocks.FuelStateEstimator,
     },
     ['FuelInsightEngine'],
   );
@@ -515,4 +516,43 @@ test('getSummary() — invalid vehicle tetap {ok:false} sama persis (tidak terpe
   assert.equal(res.ok, false);
   assert.equal(res.reason, 'Kendaraan tidak ditemukan');
   assert.equal(Object.keys(res).length, 2);
+});
+
+// --- SESI 4 (FUEL-AUTOSYNC-07): _currentFuelLiter() reuse FuelStateEstimator
+
+test('_currentFuelLiter() — FuelStateEstimator ok:true -> pakai liter live (bukan snapshot beku)', () => {
+  const ctx = makeCtx({ vehicles: [VEH_WITH_FUEL_STATE] }, {
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: true, liter: 6.5 }) },
+  });
+  assert.equal(ctx.FuelInsightEngine._currentFuelLiter('v1'), 6.5);
+});
+
+test('_currentFuelLiter() — FuelStateEstimator ok:false -> fallback ke fuelState.currentFuelLiter', () => {
+  const ctx = makeCtx({ vehicles: [VEH_WITH_FUEL_STATE] }, {
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: false, reason: 'belum ada titik acuan' }) },
+  });
+  assert.equal(ctx.FuelInsightEngine._currentFuelLiter('v1'), 2); // VEH_WITH_FUEL_STATE.fuelState.currentFuelLiter
+});
+
+test('_currentFuelLiter() — FuelStateEstimator belum dimuat -> fallback ke fuelState.currentFuelLiter (pola lama)', () => {
+  const ctx = makeCtx({ vehicles: [VEH_WITH_FUEL_STATE] }, {});
+  assert.equal(ctx.FuelInsightEngine._currentFuelLiter('v1'), 2);
+});
+
+test('getInsights() — insight "Reserve Fuel" pakai liter dari FuelStateEstimator (auto-refresh km, bukan snapshot)', () => {
+  let literReceived = null;
+  const ctx = makeCtx({ vehicles: [VEH_WITH_FUEL_STATE] }, {
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: true, liter: 1 }) }, // di bawah reserveLiter
+    FuelGaugeEngine: {
+      getReserveStatus: (vehicleId, liter) => {
+        literReceived = liter;
+        return { ok: true, vehicleId, inReserve: true, reserveLiter: 2, literAboveReserve: 0, clamped: false };
+      },
+    },
+  });
+  const res = ctx.FuelInsightEngine.getInsights('v1');
+  assert.equal(literReceived, 1); // BUKAN 2 (snapshot fuelState.currentFuelLiter)
+  const insight = res.insights.find((i) => i.type === 'Reserve Fuel');
+  assert.ok(insight);
+  assert.equal(insight.priority, 'CRITICAL');
 });

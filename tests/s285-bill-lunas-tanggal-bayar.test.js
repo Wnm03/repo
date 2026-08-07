@@ -75,7 +75,8 @@ function loadSandbox(D, { confirmResult = true } = {}) {
   // ikut di-extract dgn pola sama. parsePzNum (s302 lanjutan, item #3) -- dependency baru
   // khusus jalur kind==='utang' (jumlah bayar custom), di-stub di context di atas (bukan
   // fungsi murni file ini, cukup Number(v) sederhana utk kebutuhan test).
-  const snippet = `${extractFnSource('getBillPaidThisPeriodInfo')}
+  const snippet = `${extractFnSource('_amc015')}
+${extractFnSource('getBillPaidThisPeriodInfo')}
 ${extractFnSource('advanceBillNextDue')}
 ${extractFnSource('markBillPaid')}
 this.markBillPaid = markBillPaid;

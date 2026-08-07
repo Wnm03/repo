@@ -70,7 +70,8 @@ function loadSandbox(D, { promptAmount, promptDate = '2026-07-31' } = {}) {
     hitungZakatMaal: () => {},
   };
   vm.createContext(context);
-  const snippet = `${extractFnSource('getBillPaidThisPeriodInfo')}
+  const snippet = `${extractFnSource('_amc015')}
+${extractFnSource('getBillPaidThisPeriodInfo')}
 ${extractFnSource('advanceBillNextDue')}
 ${extractFnSource('markBillPaid')}
 this.markBillPaid = markBillPaid;`;
@@ -151,7 +152,8 @@ test('markBillPaid() kind lain (tagihan biasa) — TIDAK menampilkan prompt Juml
     renderDebtList: () => {}, renderKekayaanBersih: () => {}, hitungZakatMaal: () => {},
   };
   vm.createContext(context);
-  const snippet = `${extractFnSource('getBillPaidThisPeriodInfo')}
+  const snippet = `${extractFnSource('_amc015')}
+${extractFnSource('getBillPaidThisPeriodInfo')}
 ${extractFnSource('advanceBillNextDue')}
 ${extractFnSource('markBillPaid')}
 this.markBillPaid = markBillPaid;`;

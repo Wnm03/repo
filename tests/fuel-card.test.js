@@ -27,7 +27,7 @@ function makeFakeDoc(ids) {
 
 function makeCtx({
   document, FuelIntelligenceEngine, FuelInsightEngine, curVehicleId, escapeHtml, fmt, D,
-  FuelTankProfile, FuelGaugeEngine, FuelBarCorrection, FuelStateEstimator,
+  FuelTankProfile, FuelGaugeEngine, FuelBarCorrection, FuelStateEstimator, showAlertModal,
 } = {}) {
   return loadSource(
     ['modules/vehicle/fuel-card.js'],
@@ -43,6 +43,7 @@ function makeCtx({
       FuelGaugeEngine,
       FuelBarCorrection,
       FuelStateEstimator,
+      showAlertModal,
     },
     ['FuelCard'],
   );
@@ -788,4 +789,182 @@ test('render() — kmClamped:true DAN partialFillDriftRisk:true sekaligus -> ked
   const html = els.fuelIntelBody.innerHTML;
   assert.match(html, /cek odometer/);
   assert.match(html, /isi BBM parsial berturut-turut/);
+});
+
+// --- Audit S444+ (temuan user: "fuel bar statis walau KM di-update") -------
+// _estimationLimitedHint(): sisi UI dari FuelStateEstimator.estimationLimited
+// -- sebelumnya kalau true, liter cuma "macet" tanpa penjelasan apa pun.
+
+test('_estimationLimitedHint() — estimationLimited:true & kmPerLiter:null -> {ok:true, reason:"kmPerLiter"}', () => {
+  const ctx = makeCtx({
+    D: {},
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: true, liter: 4, estimationLimited: true, kmPerLiter: null }) },
+  });
+  const res = ctx.FuelCard._estimationLimitedHint('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.reason, 'kmPerLiter');
+});
+
+test('_estimationLimitedHint() — estimationLimited:false -> {ok:false}', () => {
+  const ctx = makeCtx({
+    D: {},
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: true, liter: 4, estimationLimited: false, kmPerLiter: 20 }) },
+  });
+  assert.equal(ctx.FuelCard._estimationLimitedHint('v1').ok, false);
+});
+
+test('_estimationLimitedHint() — estimator ok:false -> {ok:false} (bukan error)', () => {
+  const ctx = makeCtx({
+    D: {},
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: false, reason: 'belum ada titik acuan' }) },
+  });
+  assert.equal(ctx.FuelCard._estimationLimitedHint('v1').ok, false);
+});
+
+test('_estimationLimitedHint() — FuelStateEstimator belum dimuat -> {ok:false} (bukan error)', () => {
+  const ctx = makeCtx({ D: {}, FuelStateEstimator: undefined });
+  assert.equal(ctx.FuelCard._estimationLimitedHint('v1').ok, false);
+});
+
+test('render() — estimationLimited krn kmPerLiter null -> nudge "belum mengurangi konsumsi km" tampil', () => {
+  const { doc, els } = makeFakeDoc(['fuelIntelWrap', 'fuelIntelBody']);
+  const ctx = makeCtx({
+    document: doc,
+    FuelIntelligenceEngine: { vehicleInsight: () => BASE_INSIGHT },
+    curVehicleId: 'v1',
+    D: { vehicles: [{ id: 'v1', fuelState: { confidenceScore: 100 } }] },
+    FuelStateEstimator: {
+      estimateCurrentLiter: () => ({
+        ok: true, liter: 4, estimationLimited: true, kmPerLiter: null,
+        kmClamped: false, partialFillDriftRisk: false, decayedConfidenceScore: 100,
+      }),
+    },
+  });
+  ctx.FuelCard.render();
+  assert.match(els.fuelIntelBody.innerHTML, /belum mengurangi konsumsi km/);
+});
+
+test('render() — estimationLimited krn referenceKm null (kmPerLiter tersedia) -> nudge TIDAK tampil (bukan kasus yang ditargetkan hint ini, self-heal yang menangani)', () => {
+  const { doc, els } = makeFakeDoc(['fuelIntelWrap', 'fuelIntelBody']);
+  const ctx = makeCtx({
+    document: doc,
+    FuelIntelligenceEngine: { vehicleInsight: () => BASE_INSIGHT },
+    curVehicleId: 'v1',
+    D: { vehicles: [{ id: 'v1', fuelState: { confidenceScore: 100 } }] },
+    FuelStateEstimator: {
+      estimateCurrentLiter: () => ({
+        ok: true, liter: 4, estimationLimited: true, kmPerLiter: 20, referenceKm: null,
+        kmClamped: false, partialFillDriftRisk: false, decayedConfidenceScore: 100,
+      }),
+    },
+  });
+  ctx.FuelCard.render();
+  assert.doesNotMatch(els.fuelIntelBody.innerHTML, /belum mengurangi konsumsi km/);
+});
+
+test('render() — estimationLimited:false -> tidak ada nudge apa pun terkait ini', () => {
+  const { doc, els } = makeFakeDoc(['fuelIntelWrap', 'fuelIntelBody']);
+  const ctx = makeCtx({
+    document: doc,
+    FuelIntelligenceEngine: { vehicleInsight: () => BASE_INSIGHT },
+    curVehicleId: 'v1',
+    D: { vehicles: [{ id: 'v1', fuelState: { confidenceScore: 100 } }] },
+    FuelStateEstimator: {
+      estimateCurrentLiter: () => ({
+        ok: true, liter: 4, estimationLimited: false, kmPerLiter: 20,
+        kmClamped: false, partialFillDriftRisk: false, decayedConfidenceScore: 100,
+      }),
+    },
+  });
+  ctx.FuelCard.render();
+  assert.doesNotMatch(els.fuelIntelBody.innerHTML, /belum mengurangi konsumsi km/);
+});
+
+// --- showDiagnostic() (rekomendasi #1 audit S444/S445, "diagnostic view
+// long-press gauge") ---------------------------------------------------
+
+test('showDiagnostic() — estimasi ok -> tampilkan field mentah lewat showAlertModal (referenceKm/deltaKm/estimationLimited dst)', () => {
+  let shown = null;
+  const ctx = makeCtx({
+    FuelStateEstimator: {
+      estimateCurrentLiter: () => ({
+        ok: true, referenceKm: 1000, currentKm: 1250, deltaKm: 250, kmClamped: false,
+        kmPerLiter: 25, baseLiter: 4, addedLiter: 0.5, partialFillsCounted: 1,
+        consumedLiter: 10, liter: 3.5, estimationLimited: false, partialFillDriftRisk: false,
+        confidenceScore: 90, decayedConfidenceScore: 73,
+      }),
+    },
+    showAlertModal: (msg, opts) => { shown = { msg, opts }; },
+  });
+  ctx.FuelCard.showDiagnostic('v1');
+  assert.ok(shown, 'showAlertModal harus terpanggil');
+  assert.match(shown.msg, /referenceKm: 1000/);
+  assert.match(shown.msg, /deltaKm: 250/);
+  assert.match(shown.msg, /kmPerLiter: 25/);
+  assert.match(shown.msg, /estimationLimited: tidak/);
+  assert.match(shown.msg, /confidenceScore: 90.*decayed: 73/);
+});
+
+test('showDiagnostic() — referenceKm/deltaKm null (estimationLimited) -> tampil "belum ada"/"estimationLimited", bukan error', () => {
+  let shown = null;
+  const ctx = makeCtx({
+    FuelStateEstimator: {
+      estimateCurrentLiter: () => ({
+        ok: true, referenceKm: null, currentKm: 500, deltaKm: null, kmClamped: false,
+        kmPerLiter: null, baseLiter: 4, addedLiter: 0, partialFillsCounted: 0,
+        consumedLiter: 0, liter: 4, estimationLimited: true, partialFillDriftRisk: false,
+        confidenceScore: 70, decayedConfidenceScore: 70,
+      }),
+    },
+    showAlertModal: (msg, opts) => { shown = { msg, opts }; },
+  });
+  ctx.FuelCard.showDiagnostic('v1');
+  assert.match(shown.msg, /referenceKm: – \(belum ada\)/);
+  assert.match(shown.msg, /deltaKm: – \(estimationLimited\)/);
+  assert.match(shown.msg, /estimationLimited: YA/);
+});
+
+test('showDiagnostic() — estimateCurrentLiter() {ok:false} -> tampilkan reason apa adanya, bukan crash', () => {
+  let shown = null;
+  const ctx = makeCtx({
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: false, reason: 'Data BBM saat ini belum ada (lakukan Koreksi BBM dulu)' }) },
+    showAlertModal: (msg, opts) => { shown = { msg, opts }; },
+  });
+  ctx.FuelCard.showDiagnostic('v1');
+  assert.equal(shown.msg, 'Data BBM saat ini belum ada (lakukan Koreksi BBM dulu)');
+});
+
+test('_gaugePointerUp() — tap singkat (belum long-press) -> panggil FuelBarCorrection.open(vehicleId), BUKAN showDiagnostic', () => {
+  let opened = null;
+  let diagShown = false;
+  const ctx = makeCtx({
+    FuelBarCorrection: { open: (id) => { opened = id; } },
+    showAlertModal: () => { diagShown = true; },
+  });
+  ctx.FuelCard._gaugePointerDown({}, 'v1');
+  ctx.FuelCard._gaugePointerUp({}, 'v1');
+  assert.equal(opened, 'v1');
+  assert.equal(diagShown, false);
+});
+
+test('_gaugePointerUp() — setelah long-press terpicu, pointerup TIDAK ikut membuka FuelBarCorrection (1 gesture = 1 aksi)', () => {
+  let opened = null;
+  const ctx = makeCtx({
+    FuelBarCorrection: { open: (id) => { opened = id; } },
+    FuelStateEstimator: { estimateCurrentLiter: () => ({ ok: false, reason: 'x' }) },
+    showAlertModal: () => {},
+  });
+  ctx.FuelCard._gaugeLongPressed = true; // simulasi timer sudah fire (setTimeout di-stub jadi no-op di harness ini)
+  ctx.FuelCard._gaugePointerUp({}, 'v1');
+  assert.equal(opened, null);
+  assert.equal(ctx.FuelCard._gaugeLongPressed, false, 'flag harus direset setelah dikonsumsi');
+});
+
+test('_gaugePointerCancel() — reset flag & timer, tidak memicu aksi apa pun', () => {
+  let opened = null;
+  const ctx = makeCtx({ FuelBarCorrection: { open: (id) => { opened = id; } } });
+  ctx.FuelCard._gaugeLongPressed = true;
+  ctx.FuelCard._gaugePointerCancel();
+  assert.equal(ctx.FuelCard._gaugeLongPressed, false);
+  assert.equal(opened, null);
 });

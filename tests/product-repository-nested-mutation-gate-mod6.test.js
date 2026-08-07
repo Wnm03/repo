@@ -279,6 +279,7 @@ test('integrasi: cobek-etalase.js Etalase.save() (edit produk) — SET hargaByPr
       fmtFull: (n) => String(n),
       toast: () => {},
       save: () => {},
+      withSaveGuard: (key, modalId, fn) => fn(),
       closeModal: () => {},
       resolveShopKategori: () => '',
     },

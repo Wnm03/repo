@@ -51,7 +51,7 @@ test('parseShopCSV() — header lengkap, urutan kolom sesuai spesifikasi', () =>
   const csv = 'nama,kategori,harga_beli,harga_jual,stok,satuan\nLumpang 10cm,Lumpang,20000,30000,5,pcs\nCobek 13cm,COBEK,15000,25000,3,pcs';
   const rows = ctx.ShopDataIO.parseShopCSV(csv);
   assert.equal(rows.length, 2);
-  assert.equal(JSON.stringify(rows[0]), JSON.stringify({ nama: 'Lumpang 10cm', kategori: 'Lumpang', hargaBeli: 20000, hargaJual: 30000, stok: 5, satuan: 'pcs' }));
+  assert.equal(JSON.stringify(rows[0]), JSON.stringify({ nama: 'Lumpang 10cm', kategori: 'Lumpang', hargaBeli: 20000, hargaJual: 30000, stok: 5, satuan: 'pcs', berat: 0, catatan: '' }));
   assert.equal(rows[1].nama, 'Cobek 13cm');
 });
 
@@ -60,7 +60,7 @@ test('parseShopCSV() — urutan kolom header dibalik, tetap kebaca benar (dicoco
   const csv = 'satuan,stok,harga_jual,harga_beli,kategori,nama\npcs,5,30000,20000,Lumpang,Lumpang 10cm';
   const rows = ctx.ShopDataIO.parseShopCSV(csv);
   assert.equal(rows.length, 1);
-  assert.equal(JSON.stringify(rows[0]), JSON.stringify({ nama: 'Lumpang 10cm', kategori: 'Lumpang', hargaBeli: 20000, hargaJual: 30000, stok: 5, satuan: 'pcs' }));
+  assert.equal(JSON.stringify(rows[0]), JSON.stringify({ nama: 'Lumpang 10cm', kategori: 'Lumpang', hargaBeli: 20000, hargaJual: 30000, stok: 5, satuan: 'pcs', berat: 0, catatan: '' }));
 });
 
 test('parseShopCSV() — kolom "nama" tidak ada di header -> kosong (dianggap tidak valid)', () => {
@@ -89,6 +89,96 @@ test('parseShopCSV() — harga dengan format "Rp30.000" ikut kebaca sbg angka mu
   const csv = 'nama,harga_jual\nLumpang 10cm,"Rp30.000"';
   const rows = ctx.ShopDataIO.parseShopCSV(csv);
   assert.equal(rows[0].hargaJual, 30000);
+});
+
+// --- Sesi 386: kolom berat_kg/catatan (audit CSV import katalog batu Merapi) ---
+
+test('parseShopCSV() — kolom berat_kg & catatan kebaca', () => {
+  const ctx = makeCtx(makeD());
+  const csv = 'nama,kategori,harga_beli,harga_jual,stok,satuan,berat_kg,catatan\nCobek 17cm,Cobek,13000,43000,0,pcs,1.6,harga sesuai aturan Cobek disepakati (master)';
+  const rows = ctx.ShopDataIO.parseShopCSV(csv);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].berat, 1.6);
+  assert.equal(rows[0].catatan, 'harga sesuai aturan Cobek disepakati (master)');
+});
+
+test('parseShopCSV() — field catatan berkutip berisi KOMA literal tetap kebaca utuh (bug nyata katalog-batu-merapi)', () => {
+  const ctx = makeCtx(makeD());
+  const csv = 'nama,kategori,harga_beli,harga_jual,stok,satuan,berat_kg,catatan\nCobek 31cm,Cobek,,,0,pcs,20.4,">30cm: harga sengaja kosong (belum ditetapkan, sesuai master)"';
+  const rows = ctx.ShopDataIO.parseShopCSV(csv);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].nama, 'Cobek 31cm');
+  assert.equal(rows[0].berat, 20.4);
+  assert.equal(rows[0].hargaBeli, 0);
+  assert.equal(rows[0].catatan, '>30cm: harga sengaja kosong (belum ditetapkan, sesuai master)');
+});
+
+test('parseShopCSV() — kolom berat_kg/catatan tidak ada di header -> default 0/"" (backward compatible dgn CSV lama)', () => {
+  const ctx = makeCtx(makeD());
+  const csv = 'nama,harga_jual\nLumpang 10cm,30000';
+  const rows = ctx.ShopDataIO.parseShopCSV(csv);
+  assert.equal(rows[0].berat, 0);
+  assert.equal(rows[0].catatan, '');
+});
+
+test('commitShopRows() — produk baru: berat_kg -> beratPerUnit, catatan -> product.catatan', () => {
+  const D = makeD();
+  const ctx = makeCtx(D);
+  const res = ctx.ShopDataIO.commitShopRows([
+    { nama: 'Cobek 17cm', kategori: 'Cobek', hargaBeli: 13000, hargaJual: 43000, stok: 0, satuan: 'pcs', berat: 1.6, catatan: 'harga sesuai aturan Cobek disepakati (master)' },
+  ]);
+  assert.equal(res.created, 1);
+  const p = D.products[0];
+  assert.equal(p.beratPerUnit, 1.6);
+  assert.equal(p.catatan, 'harga sesuai aturan Cobek disepakati (master)');
+});
+
+test('commitShopRows() — produk existing: berat/catatan ikut ter-update PARTIAL (field lain tidak ditimpa)', () => {
+  const D = makeD({
+    products: [{ id: 'prod_1', name: 'Cobek 15cm', stock: 0, hargaBeli: 9000, hargaJual: 0, hargaReseller: null, diskonPersen: 0, kategoriId: '', produsenId: '', hargaByProdusen: {}, satuan: 'pcs', beratPerUnit: 0, catatan: '' }],
+  });
+  const ctx = makeCtx(D);
+  const res = ctx.ShopDataIO.commitShopRows([{ nama: 'Cobek 15cm', berat: 0.8, catatan: 'berat dari master' }]);
+  assert.equal(res.updated, 1);
+  const p = D.products[0];
+  assert.equal(p.beratPerUnit, 0.8);
+  assert.equal(p.catatan, 'berat dari master');
+  assert.equal(p.hargaBeli, 9000, 'hargaBeli tidak ikut ditimpa krn tidak dikirim di row');
+});
+
+test('commitShopRows() — berat 0/tidak dikirim TIDAK menimpa beratPerUnit produk existing yang sudah terisi', () => {
+  const D = makeD({
+    products: [{ id: 'prod_1', name: 'Cobek 15cm', stock: 0, hargaBeli: 9000, hargaJual: 0, hargaReseller: null, diskonPersen: 0, kategoriId: '', produsenId: '', hargaByProdusen: {}, satuan: 'pcs', beratPerUnit: 0.8, catatan: '' }],
+  });
+  const ctx = makeCtx(D);
+  ctx.ShopDataIO.commitShopRows([{ nama: 'Cobek 15cm', stok: 5 }]);
+  assert.equal(D.products[0].beratPerUnit, 0.8, 'beratPerUnit lama tetap, tidak ke-nol-kan krn row tidak kirim berat');
+});
+
+test('commitShopRows() — produk baru: berat/catatan tidak dikirim -> default 0/"" (kompatibel row lama tanpa kolom ini)', () => {
+  const D = makeD();
+  const ctx = makeCtx(D);
+  ctx.ShopDataIO.commitShopRows([{ nama: 'Lumpang 10cm', hargaJual: 30000, stok: 5 }]);
+  assert.ok(!D.products[0].beratPerUnit);
+  assert.ok(!D.products[0].catatan);
+});
+
+// --- integrasi end-to-end dgn CSV yang MIRIP katalog-batu-merapi-v2_3-lengkap.csv nyata ---
+test('integrasi: CSV dgn berat_kg/catatan (termasuk catatan berkutip-koma) -> parse -> commit end-to-end', () => {
+  const D = makeD();
+  const ctx = makeCtx(D);
+  const csv = [
+    'nama,kategori,harga_beli,harga_jual,stok,satuan,berat_kg,catatan',
+    'Cobek 14cm,Cobek,,,0,pcs,0.7,berat dari master; harga tetap dari katalog asli (master belum isi harga utk ukuran ini)',
+    'Cobek 31cm,Cobek,,,0,pcs,20.4,">30cm: harga sengaja kosong (belum ditetapkan, sesuai master)"',
+  ].join('\n');
+  const rows = ctx.ShopDataIO.parseShopCSV(csv);
+  assert.equal(rows.length, 2);
+  const res = ctx.ShopDataIO.commitShopRows(rows);
+  assert.equal(res.created, 2);
+  const p31 = D.products.find((p) => p.name === 'Cobek 31cm');
+  assert.equal(p31.beratPerUnit, 20.4);
+  assert.equal(p31.catatan, '>30cm: harga sengaja kosong (belum ditetapkan, sesuai master)');
 });
 
 test('commitShopRows() — produk baru dibuat dgn shape sama persis produk Shop lain', () => {

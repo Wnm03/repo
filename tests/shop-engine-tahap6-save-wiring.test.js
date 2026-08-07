@@ -83,6 +83,7 @@ function makeEtalaseCtx(D, withProductRepository, domValues) {
       renderDashboard: () => {},
       renderKeuangan: () => {},
       save: () => { calls.save += 1; },
+      withSaveGuard: (key, modalId, fn) => fn(),
       toast: (msg) => { calls.toast.push(msg); },
     },
     ['Etalase'],

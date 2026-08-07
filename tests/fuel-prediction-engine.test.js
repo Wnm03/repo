@@ -37,10 +37,10 @@ const LINEAR_VEH = (fuelState) => ({
 
 const NO_PROFILE_VEH = (fuelState) => ({ id: 'v2', fuelState });
 
-function makeCtx(D, fuelEfficiencyImpl) {
+function makeCtx(D, fuelEfficiencyImpl, FuelStateEstimator) {
   return loadSource(
     ['modules/vehicle/fuel-tank-profile.js', 'modules/vehicle/fuel-gauge-engine.js', 'modules/vehicle/fuel-prediction-engine.js'],
-    { D, fuelEfficiency: fuelEfficiencyImpl, dateToISO },
+    { D, fuelEfficiency: fuelEfficiencyImpl, dateToISO, FuelStateEstimator },
     ['FuelTankProfile', 'FuelGaugeEngine', 'FuelPredictionEngine'],
   );
 }
@@ -209,6 +209,74 @@ test('zero fuel — predictNextRefuel() balikin estimatedRemainingDays 0 (sudah 
   assert.equal(res.estimatedRemainingKm, 0);
   assert.equal(res.estimatedRemainingDays, 0);
   assert.equal(res.estimatedDate, addDaysISO(0));
+});
+
+// --- SESI 4 (FUEL-AUTOSYNC-07): _currentLiter() reuse FuelStateEstimator ----
+
+test('predictRemainingDistance() — FuelStateEstimator ok:true -> pakai liter live (bukan snapshot beku)', () => {
+  const D = { vehicles: [LINEAR_VEH({ currentFuelLiter: 5, confidenceScore: 80 })] };
+  const est = { estimateCurrentLiter: () => ({ ok: true, liter: 3 }) };
+  const ctx = makeCtx(D, EFF_OK, est);
+  const res = ctx.FuelPredictionEngine.predictRemainingDistance('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.currentFuelLiter, 3); // dari estimator, bukan 5 (snapshot)
+  assert.equal(res.remainingKm, 120); // 3L * 40 km/L
+});
+
+test('predictRemainingDistance() — FuelStateEstimator ok:false -> fallback ke fuelState.currentFuelLiter', () => {
+  const D = { vehicles: [LINEAR_VEH({ currentFuelLiter: 5, confidenceScore: 80 })] };
+  const est = { estimateCurrentLiter: () => ({ ok: false, reason: 'belum ada titik acuan' }) };
+  const ctx = makeCtx(D, EFF_OK, est);
+  const res = ctx.FuelPredictionEngine.predictRemainingDistance('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.currentFuelLiter, 5);
+});
+
+test('predictRemainingDistance() — FuelStateEstimator belum dimuat -> fallback ke fuelState.currentFuelLiter (pola lama)', () => {
+  const D = { vehicles: [LINEAR_VEH({ currentFuelLiter: 5, confidenceScore: 80 })] };
+  const ctx = makeCtx(D, EFF_OK, undefined);
+  const res = ctx.FuelPredictionEngine.predictRemainingDistance('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.currentFuelLiter, 5);
+});
+
+test('predictNextRefuel() — FuelStateEstimator ok:true -> reserve/km dihitung dari liter live', () => {
+  const D = { vehicles: [LINEAR_VEH({ currentFuelLiter: 5, confidenceScore: 80 })] };
+  const est = { estimateCurrentLiter: () => ({ ok: true, liter: 3 }) };
+  const ctx = makeCtx(D, EFF_OK, est);
+  const res = ctx.FuelPredictionEngine.predictNextRefuel('v1');
+  assert.equal(res.ok, true);
+  // literAboveReserve = 3 - 1(reserve) = 2L -> 2*40km/L = 80km
+  assert.equal(res.estimatedRemainingKm, 80);
+  assert.equal(res.estimatedRemainingDays, 8); // 80/10 kmPerDay
+});
+
+// --- SESI 5 (FUEL-AUTOSYNC-08): _confidence() reuse decayedConfidenceScore --
+
+test('predictRemainingDistance() — FuelStateEstimator ok:true -> confidenceScore pakai decayedConfidenceScore (bukan fuelState.confidenceScore mentah)', () => {
+  const D = { vehicles: [LINEAR_VEH({ currentFuelLiter: 5, confidenceScore: 90 })] };
+  const est = { estimateCurrentLiter: () => ({ ok: true, liter: 3, decayedConfidenceScore: 60 }) };
+  const ctx = makeCtx(D, EFF_OK, est);
+  const res = ctx.FuelPredictionEngine.predictRemainingDistance('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.confidenceScore, 60); // dari estimator, bukan 90 (mentah)
+});
+
+test('predictRemainingDistance() — FuelStateEstimator ok:false -> confidenceScore fallback ke fuelState.confidenceScore mentah', () => {
+  const D = { vehicles: [LINEAR_VEH({ currentFuelLiter: 5, confidenceScore: 90 })] };
+  const est = { estimateCurrentLiter: () => ({ ok: false, reason: 'belum ada titik acuan' }) };
+  const ctx = makeCtx(D, EFF_OK, est);
+  const res = ctx.FuelPredictionEngine.predictRemainingDistance('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.confidenceScore, 90);
+});
+
+test('predictRemainingDistance() — FuelStateEstimator belum dimuat -> confidenceScore fallback ke fuelState.confidenceScore mentah (pola lama)', () => {
+  const D = { vehicles: [LINEAR_VEH({ currentFuelLiter: 5, confidenceScore: 90 })] };
+  const ctx = makeCtx(D, EFF_OK, undefined);
+  const res = ctx.FuelPredictionEngine.predictRemainingDistance('v1');
+  assert.equal(res.ok, true);
+  assert.equal(res.confidenceScore, 90);
 });
 
 // --- Read-only guarantee ------------------------------------------------------

@@ -142,10 +142,19 @@ test('ProductRepository.mutateSetField() — kategoriId/produsenId/satuan dituli
 
 test('ProductRepository.mutateSetField() — value tidak valid: field TIDAK disentuh sama sekali (fail-safe)', () => {
   const { ProductRepository } = loadRepo();
-  const p = { id: 'p1', kategoriId: 'kat_lama' };
-  const r = ProductRepository.mutateSetField(p, 'kategoriId', '');
+  // UPDATE Modul 15 (sesi lain): sebelum Modul 15, kategoriId='' DITOLAK
+  // gate ini (assersi lama di sini). Modul 15 SENGAJA memperluas gate
+  // supaya kategoriId/produsenId (bukan satuan) menerima '' sbg "clear"
+  // eksplisit (lihat tests/product-repository-clear-field-gate-mod15.
+  // test.js utk cakupan penuh kasus itu) — jadi assersi '' dipindah ke
+  // `satuan` di sini (field yang TIDAK ikut pengecualian Modul 15, masih
+  // menolak '' PERSIS seperti sebelumnya), supaya test ini tetap murni
+  // menguji fail-safe umum (value tidak valid -> field tidak disentuh)
+  // tanpa tabrakan dgn kontrak baru yang sengaja diubah Modul 15.
+  const p = { id: 'p1', kategoriId: 'kat_lama', satuan: 'pcs_lama' };
+  const r = ProductRepository.mutateSetField(p, 'satuan', '');
   assert.equal(r.ok, false);
-  assert.equal(p.kategoriId, 'kat_lama'); // tidak berubah
+  assert.equal(p.satuan, 'pcs_lama'); // tidak berubah
   const r2 = ProductRepository.mutateSetField(p, 'kategoriId', undefined);
   assert.equal(r2.ok, false);
   assert.equal(p.kategoriId, 'kat_lama');
@@ -331,6 +340,7 @@ test('integrasi: cobek-etalase.js Etalase.save() (edit produk) SET produsenId le
       fmtFull: (n) => String(n),
       toast: () => {},
       save: () => {},
+      withSaveGuard: (key, modalId, fn) => fn(),
       closeModal: () => {},
       resolveShopKategori: () => '',
     },

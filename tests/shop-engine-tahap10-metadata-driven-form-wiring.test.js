@@ -77,6 +77,7 @@ function makeEtalaseCtx(D, withModules, doc) {
       closeModal: () => {},
       toast: () => {},
       save: () => {},
+      withSaveGuard: (key, modalId, fn) => fn(),
       renderDashboard: () => {},
       renderKeuangan: () => {},
       PriceReko: { reset() {} },
