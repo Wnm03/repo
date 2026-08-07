@@ -1,96 +1,98 @@
-# Changelog — Sesi 456 (dana titipan dikeluarkan dari goal cards)
+# Changelog — Sesi 464 (AUD-008 lanjutan: UI modal titipan investasi)
 
 ## Konteks
 
-Lanjutan S455: dana titipan owner non-SELF (entri di `D.debts` via
-`_syncOwnerDebts()`) sudah di-exclude dari `DebtStrategy.activeDebts()`,
-tapi masih ikut kebaca `goalSourceDebt()` (`lifeos/adapters/goal-adapter.js`)
-— nongol sbg kartu Goal 0% yang gak pernah selesai. Detail:
-`FIX-v1176-to-v1177-s456-goal-adapter-exclude-titipan.md`.
+AUD-008 (`docs/BUG_REGISTRY.md`) sebelumnya sudah **DONE (Sesi 462)** untuk
+bagian engine — `investasi.js` sudah punya `h.owners[]` opsional +
+`Investment.getOwners()`/`setOwners()` lewat `MultiOwnerEngine` yang sudah
+ada — tapi UI-nya (form multi-baris pemilik, mirror `assetModal`) sengaja
+ditunda ke sesi berikutnya. Sesi ini mengerjakan UI-nya.
 
 ## Perubahan
 
-- `lifeos/adapters/goal-adapter.js` — `goalSourceDebt()` exclude entri
-  `linkedAssetId` (titipan), pola sama persis S455.
-- `tests/s456-goal-adapter-exclude-titipan.test.js` — 2 test baru.
+- `modules/asset/investasi-view.js` (**baru**): `InvestmentUI` — modal
+  "⚖️ Atur Porsi Kepemilikan" untuk holding investasi. Mirror
+  `Aset.openOwnersModal()`/`_renderOwnersList()`/`updateOwnersTotal()`/
+  `addOwnerRow()`/`removeOwnerRow()`/`onOwnerNameInput()`/
+  `onOwnerPorsiInput()`/`onOwnerIsSelfToggle()`/`saveOwners()`/
+  `resetOwners()` dari `aset.js` (S392a-S453), versi RINGKAS — **tanpa**
+  lapisan Nominal (Rp) dua-arah (S429/S457) karena holding investasi tidak
+  punya field nilai manual yang setara dengan `a.nilai` (unit/avgPrice/
+  currentPrice selalu diturunkan ulang dari riwayat transaksi lewat
+  `Investment.recomputeHolding()`, bukan diisi manual). Field yang diedit
+  hanya Nama Pemilik + Porsi (%) + toggle "Ini saya". Penyimpanan 100%
+  reuse `Investment.setOwners()` (sudah ada sejak S462) — 0 validasi/rumus
+  porsi baru ditulis di sini.
+- `scripts/build.js`: `modules/asset/investasi-view.js` didaftarkan ke
+  `GROUP_B`, tepat setelah `investasi.js` (dependency: butuh `Investment`
+  sudah dimuat lebih dulu).
+- `modules/shared/modals.js`: entry baru `investmentOwnersModal`
+  ditambahkan ke akhir array `MODAL_HTML` (index 92). `MODAL_VERSION`
+  di-bump ke `s464-investment-owners-modal-ui`.
+- `index.html` & `app_production.html`: `<script>document.write(MODAL_HTML[92]);</script>`
+  ditambahkan tepat setelah baris `assetOwnersModal` (index 91).
+- `docs/BUG_REGISTRY.md`: AUD-008 ditandai selesai sepenuhnya (engine +
+  UI).
 
-## Belum ditangani
-- Tidak ada.
+## Belum ditangani (disengaja, di luar scope sesi ini)
 
----
+- Belum ada tombol pemicu (`data-action="InvestmentUI.openOwnersModal"`)
+  yang dipasang di UI lain (mis. daftar/edit holding investasi) — modul
+  investasi belum punya halaman/list holding terpusat di codebase ini,
+  jadi pemanggilan `InvestmentUI.openOwnersModal(id)` untuk sekarang perlu
+  di-wire manual oleh caller mana pun yang punya id holding-nya (pola
+  sama seperti tombol "⚖️ Atur Porsi Kepemilikan" di `assetModal`, yang
+  akan dikerjakan begitu ada UI daftar holding investasi).
+- `app-bundle-a.min.js`/`app-bundle-b.min.js` PERLU di-rebuild
+  (`npm run build`) sebelum dipakai production — tooling esbuild tidak
+  tersedia di environment ini.
 
-# Changelog — Sesi 455 (dana titipan dikeluarkan dari strategi pelunasan utang)
+## S465 — Rebuild bundle & sinkronisasi versi (audit lanjutan S464)
 
-## Konteks
-
-Lanjutan S454: dana titipan owner non-SELF (entri di `D.debts` via
-`_syncOwnerDebts()`) ikut kebaca `DebtStrategy.activeDebts()` — nongol di
-strategi snowball/avalanche & activeCount Debt Optimizer, padahal bukan
-kewajiban dibayar. Detail: `FIX-v1175-to-v1176-s455-owner-debt-exclude-strategy.md`.
-
-## Perubahan
-
-- `modules/finance/piutang-utang.js` — `DebtStrategy.activeDebts()` exclude
-  entri `linkedAssetId` (titipan); `Debt.renderList()` badge "🔒 Titipan —
-  bukan kewajiban dibayar". `Debt.totalValue()` (Kekayaan Bersih) tidak
-  berubah.
-- `tests/s455-owner-debt-exclude-strategy.test.js` — 3 test baru.
-
-## Belum ditangani
-- Tidak ada.
-
----
-
-# Changelog — Sesi 454 (badge peringatan akun tertaut utk aset multi-pemilik)
-
-## Konteks
-
-Lanjutan diskusi user soal gap desain: modal "Tautkan ke Akun" di form
-Aset tidak punya pilihan porsi mana yang ditautkan kalau asetnya
-multi-pemilik. Audit konfirmasi ini SENGAJA (S449/BUG-OWN-002) — akun
-tertaut selalu representasi NILAI PENUH instrumen, porsi non-SELF sudah
-ditangani terpisah lewat `_syncOwnerDebts()` (Buku Utang). Dari 3 opsi
-yang didiskusikan, dipilih yang paling aman: badge informational saja
-(0 perubahan logic saldo/utang). Detail lengkap di
-`FIX-v1173-to-v1175-s454-multiowner-linked-account-badge.md`.
-
-## Perubahan
-
-- `modules/asset/aset.js` — `Aset.openActionsMenu()`: badge baru
-  "⚠️ Akun tertaut merepresentasikan 100% nilai aset (bukan cuma porsi
-  Anda)…", tampil HANYA kalau aset punya akun tertaut DAN multi-pemilik
-  (reuse `MultiOwnerEngine.getOwners()`).
-- `tests/s454-linked-account-multiowner-badge.test.js` — 4 test baru.
-
-## Belum ditangani
-
-- Opsi checkbox "tautkan porsi SELF saja" & opsi akun berbeda per
-  pemilik (`owners[].linkedAccountId`) — DITOLAK/ditunda sesuai diskusi
-  (lihat FIX note), belum ada kebutuhan nyata di luar gap UI ini.
-
----
-
-# Changelog — Sesi 422 (item TERAKHIR "saran tambahan" rencana "Fuel Estimation Auto-Update")
-
-## Konteks
-
-Item terakhir yang tersisa dari "saran tambahan" s420 (2 lainnya sudah
-dikerjakan s421): guard akumulasi error fill-parsial berturut-turut.
-Rencana "Fuel Estimation Auto-Update" kini SELESAI SEPENUHNYA.
+Menindaklanjuti satu dari dua item "Belum ditangani" di atas: rebuild
+bundle. Item tombol pemicu tetap TIDAK dikerjakan (masih butuh keputusan
+produk soal halaman/list holding investasi terpusat — di luar scope
+audit teknis).
 
 ## Perubahan
 
-- `modules/vehicle/fuel-state-estimator.js` — field BARU
-  `partialFillDriftRisk` (true kalau `partialFillsCounted` >=
-  `PARTIAL_FILL_DRIFT_THRESHOLD` = 3), 0 rumus baru.
-- `modules/vehicle/fuel-card.js` — `_partialFillDriftHint()` (BARU) +
-  nudge UI "⚠️ Sudah beberapa kali isi BBM parsial berturut-turut.
-  Disarankan Full Tank atau koreksi manual biar akurat lagi."
-- `tests/fuel-state-estimator.test.js` + `tests/fuel-card.test.js` — 10
-  test baru.
+- Ditemukan drift versi: `MODAL_VERSION` (modals.js) sudah di `s464-...`
+  tapi `APP_BUILD_VERSION`/`PRODUCTION_BUILD_SYNCED_VERSION`
+  (features-helpers-global-security.js), `MODULE_RENDER_VERSION`
+  (modules-render.js), `MODULE_CALC_VERSION` (modules-calc.js), dan
+  `MODULE_FEATURES_VERSION` (chat-action-handlers.js) masih tertinggal di
+  `s461-...` — build.js menolak lanjut sampai ke-5 konstanta itu
+  disamakan manual dulu (lihat `verifyVersionConstantsSynced()`).
+  Disamakan ke `s464-investment-owners-modal-ui`, lalu `node
+  scripts/build.js` dijalankan ulang; build.js sendiri lalu auto-bump
+  semuanya sekali lagi ke `s465-investment-owners-modal-ui` (perilaku
+  bawaan `bumpVersionEverywhere()`, bukan sesi kerja baru) & versi build
+  numerik 1181 → 1182.
+- `app-bundle-a.min.js` & `app-bundle-b.min.js`: di-rebuild penuh via
+  `node scripts/build.js` — sekarang berisi `investasi-view.js`/
+  `InvestmentUI` (sebelumnya belum, karena belum pernah di-build ulang
+  sejak S464). esbuild tidak tersedia di sandbox ini (tanpa akses
+  registry npm) jadi bundle TANPA minifikasi (raw concat, fallback
+  bawaan build.js) — lebih besar dari build sebelumnya tapi valid
+  (`node --check` lolos) & `verify-bundle-freshness.js` konfirmasi hash
+  source cocok.
+- `index.html`, `app_production.html`, `sw.js`: `?v=` / `CACHE_NAME`
+  disamakan ke `1182` oleh build.js (bagian rutin dari proses build).
+- Verifikasi penuh dijalankan ulang setelah build: `node --test
+  tests/*.test.js` (2984/2984 lolos), `verify-window-expose.js` (63
+  modul, semua ter-expose), `verify-release-ready.js` (lolos dengan 2
+  gate di-override manual — lint & minify — karena keduanya butuh akses
+  npm registry yang tidak ada di sandbox ini; alasan override tercatat
+  di `docs/RELEASE-GATE-LOG.md`).
 
-## Belum ditangani
+## Belum ditangani (tetap di luar scope)
 
-- Tidak ada — rencana "Fuel Estimation Auto-Update" (termasuk semua
-  "saran tambahan") sudah selesai sepenuhnya.
-- Detail lengkap di `s422-SESSION-NOTE.md`.
+- Tombol pemicu `InvestmentUI.openOwnersModal(id)` di UI lain — masih
+  belum ada halaman/list holding investasi terpusat di codebase (bahkan
+  `Investment.addHolding()` sendiri belum pernah dipanggil dari UI mana
+  pun). Ini keputusan produk/desain UI baru, bukan sekadar audit teknis,
+  jadi sengaja tidak ditambahkan di sini.
+- Lint (`eslint`) & minifikasi (`esbuild`) nyata — perlu dijalankan
+  ulang di environment dengan akses `npm install` sebelum rilis
+  production final, supaya bundle ukurannya kembali kecil & lolos lint
+  asli (bukan override).
