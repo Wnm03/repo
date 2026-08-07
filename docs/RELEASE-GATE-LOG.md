@@ -60,3 +60,18 @@
 
 - **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak terpasang
 - **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa diinstall
+
+## 2026-08-07T03:18:52.197Z — versi s448-diagnostic-longpress-gauge
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, eslint tidak bisa diinstall; perubahan hanya 3 baris comparison fix + 1 file test baru, sudah dicek manual
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, esbuild tidak bisa diinstall; bundle unminified tapi valid (node --check lolos)
+
+## 2026-08-07T03:51:29.136Z — versi s450-porsi-proporsional-linked-akun-nilai-penuh
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak bisa diinstall; perubahan sudah diverifikasi manual (gaya kode konsisten dgn pola existing file)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa diinstall; bundle unminified valid & konsisten dgn build v1167 sebelumnya
+
+## 2026-08-07T04:37:21.502Z — versi s451-porsi-proporsional-linked-akun-nilai-penuh
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak bisa npm install; perubahan sudah diverifikasi manual mengikuti style existing (indentasi/pola sama file aset.js sekitarnya)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa npm install; bundle unminified tapi valid sintaks (node --check lolos)
