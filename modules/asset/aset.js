@@ -131,6 +131,16 @@ return OwnershipEngine.resolve(a).type==='SELF';
 // (txDelta pattern), ownPortion aktual = ownPortion konsisten -> 0 perubahan.
 // Guard: skip aset tanpa accountId, akun yang sudah dihapus, atau selfPorsi
 // 0 (tidak bisa dibagi/tidak representatif).
+// FIX (BUG-OWN-001, audit s444): sebelum fix ini, koreksi a.nilai di sini
+// (arah Akun->Aset, dari transaksi riwayat NYATA yang terjadi langsung di
+// akun tertaut) tidak pernah ketarik ke utang "dana titipan" milik owner
+// NON-SELF (_syncOwnerDebts(), Buku Utang) -- utang jadi basi merefleksikan
+// nilai LAMA, Kekayaan Bersih & Zakat Maal ikut salah hitung. Fix: begitu
+// nilaiBaru!=a.nilai (transaksi riwayat beneran mengubah nilai), panggil
+// Aset._syncOwnerDebts(a) juga -- guard typeof Aset (fungsi ini murni &
+// dites headless tanpa Aset dimuat, lihat tests/asset-nilai-sync-from-akun-
+// s422f.test.js) supaya tidak WAJIB Aset ada di scope, sama pola guard
+// typeof MultiOwnerEngine di atas.
 function syncLinkedAssetNilaiFromAkun(){
 if(!Array.isArray(D.assets)||typeof recalcAccBalance!=='function')return;
 D.assets.forEach((a)=>{
@@ -141,7 +151,10 @@ const selfPorsi=(typeof MultiOwnerEngine!=='undefined')?MultiOwnerEngine.selfPor
 if(!(selfPorsi>0))return;
 const ownPortionAktual=recalcAccBalance(acc.id);
 const nilaiBaru=Math.round(ownPortionAktual/(selfPorsi/100));
-if(nilaiBaru!==a.nilai)a.nilai=nilaiBaru;
+if(nilaiBaru!==a.nilai){
+a.nilai=nilaiBaru;
+if(typeof Aset!=='undefined'&&typeof Aset._syncOwnerDebts==='function')Aset._syncOwnerDebts(a);
+}
 });
 }
 // AssetInsight — kartu "💡 Insight Aset" di paling atas halaman Aset (page-aset).
@@ -698,8 +711,24 @@ const ownPortion=MultiOwnerEngine.selfOwnedValue(a,a.nilai||0);
 const txDelta=recalcAccBalance(linkedAcc.id)-(linkedAcc.baseBalance!==undefined?linkedAcc.baseBalance:(linkedAcc.balance||0));
 linkedAcc.baseBalance=ownPortion-txDelta;
 linkedAcc.balance=ownPortion;
+// BUGFIX (audit kepemilikan, sama alasan dgn Aset.save()): saveOwners()
+// cuma resync saldo, `ownership` akun tertaut tidak ikut disamakan ke
+// `a.ownership` -- pakai OwnershipEngine.resolve() (bukan a.ownership
+// mentah) supaya aset lama tanpa field ownership tetap fallback SELF
+// (konsisten dgn seluruh konsumen OwnershipEngine lain, 0 regresi).
+if(typeof OwnershipEngine!=='undefined')linkedAcc.ownership=OwnershipEngine.resolve(a).type;
 }
 }
+// FIX (BUG-OWN-002, audit s444): saveOwners() sudah resync saldo akun tertaut
+// ke porsi BARU (blok di atas, S422e) tapi TIDAK pernah memanggil
+// _syncOwnerDebts() -- utang "dana titipan" milik owner NON-SELF (Buku Utang,
+// lihat _syncOwnerDebts()) tetap kepatok ke porsi LAMA sampai user tidak
+// sengaja buka+simpan ulang modal Edit Aset utama (satu-satunya jalur yang
+// sebelumnya memanggilnya, _saveInner() baris ~938). Fix: panggil di sini
+// juga, pola PERSIS sama (0 rumus baru) -- _syncOwnerDebts() sendiri sudah
+// idempotent & aman dipanggil berkali-kali (upsert by linkedOwnerId, hapus
+// entry utk owner yg sudah tidak ada di owners[] terbaru).
+Aset._syncOwnerDebts(a);
 save();
 if(typeof AIBus!=="undefined")AIBus.emit("asset.updated",{ownersUpdated:true,editId:a.id});
 Aset._ownersModalAsset=a;
@@ -791,7 +820,8 @@ keepIds.add(o.ownerId);
 });
 D.debts=D.debts.filter(d=>!(d.linkedAssetId===a.id&&!keepIds.has(d.linkedOwnerId)));
 },
-save(){
+save(){return withSaveGuard('aset','assetModal',Aset._saveInner);},
+_saveInner(){
 const name=document.getElementById('assetName').value.trim();
 if(!name){toast('⚠️ Nama aset wajib diisi');return;}
 const jenis=document.getElementById('assetJenis').value;
@@ -855,6 +885,16 @@ if(linkedAcc){
 const txDelta=recalcAccBalance(linkedAcc.id)-(linkedAcc.baseBalance!==undefined?linkedAcc.baseBalance:(linkedAcc.balance||0));
 linkedAcc.baseBalance=ownPortion-txDelta;
 linkedAcc.balance=ownPortion;
+// BUGFIX (audit kepemilikan): akun EXISTING yang BARU ditautkan (atau sudah
+// tertaut & aset ini disimpan ulang) sebelumnya TIDAK ikut mewarisi
+// `ownership` aset -- cuma jalur __new__ (buat akun baru dari aset) di atas
+// yang mewarisi (lihat komentar Sesi 311). Akibatnya akun lama yang
+// ditautkan ke aset ber-ownership non-SELF (mis. INVESTOR) tetap tampil
+// SELF/default kalau ownership akun itu belum pernah diisi manual --
+// OwnershipEngine jadi TIDAK lagi single source of truth utk akun tertaut.
+// Fix: samakan pola __new__ -- akun tertaut SELALU disamakan ke ownership
+// aset (Aset -> Akun, arah sync SATU ARAH, sama seperti sync saldo di atas).
+if(typeof OwnershipEngine!=='undefined')linkedAcc.ownership=ownership;
 }
 }
 const keuntungan=modalInvestasi?(nilai-modalInvestasi):null;
