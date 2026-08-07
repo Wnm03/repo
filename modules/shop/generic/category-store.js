@@ -122,14 +122,13 @@ const CategoryStore = {
   // `D.cobekKategori=D.cobekKategori.filter(...)` lama di
   // `Etalase.delKategori()`). CATATAN SCOPE: sisi-efek `Etalase.
   // delKategori()` yang mengosongkan `p.kategoriId=''` di SEMUA produk
-  // terkait SENGAJA TIDAK dialihkan ke gate ini/ProductRepository — itu
-  // MUTASI PRODUCT (bukan Category), string kosong `''` yang ditulis di
-  // situ juga akan DITOLAK oleh `ProductRepository.mutateSetField()` (yang
-  // mewajibkan teks non-kosong, Modul 5) sehingga memaksanya lewat gate itu
-  // berarti mengubah perilaku (kategoriId TIDAK akan ter-clear lagi) — di
-  // luar instruksi sesi ini ("tidak boleh mengubah business logic"),
-  // dibiarkan raw dgn sengaja, PERSIS pola yang sama didokumentasikan di
-  // SupplierStore.mutateDelete() (Modul 7) utk `p.produsenId=''`. Return
+  // terkait TETAP TIDAK dilakukan DI SINI — itu MUTASI PRODUCT (bukan
+  // Category), di luar tanggung jawab gate kategori ini. UPDATE Modul 15
+  // (sesi lain): `p.kategoriId=''` itu SUDAH lewat
+  // `ProductRepository.mutateSetField()` juga (gate itu diperluas menerima
+  // string kosong khusus kategoriId/produsenId, lihat komentar
+  // mutateSetField() di product-repository.js) — caller (`Etalase.
+  // delKategori()`) yang wiring, bukan gate ini. Return
   // {ok:true, categories} (array baru, id sudah tidak ada) atau
   // {ok:false, reason} (id tidak valid).
   mutateDelete(categories, id) {

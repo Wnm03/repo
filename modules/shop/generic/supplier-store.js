@@ -167,14 +167,13 @@ const SupplierStore = {
   // ProductRepository.saveProduct(); caller yang assign balik ke
   // `D.produsen`, SAMA PERSIS pola `D.produsen=D.produsen.filter(...)` lama
   // di `Produsen.delete()`). CATATAN SCOPE: sisi-efek `Produsen.delete()`
-  // yang mengosongkan `p.produsenId=''` di SEMUA produk terkait SENGAJA
-  // TIDAK dialihkan ke gate ini/ProductRepository — itu MUTASI PRODUCT
-  // (bukan Supplier), string kosong `''` yang ditulis di situ juga akan
-  // DITOLAK oleh `ProductRepository.mutateSetField()` (yang mewajibkan teks
-  // non-kosong, Modul 5) sehingga memaksanya lewat gate itu berarti
-  // mengubah perilaku (produsenId TIDAK akan ter-clear lagi) — di luar
-  // instruksi sesi ini ("tidak boleh mengubah business logic"), dibiarkan
-  // raw dgn sengaja, didokumentasikan di sini & di titik panggilnya.
+  // yang mengosongkan `p.produsenId=''` di SEMUA produk terkait TETAP TIDAK
+  // dilakukan DI SINI — itu MUTASI PRODUCT (bukan Supplier), di luar
+  // tanggung jawab gate supplier ini. UPDATE Modul 15 (sesi lain):
+  // `p.produsenId=''` itu SUDAH lewat `ProductRepository.mutateSetField()`
+  // juga (gate itu diperluas menerima string kosong khusus kategoriId/
+  // produsenId, lihat komentar mutateSetField() di product-repository.js)
+  // — caller (`Produsen.delete()`) yang wiring, bukan gate ini.
   // Return {ok:true, suppliers} (array baru, id sudah tidak ada) atau
   // {ok:false, reason} (id tidak valid).
   mutateDelete(suppliers, id) {
