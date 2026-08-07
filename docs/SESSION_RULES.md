@@ -120,9 +120,47 @@ Jika sesi terputus karena kuota:
 - File yang diubah
 - Hasil test
 - Hasil build
+- **Status lint & release gate** (BARU Sesi 424, WAJIB — lihat di bawah)
 - Progress
 - Next TODO
 - Known Issue
+
+### Status lint & release gate — WAJIB konkret, bukan cuma "tidak bisa dijalankan"
+
+Sejak Sesi 424, catatan lint di FIX-*.md/CLAUDE.md HARUS salah satu dari
+3 status konkret ini (hasil `node scripts/verify-release-ready.js`),
+BUKAN kalimat generik "lint tidak bisa dijalankan" tanpa detail:
+
+1. **Lolos** — `eslint .` dijalankan & 0 error. Cukup tulis itu.
+2. **Tidak tersedia, di-override** — eslint/esbuild tidak bisa
+   dijalankan di environment ini (jelaskan KENAPA: tidak ada akses
+   jaringan utk `npm install`, paket belum terpasang, dst — bukan cuma
+   "tidak bisa"), gate di-override manual lewat
+   `CONFIRM_LINT_UNAVAILABLE_REASON`/`CONFIRM_UNMINIFIED_REASON`, dicatat
+   otomatis di `docs/RELEASE-GATE-LOG.md`. Sebutkan itu di FIX-*.md juga
+   (ringkas, cukup 1-2 kalimat + rujuk RELEASE-GATE-LOG.md).
+3. **Gagal, diperbaiki** — eslint jalan & menemukan error sungguhan;
+   error itu WAJIB diperbaiki dulu (TIDAK BISA di-override) sebelum ZIP
+   dibuat. Catat apa errornya & bagaimana diperbaiki.
+
+ZIP TIDAK BOLEH dibuat kalau `scripts/verify-release-ready.js` masih exit
+1 (lihat `docs/ZIP_RULES.md` bagian "Release Gate").
+
+Gate ke-3 (BARU Sesi 425, html-sync — `app_production.html` harus persis
+cermin `index.html`) TIDAK PUNYA opsi override sama sekali: kalau BLOCK,
+perbaikannya selalu sama (`node scripts/build.js` lagi), jadi tidak perlu
+dicatat status konkret seperti lint/minify di atas — cukup pastikan lolos
+sebelum ZIP.
+
+## Audit dokumen basi (BARU Sesi 428)
+
+Setiap 20 sesi (jadwal & log lengkap: `docs/STALE-DOC-SCHEDULE.md`), cek
+apakah `docs/CHECKPOINT.md`/`docs/PROJECT_STATE.md`/`docs/NEXT_SESSION.md`
+masih cocok dgn versi/sesi terbaru sungguhan. Audit pertama (Sesi 428)
+menemukan ketiganya BASI (menjanjikan "update tiap sesi" tapi tidak
+konsisten diikuti) — jangan ulangi pola yang sama: kalau sesi ini
+mengubah status project scr signifikan, sempatkan update file terkait,
+JANGAN andalkan audit 20-sesi-sekali sbg satu-satunya jaring pengaman.
 
 ## Struktur dokumentasi
 

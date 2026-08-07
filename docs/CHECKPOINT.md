@@ -3,7 +3,20 @@
 Kalau sesi terputus di tengah jalan, lanjutkan dari **Current Step**,
 JANGAN audit/implement/test/build ulang bagian yang sudah **Completed**.
 
-## Current Session
+> ⚠️ **Catatan Sesi 428 (audit stale-doc)**: blok "Current Session" di
+> bawah ini SUDAH BASI — menunjuk `v1047`/Tahap 6 Generic Shop Engine,
+> padahal versi terkini repo adalah **v1141** (Sesi 425, lihat
+> `FIX-v1139-to-v1141-s425-dedup-html-source-of-truth.md`). File ini
+> ternyata TIDAK rutin diupdate tiap sesi seperti yang dijanjikan judulnya
+> — lihat `docs/STALE-DOC-SCHEDULE.md` untuk detail temuan & jadwal audit
+> ke depan. Konten historis di bawah TIDAK dihapus (nilai historis untuk
+> sesi lampau), tapi JANGAN dipakai sebagai acuan status "sedang
+> berjalan" — kalau butuh status BENAR-BENAR terkini, cek
+> `git log`-setara (nomor versi tertinggi di `FIX-*.md`, `APP_BUILD_VERSION`
+> di `modules/shared/features-helpers-global-security.js`) alih-alih file
+> ini.
+
+## Current Session (BASI — lihat catatan Sesi 428 di atas)
 
 v1047 — Tahap 6 Generic Shop Engine (wiring `Etalase.save()` ke
 `ProductRepository`)

@@ -1,7 +1,34 @@
 # PROJECT_STATE.md — Ringkasan project (update setiap sesi)
 
+> ⚠️ **Catatan Sesi 429 (lanjutan audit stale-doc S428)**: SELURUH isi
+> file ini di bawah (§ Smart AI, § LifeOS, § Overall Progress) BASI —
+> berhenti "per akhir Sesi 50"/disinkron Sesi 51, padahal repo sungguhan
+> sudah **Sesi 428, `v1142`** (377 sesi gap). Root cause sama seperti
+> `CHECKPOINT.md` (S428): file ini menjanjikan "update setiap sesi" tapi
+> tidak ada enforcement, jadi kebiasaan update-nya berhenti diam-diam.
+>
+> **Rewrite penuh ringkasan Sesi 51→428 SENGAJA TIDAK dilakukan sesi
+> ini** — merangkum ~377 sesi progress dari `docs/CLAUDE.md`/`FIX-*.md`
+> satu-per-satu butuh sesi (atau beberapa sesi) khusus, berisiko tinggi
+> kalau ditulis ringkas dari ingatan/tebakan tanpa audit sumber asli tiap
+> sesi. Ini konsisten dgn keputusan S428 (lihat `STALE-DOC-SCHEDULE.md`
+> log Sesi 428) — sesi ini cuma menuntaskan bagian "tandai basi" yang
+> S428 sengaja tunda, pola sama persis `CHECKPOINT.md`.
+>
+> **Kalau butuh status project BENAR-BENAR terkini**, jangan pakai file
+> ini — cek langsung: `APP_BUILD_VERSION` di
+> `modules/shared/features-helpers-global-security.js` (nomor sesi &
+> nama build terbaru), `FIX-*.md` bernomor sesi tertinggi di root repo
+> (isi perubahan per sesi terbaru), atau `docs/CLAUDE.md` (log naratif
+> per-sesi — TAPI ingat § itu sendiri berhenti di Sesi 396 dgn gap
+> S397-424 belum di-backfill, lihat `STALE-DOC-SCHEDULE.md`).
+>
+> Konten historis di bawah **TIDAK dihapus** (nilai historis utk sesi
+> 1-51 lampau, pola sama `KNOWN-ISSUES.md`/`CHECKPOINT.md`).
+
 Ditambahkan Sesi 26 (2026-07-18). § Smart AI disinkronkan Sesi 51
 (2026-07-18); § LifeOS & Overall Progress per akhir Sesi 50.
+**(BASI sejak entah kapan sebelum Sesi 428 — lihat catatan di atas.)**
 
 ## Smart AI & Smart Logistics
 

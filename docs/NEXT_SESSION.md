@@ -1,5 +1,28 @@
 # NEXT_SESSION.md — Target sesi berikutnya (update setiap sesi)
 
+> ⚠️ **Catatan Sesi 429 (lanjutan audit stale-doc S428)**: catatan
+> "Sync" teratas di bawah ini masih **Sesi 323** — BASI, repo sungguhan
+> sudah **Sesi 428, `v1142`** (105 sesi gap dari catatan sync terakhir).
+> Sesi terakhir yang SUNGGUHAN selesai: **Sesi 428** — "Konsolidasi
+> dokumentasi source-of-truth" (lihat
+> `FIX-v1141-to-v1142-s428-doc-consolidation-stale-schedule.md`), BUKAN
+> item apa pun yang tercatat di bawah.
+>
+> **Target sesi berikutnya yang BENAR-BENAR terkini** (per Sesi 428,
+> lihat § "Belum dikerjakan" di FIX-nya): dua item lama masih terbuka —
+> **S426** (E2E smoke test Playwright/Puppeteer — kemungkinan permanen
+> terblokir di sandbox tanpa akses browser via network) dan **S427**
+> (audit pola guard `if(typeof fn==='function')fn()` — cakupan besar,
+> ~900 titik pemanggilan di 45 file source per audit kasar, butuh sesi
+> khusus bukan "1 sesi ringan"). `docs/PROJECT_STATE.md` &
+> `docs/NEXT_SESSION.md` (file ini) sendiri juga masih tercatat sbg
+> technical debt dokumentasi (lihat `docs/STALE-DOC-SCHEDULE.md`).
+>
+> **Rewrite penuh riwayat Sesi 324→428 di bawah SENGAJA TIDAK
+> dilakukan sesi ini** (sama alasan `PROJECT_STATE.md` — butuh sesi
+> khusus, risiko tinggi kalau ditulis dari tebakan). Konten di bawah
+> TIDAK dihapus (nilai historis).
+
 > **Catatan Sync (Sesi 323 — Cicilan/tagihan sudah dibayar periode ini ikut
 > tab Lunas + navigasi ‹bulan› di Daftar Transaksi, build
 > `s322-lunas-paidperiod-txlist-monthnav`, `?v=893`):** Lihat

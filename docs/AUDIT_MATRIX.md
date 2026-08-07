@@ -18,10 +18,10 @@
 
 | Metric | Baseline |
 |---|---:|
-| Total files | 754 |
-| JavaScript | 611 |
-| Tests | 174 |
-| Markdown | 127 |
+| Total files | 822 |
+| JavaScript | 555 |
+| Tests | 222 |
+| Markdown | 243 |
 | HTML | 3 |
 | JSON | 2 |
 | CSS | 2 |
@@ -29,7 +29,9 @@
 
 **Important:** Structural inventory is complete for the uploaded ZIP (`kw_release_v992_s331-coverage-per-module.zip`, cross-checked against the patch ZIP). Counts exclude `backups/` (historical snapshots, not live app code) and `node_modules/`/`.git/`. This is **not** a claim that every runtime behavior has already passed QA. These numbers are now auto-checked by `scripts/build.js` (`lintDocsBaselineCountDrift()`, non-fatal warning) — update this table whenever the warning fires and the change is intentional.
 
-_Baseline diperbarui pasca-v1017/S353 ("update baseline", laporan `lintDocsBaselineCountDrift()` di build.js): Total files 629→754 (+125), JavaScript 475→611 (+136), Markdown 140→127 (-13), Tests 181→174 (-7), Module families tetap 12 — drift terkumpul dari banyak sesi sejak S331 (baseline lama belum sempat diupdate), bukan perubahan tunggal sesi ini._
+_Baseline diperbarui pasca-v1100/S398 ("update baseline drift", laporan `lintDocsBaselineCountDrift()` di build.js): Total files 754→740 (-14), JavaScript 611→527 (-84), Markdown 127→189 (+62), Tests 174→222 (+48), Module families tetap 12 — drift terkumpul dari banyak sesi sejak S353 (baseline lama belum sempat diupdate, bukan perubahan tunggal sesi ini). Sesi S398 sendiri cuma nambah +1 JS (tests/salary-allocation-s398.test.js) & +1 Markdown (FIX-v1099-to-v1100-s398-salary-allocation-suggestion.md) dari total drift di atas._
+
+_Baseline diperbarui lagi pasca-v1153/S438 ("update baseline drift"): Total files 740→822 (+82), JavaScript 527→555 (+28), Markdown 189→243 (+54), Tests/HTML/JSON/CSS/Module families tetap — drift terkumpul dari banyak sesi sejak S398 (baseline lama belum sempat diupdate lagi, bukan perubahan tunggal sesi ini; termasuk 3 file baru dari sesi s437 itu sendiri: 1 JS fix + 1 test + 1 dokumen FIX)._
 
 ---
 

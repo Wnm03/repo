@@ -10813,3 +10813,44 @@ konsisten pola badge lain di codebase ini, mis. `stockCls`/`stockLbl`).
 ## ZIP
 `kw_release_sesi344b_badge-berat-kapasitas-kartu_v919.zip` — dibuat &
 dikirim ke user.
+
+# Sesi 396 (2026-08-06) — Fix: saldo akun tertaut aset multi-owner belum difilter porsi kepemilikan
+
+## Konteks
+Lanjutan MultiOwnerEngine (S390-395). User lapor: kalau sebuah aset punya
+lebih dari 1 pemilik (⚖️ Atur Porsi Kepemilikan, mis. SELF 60% + Investor
+40%) dan aset itu ditautkan ke sebuah Akun (`asset.accountId`), akun
+tertaut itu SELALU dikecualikan PENUH (0%) dari Total Saldo Akun lewat
+`linkedAssetAccountIds()` — sama seperti akun tertaut aset single-owner
+biasa. Padahal porsi SELF di saldo akun itu tetap uang milik sendiri &
+seharusnya ikut kehitung, hanya porsi pemilik lain yang layak dikecualikan.
+
+## Perubahan
+- **`modules/finance/akun.js`**:
+  - `linkedAssetAccountSelfPorsi(accId)` (baru) — cari aset yang
+    `accountId`-nya cocok, reuse `MultiOwnerEngine.getOwners()` untuk cek
+    `isMultiOwner`; balik `MultiOwnerEngine.selfPorsi(asset)` kalau
+    memang multi-owner, balik `0` kalau aset single-owner/tidak ketemu
+    (supaya `totalSaldoAkun()` 0 regresi utk kasus lama — akun tertaut
+    aset single-owner tetap dikecualikan penuh apa adanya).
+  - `totalSaldoAkun()` — TAMBAH 1 blok: utk akun yang `linked` (tertaut
+    aset) & `isAccOwnershipSelf(a)` true, tambahkan
+    `recalcAccBalance(a.id) * (porsi/100)` ke total (0 kalau porsi 0,
+    yaitu aset single-owner — noop, logic lama utuh). 0 rumus baru,
+    100% reuse `MultiOwnerEngine.selfPorsi()` (S393) yang sudah dipakai
+    Zakat & Piutang/Utang.
+
+## Test
+Test baru `tests/akun-multiowner-linked-account-s396.test.js` (4 test):
+akun tertaut aset single-owner tetap 0% (0 regresi), akun tertaut aset
+multi-owner ikut porsi SELF, akun ber-ownership non-SELF sendiri tetap
+dikecualikan penuh walau asetnya multi-owner, & unit test
+`linkedAssetAccountSelfPorsi()` langsung.
+`node --test tests/*.test.js` -> **2695/2695 pass** (0 regresi).
+
+## Build
+`node scripts/build.js s396-akun-multiowner-linked-saldo-filter` ->
+sukses, `?v=1098`, `index.html`/`app_production.html` identik.
+
+## ZIP
+`kw_release_sesi396_akun-multiowner-linked-saldo-filter_v1098.zip`.

@@ -50,3 +50,13 @@
 
 - **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan keluar (npm error 403 registry.npmjs.org), eslint tidak bisa diinstall - perubahan sesi 434 cuma: 1 baris filter (sameId) di modules/finance/filter-laporan.js, penambahan info tampilan (linkMeta) di modules/asset/aset.js openActionsMenu(), + 1 file test baru - gaya kode konsisten dgn pola existing (sameId dipakai identik dgn akun.js/aset.js), 2895/2895 test node --test pass (naik dari 2892, +3 test baru)
 - **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan keluar (npm error 403 saat npm install esbuild), konsisten sesi-sesi sebelumnya - bundle unminified 100% valid (node --check lolos)
+
+## 2026-08-06T23:41:36.878Z — versi s435-modal-sweep-coverage-assetowners
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan keluar (npm error 403 registry.npmjs.org), eslint tidak bisa diinstall - perubahan sesi 435 cuma 1 spec baru (assetOwnersModal) ditambah ke MODULE_METHOD_MODAL_SPECS di self-test.js, pola identik dgn spec Aset.openModal() persis di atasnya & purchaseOrderBatchModal (S388) sebelumnya, 2895/2895 test node --test tetap pass (tidak ada test baru krn sweep modal murni browser-only, konsisten S388)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan keluar (npm error 403 saat npm install esbuild), konsisten sesi-sesi sebelumnya - bundle unminified 100% valid (node --check lolos)
+
+## 2026-08-07T00:06:44.812Z — versi s436-tx-renov-toast-merge-fix
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak terpasang
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa diinstall

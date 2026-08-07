@@ -28,6 +28,10 @@ pernah diaudit atau checkpoint menyebut audit diperlukan.
 - `docs/LIFEOS_SCOPE.md` — batas scope LifeOS.
 - `docs/IMPLEMENTATION_POLICY.md` — aturan additive/reuse/no-duplicate.
 - `docs/ZIP_RULES.md` — urutan wajib build → ZIP → dokumentasi.
+- `docs/STALE-DOC-SCHEDULE.md` — BARU Sesi 428, jadwal audit dokumen
+  basi tiap 20 sesi (`docs/CHECKPOINT.md`/`PROJECT_STATE.md`/
+  `NEXT_SESSION.md` dkk TERNYATA tidak rutin diupdate walau judulnya
+  bilang begitu — lihat log audit pertama di file itu).
 - `docs/WORKFLOW.md` — diagram alur kerja ringkas (versi visual dari
   `SESSION_RULES.md`).
 - `docs/CHECKPOINT.md` — status sesi paling granular (current step),
