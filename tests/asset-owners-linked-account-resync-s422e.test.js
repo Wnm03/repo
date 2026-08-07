@@ -41,9 +41,13 @@ test('saveOwners() — porsi SELF diubah -> baseBalance akun tertaut ikut resync
   ];
   ctx.Aset.saveOwners();
   const acc = D.accounts.find((a) => a.id === 'acc1');
-  // porsi SELF naik 60% -> 80%, ownPortion baru = 1000000000*80% = 800000000
-  assert.equal(acc.baseBalance, 800000000);
-  assert.equal(acc.balance, 800000000);
+  // SESI 449 (BUG-OWN-002 lanjutan): akun tertaut sekarang disinkron ke NILAI
+  // PENUH instrumen (a.nilai), BUKAN porsi SELF saja -- ubah porsi SELF
+  // (60%->80%) TIDAK mengubah saldo akun tertaut lagi (nilai aset itu sendiri
+  // tidak berubah), cuma mengubah bagian mana yang dihitung ke Kekayaan
+  // Bersih/Zakat (S422d, di luar scope test ini).
+  assert.equal(acc.baseBalance, 1000000000);
+  assert.equal(acc.balance, 1000000000);
 });
 
 test('saveOwners() — akun tertaut sudah punya riwayat transaksi -> txDelta tetap dipertahankan (bukan ditimpa)', () => {
@@ -62,11 +66,12 @@ test('saveOwners() — akun tertaut sudah punya riwayat transaksi -> txDelta tet
   ];
   ctx.Aset.saveOwners();
   const acc = D.accounts.find((a) => a.id === 'acc1');
-  // ownPortion baru = 800000000, txDelta lama (+50000000) TETAP dipertahankan
-  // di atas baseBalance baru (bukan ditimpa/dihilangkan): baseBalance jadi
-  // 800000000-50000000=750000000, supaya baseBalance+tx = 800000000 lagi.
-  assert.equal(acc.baseBalance, 750000000);
-  assert.equal(acc.balance, 800000000);
+  // SESI 449: linkedAccNilai = a.nilai penuh = 1000000000 (porsi berubah TIDAK
+  // pengaruhi ini lagi). txDelta lama (+50000000) TETAP dipertahankan di atas
+  // baseBalance baru (bukan ditimpa/dihilangkan): baseBalance jadi
+  // 1000000000-50000000=950000000, supaya baseBalance+tx = 1000000000 lagi.
+  assert.equal(acc.baseBalance, 950000000);
+  assert.equal(acc.balance, 1000000000);
 });
 
 test('saveOwners() — aset TIDAK tertaut ke akun apa pun -> tidak ada perubahan D.accounts (0 regresi)', () => {

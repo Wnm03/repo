@@ -9,13 +9,16 @@
  *     selalu gagal walau transaksinya benar-benar ada -> riwayat kosong.
  *     FIX: ganti ke sameId() (helper global, String(a)===String(b)).
  *
- * (2) "Nominal akun tertaut selalu 0" — SUDAH BENAR secara hitungan
- *     (MultiOwnerEngine.selfOwnedValue() SENGAJA cuma kasih porsi Milik
- *     Sendiri, supaya tidak dobel hitung sama Buku Aset -- lihat komentar
- *     panjang di aset.js/akun.js), tapi user tidak tahu KENAPA saldonya 0.
- *     FIX: openActionsMenu() (modules/asset/aset.js) sekarang menampilkan
- *     info numerik porsi Milik Sendiri di baris "🔗 Akun tertaut" -- 0
- *     perubahan hitungan, cuma tampilan.
+ * (2) "Nominal akun tertaut selalu 0" — waktu itu dianggap SUDAH BENAR
+ *     secara hitungan (MultiOwnerEngine.selfOwnedValue() SENGAJA cuma kasih
+ *     porsi Milik Sendiri, supaya tidak dobel hitung sama Buku Aset), FIX
+ *     awalnya cuma nambah catatan penjelas di openActionsMenu().
+ *     SESI 449 (BUG-OWN-002 lanjutan, audit s448): keputusan itu DIREVISI --
+ *     akun tertaut sekarang disinkron ke NILAI PENUH instrumen (bukan porsi
+ *     SELF saja), exclude dobel-hitung tetap terjamin oleh totalSaldoAkun()
+ *     (linkedAssetAccountIds(), independen dari nilai field ini). openActionsMenu()
+ *     sekarang tampilkan recalcAccBalance(linkedAcc.id) apa adanya (nilai
+ *     penuh), tidak lagi selfOwnedValue()/catatan "porsi Milik Sendiri".
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -90,7 +93,7 @@ test('showFilteredTx(scope=account) — regresi: accId & accountId sama-sama str
   assert.equal(els.filterTxList.innerHTML.includes('data-id="t1"'), true);
 });
 
-test('openActionsMenu() — akun tertaut dgn porsi Milik Sendiri < 100% menampilkan info saldo & nilai aset', () => {
+test('openActionsMenu() — SESI 449: akun tertaut menampilkan saldo PENUH (recalcAccBalance apa adanya), bukan porsi Milik Sendiri saja', () => {
   const els = {
     assetActionsTitle: makeEl(),
     assetActionsMeta: makeEl(),
@@ -100,13 +103,12 @@ test('openActionsMenu() — akun tertaut dgn porsi Milik Sendiri < 100% menampil
     getElementById: (id) => els[id] || null,
   };
   const asset = { id: 'a1', name: 'Rumah Kontrakan', jenis: 'Rumah/Bangunan', nilai: 1000000, accountId: 'acc1', owners: [{ ownerId: 'SELF', porsi: 30, ownerName: 'Milik Sendiri', isSelf: true }, { ownerId: 'inv1', porsi: 70, ownerName: 'Investor A', isSelf: false }] };
-  const D = { assets: [asset], accounts: [{ id: 'acc1', name: 'BCA Sewa' }] };
-  const MultiOwnerEngine = {
-    selfOwnedValue(entity, nilai) {
-      const owners = entity.owners || [];
-      const selfPorsi = owners.filter((o) => o.isSelf).reduce((s, o) => s + o.porsi, 0);
-      return nilai * (selfPorsi / 100);
-    },
+  const D = { assets: [asset], accounts: [{ id: 'acc1', name: 'BCA Sewa', balance: 1000000 }] };
+  // akun tertaut (S449) disinkron ke nilai PENUH instrumen -- mock ini mewakili
+  // recalcAccBalance() nyata (akun.js) yg baca dari balance/transaksi.
+  const recalcAccBalance = (accId) => {
+    const acc = D.accounts.find((a) => a.id === accId);
+    return acc ? (acc.balance || 0) : 0;
   };
   const ctx = loadSource(['modules/asset/aset.js'], {
     document: fakeDoc,
@@ -114,12 +116,11 @@ test('openActionsMenu() — akun tertaut dgn porsi Milik Sendiri < 100% menampil
     sameId: (a, b) => String(a) === String(b),
     fmt: (n) => 'Rp' + n,
     escapeHtml: (s) => s,
-    MultiOwnerEngine,
+    recalcAccBalance,
     openQS: () => {},
   }, ['Aset']);
   ctx.Aset.openActionsMenu('a1');
   const meta = els.assetActionsMeta.innerHTML;
   assert.equal(meta.includes('BCA Sewa'), true, 'nama akun tertaut harus tetap tampil');
-  assert.equal(meta.includes('Rp300000'), true, 'saldo porsi Milik Sendiri (30% x 1.000.000) harus tampil');
-  assert.equal(meta.includes('Rp1000000'), true, 'nilai penuh aset harus tampil sbg pembanding');
+  assert.equal(meta.includes('Rp1000000'), true, 'saldo penuh akun tertaut (bukan porsi Milik Sendiri) harus tampil');
 });

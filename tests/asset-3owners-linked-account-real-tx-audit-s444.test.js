@@ -57,9 +57,10 @@ function makeCtx(D) {
 }
 
 // D dasar: aset Ruko 10.000.000, 3 pemilik (SELF 50%, Budi 30%, Siti 20%),
-// tertaut ke akun 'acc1' yang baseBalance-nya SUDAH konsisten dgn ownPortion
-// SELF (5.000.000 = 50% dari 10jt) -- persis kondisi SETELAH Aset.save()
-// normal (pola txDelta yang sama dgn _saveInner()/saveOwners()).
+// tertaut ke akun 'acc1' yang baseBalance-nya SUDAH konsisten dgn NILAI
+// PENUH instrumen (10.000.000 -- SESI 449, akun tertaut tidak lagi cuma
+// nyimpen porsi SELF) -- persis kondisi SETELAH Aset.save() normal (pola
+// txDelta yang sama dgn _saveInner()/saveOwners()).
 function baseD() {
   return {
     assets: [{
@@ -73,7 +74,7 @@ function baseD() {
         { ownerId: 'siti', porsi: 20, ownerName: 'Siti' },
       ],
     }],
-    accounts: [{ id: 'acc1', name: 'Rek Ruko', baseBalance: 5000000, includeInBalance: true }],
+    accounts: [{ id: 'acc1', name: 'Rek Ruko', baseBalance: 10000000, includeInBalance: true }],
     transactions: [],
     debts: [],
   };
@@ -85,8 +86,8 @@ test('AUDIT — setup: recalcAccBalance() akun tertaut benar utk 3-owner + riway
   D.transactions.push({ id: 1, accountId: 'acc1', type: 'income', amount: 2000000, date: '2026-08-01', note: 'Sewa masuk' });
   D.transactions.push({ id: 2, accountId: 'acc1', type: 'expense', amount: 500000, date: '2026-08-02', note: 'Biaya perawatan' });
   ctx.invalidateAccBalCache();
-  // 5.000.000 (baseBalance) + 2.000.000 (income) - 500.000 (expense) = 6.500.000
-  assert.equal(ctx.recalcAccBalance('acc1'), 6500000);
+  // 10.000.000 (baseBalance, nilai penuh) + 2.000.000 (income) - 500.000 (expense) = 11.500.000
+  assert.equal(ctx.recalcAccBalance('acc1'), 11500000);
 });
 
 test('AUDIT — setup: _syncOwnerDebts() bikin 2 entri utang titipan (Budi 30% & Siti 20%) sesuai porsi awal', () => {
@@ -115,15 +116,17 @@ test('BUG-OWN-001 — riwayat transaksi NYATA (income+expense) di akun tertaut m
   ctx.invalidateAccBalCache();
   ctx.syncLinkedAssetNilaiFromAkun();
 
-  // ownPortion aktual akun = 6.500.000, selfPorsi 50% -> nilai aset baru = 13.000.000
-  assert.equal(D.assets[0].nilai, 13000000, 'a.nilai harus ikut naik dari transaksi riwayat nyata di akun tertaut');
+  // SESI 449: saldo akun tertaut = 11.500.000 ditarik APA ADANYA ke a.nilai
+  // (0 scaling porsi lagi -- akun tertaut nyimpen nilai PENUH, bukan
+  // ownPortion SELF saja).
+  assert.equal(D.assets[0].nilai, 11500000, 'a.nilai harus ikut naik dari transaksi riwayat nyata di akun tertaut');
 
   // FIX YANG DIHARAPKAN: utang titipan Budi/Siti ikut disesuaikan ke nilai BARU
-  // (30%/20% dari 13jt), bukan tetap di nilai lama (30%/20% dari 10jt).
+  // (30%/20% dari 11.5jt), bukan tetap di nilai lama (30%/20% dari 10jt).
   const budi = D.debts.find((d) => d.linkedOwnerId === 'budi');
   const siti = D.debts.find((d) => d.linkedOwnerId === 'siti');
-  assert.equal(budi.nilai, 3900000, 'BUG-OWN-001: utang titipan Budi basi -- tidak ikut sync dari syncLinkedAssetNilaiFromAkun()');
-  assert.equal(siti.nilai, 2600000, 'BUG-OWN-001: utang titipan Siti basi -- tidak ikut sync dari syncLinkedAssetNilaiFromAkun()');
+  assert.equal(budi.nilai, 3450000, 'BUG-OWN-001: utang titipan Budi basi -- tidak ikut sync dari syncLinkedAssetNilaiFromAkun()');
+  assert.equal(siti.nilai, 2300000, 'BUG-OWN-001: utang titipan Siti basi -- tidak ikut sync dari syncLinkedAssetNilaiFromAkun()');
 });
 
 test('BUG-OWN-002 — ubah split porsi 3 pemilik lewat saveOwners() HARUS ikut menyesuaikan utang titipan Budi/Siti', () => {
@@ -141,10 +144,10 @@ test('BUG-OWN-002 — ubah split porsi 3 pemilik lewat saveOwners() HARUS ikut m
   ];
   ctx.Aset.saveOwners();
 
-  // Saldo akun tertaut SUDAH benar disync ke porsi baru (S422e, 0 regresi) --
-  // ownPortion baru = 10jt*30% = 3jt.
+  // SESI 449: saldo akun tertaut disync ke NILAI PENUH (a.nilai = 10jt, TIDAK
+  // berubah oleh perubahan split porsi) -- bukan ownPortion SELF lagi.
   const acc = D.accounts.find((a) => a.id === 'acc1');
-  assert.equal(acc.balance, 3000000, 'sanity check: resync saldo akun tertaut S422e harus tetap berfungsi');
+  assert.equal(acc.balance, 10000000, 'sanity check: resync saldo akun tertaut S422e/S449 harus tetap berfungsi (nilai penuh)');
 
   // FIX YANG DIHARAPKAN: utang titipan Budi/Siti ikut disesuaikan ke SPLIT BARU
   // (40%/30% dari nilai 10jt yang TIDAK berubah oleh saveOwners()).

@@ -27,20 +27,20 @@ test('syncLinkedAssetNilaiFromAkun() — aset single-owner: nilai ikut naik sesu
   assert.equal(D.assets[0].nilai, 520000000);
 });
 
-test('syncLinkedAssetNilaiFromAkun() — aset multi-owner: nilai TOTAL di-scale balik dari ownPortion aktual (porsi tetap)', () => {
+test('syncLinkedAssetNilaiFromAkun() — aset multi-owner: nilai ikut saldo akun tertaut apa adanya (SESI 449: akun tertaut nyimpen nilai PENUH, bukan porsi SELF -- 0 scaling porsi lagi), porsi tetap', () => {
   const D = {
     assets: [{
       id: 'as1', name: 'Ruko Patungan', nilai: 1000000000, accountId: 'acc1',
       owners: [{ ownerId: 'SELF', porsi: 60 }, { ownerId: 'budi', porsi: 40, ownerName: 'Budi' }],
     }],
-    accounts: [{ id: 'acc1', name: 'Rek Patungan', baseBalance: 600000000, includeInBalance: true }],
-    // transaksi tambahan +30000000 di akun tertaut (ownPortion aktual jadi 630000000)
+    accounts: [{ id: 'acc1', name: 'Rek Patungan', baseBalance: 1000000000, includeInBalance: true }],
+    // transaksi tambahan +30000000 di akun tertaut (saldo akun jadi 1030000000)
     transactions: [{ id: 't1', accountId: 'acc1', type: 'income', amount: 30000000, date: '2026-01-01' }],
   };
   const ctx = makeCtx(D);
   ctx.syncLinkedAssetNilaiFromAkun();
-  // ownPortion aktual 630000000, selfPorsi 60% -> nilai baru = 630000000/0.6 = 1050000000
-  assert.equal(D.assets[0].nilai, 1050000000);
+  // saldo akun tertaut 1030000000 -> a.nilai ikut jadi 1030000000 apa adanya, porsi TIDAK berubah
+  assert.equal(D.assets[0].nilai, 1030000000);
   assert.equal(D.assets[0].owners[0].porsi, 60);
 });
 
