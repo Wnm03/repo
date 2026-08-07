@@ -90,3 +90,28 @@
 
 - **lint-unavailable**: override dipakai. Alasan: Sandbox network egress DISABLED -- eslint tidak pernah terpasang di environment ini (konsisten sesi2 sebelumnya). Perubahan sesi 456 cuma 1 baris filter tambahan (!d.linkedAssetId) di goalSourceDebt() + 1 file test baru, gaya kode identik pola S455 yg sudah lolos review manual sebelumnya, tidak ada pola yg biasa ditangkap eslint (no-undef/unused-vars) krn semua identifier sudah ada & dipakai lengkap.
 - **unminified-bundle**: override dipakai. Alasan: Sandbox yg sama: esbuild tidak terpasang, tidak ada akses jaringan utk install. Bundle unminified tetap 100% valid (node --check lolos). Diterima sesuai docs/ZIP_RULES.md -- prioritas ZIP fungsional, bukan ukuran file.
+
+## 2026-08-07T08:03:57.415Z — versi s457-nominal-precision-porsi-fix
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, eslint tidak bisa diinstall -- tidak ada perubahan yang melanggar pola lint yang ada (perubahan hanya angka presisi pembulatan + 1 guard early-return, gaya kode identik dgn baris sekitarnya)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, esbuild tidak bisa diinstall -- bundle unminified TAPI sintaksnya valid (node --check lolos), fungsional 100% sama, minifikasi cukup dilakukan di environment developer yang py akses esbuild sebelum deploy produksi
+
+## 2026-08-07T08:16:12.242Z — versi s458-dana-kelolaan-titipan-investasi-fix
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, eslint tidak bisa diinstall -- perubahan sesi ini hanya 2 method baru (sumTitipanInvestasi(), pola identik sumTitipanAset() di file yang sama) + field baru di summary()/presenter, gaya kode konsisten dgn baris sekitarnya, 0 pola yang biasa ditangkap lint (no-undef/unused-vars)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, esbuild tidak bisa diinstall -- bundle unminified tapi sintaksnya valid (node --check lolos), fungsional 100% sama
+
+## 2026-08-07T08:27:16.241Z — versi s459-dana-kelolaan-titipan-detail-list
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, eslint tidak bisa diinstall -- perubahan sesi ini 1 method pure baru (listTitipan(), reuse penuh MultiOwnerEngine.getOwners()/Investment.holdingCost() yang sudah ada) + 1 method render baru di presenter (pola sama render()/renderLaporan() di file yang sama) + 1 div container baru di index.html, gaya kode konsisten, 0 pola yang biasa ditangkap lint
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, esbuild tidak bisa diinstall -- bundle unminified tapi sintaksnya valid (node --check lolos), fungsional 100% sama
+
+## 2026-08-07T08:32:44.432Z — versi s460-investment-titipan-debt-linked-id
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, eslint tidak bisa diinstall -- perubahan sesi ini nambah 1 field (linkedInvestmentId) ke object debt yang sudah dibuat investasi.js (pola identik linkedAssetId di aset.js) + lebar 2 kondisi filter yang sudah ada di piutang-utang.js (badge & activeDebts), gaya kode konsisten dgn baris sekitarnya, 0 pola yang biasa ditangkap lint
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan npm, esbuild tidak bisa diinstall -- bundle unminified tapi sintaksnya valid (node --check lolos), fungsional 100% sama
+
+## 2026-08-07T09:41:15.624Z — versi s465-investment-owners-modal-ui
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak bisa diinstall
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses npm registry, esbuild tidak bisa diinstall - bundle raw concat via fallback build.js, sintaks valid & test suite penuh lolos
