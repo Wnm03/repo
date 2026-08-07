@@ -67,7 +67,8 @@ return;
 }
 box.innerHTML=`Perkiraan biaya di ${document.getElementById('eduTahunTarget').value} (${c.n} th lagi): <b>${fmtFull(c.fv)}</b><br>Sudah terkumpul: ${fmtFull(c.terkumpul)} · Kekurangan: <b>${fmtFull(c.kekurangan)}</b><br>Return riil ${c.returnRiil.toFixed(1)}%/th → nabung ≈ <b class="green">${fmtFull(c.pmtBulanan)}/bulan</b>`;
 },
-save(){
+save(){return withSaveGuard('eduFund','eduFundModal',EduFund._saveInner);},
+_saveInner(){
 const name=document.getElementById('eduName').value.trim();
 if(!name){toast('⚠️ Nama anak/jenjang wajib diisi');return;}
 const biayaHariIni=parsePzNum(document.getElementById('eduBiayaHariIni').value);

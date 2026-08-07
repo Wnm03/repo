@@ -109,7 +109,13 @@ document.getElementById('zpJumlah').textContent=fmtFull(zakat);
 hitungMaal(){
 const pz=D.pajakZakat;
 const saldoAkun=totalSaldoAkun();
-const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(a.nilai||0),0);
+// SESI 393: porsi milik SENDIRI saja yang dihitung ke Zakat Maal -- 100%
+// reuse MultiOwnerEngine.selfOwnedValue() (S390/393), TIDAK import Aset
+// (modul ini berdiri sendiri, sama pola dgn totalPiutangValue()/totalDebtValue()
+// yang juga dipanggil lintas-domain apa adanya). Guard typeof: kalau engine
+// belum dimuat, fallback nilai penuh (perilaku SEBELUM Sesi 393, 0 regresi
+// utk aset single-owner yang jadi mayoritas kasus).
+const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);
 const piutangZakatable=totalPiutangValue();
 const utangManual=parsePzNum(document.getElementById('zmUtang').value);
 pz.utangJT=utangManual; save();

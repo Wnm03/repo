@@ -16,7 +16,11 @@
 //    terjadi OTOMATIS (tanpa perlu buka linkTxModal manual). Lihat
 //    applyTxRenovFromTx() di bawah, dipanggil dari _saveTxInner (transaksi.js)
 //    persis di titik yang sama dengan applyTxStockFromTx dkk, SETELAH
-//    transaksi Keuangan tersimpan.
+//    transaksi Keuangan tersimpan -- berlaku utk transaksi BARU maupun EDIT
+//    transaksi yang sudah ada (BUGFIX s433: dulu cuma dipanggil utk transaksi
+//    baru, jadi centang panel ini waktu Edit Transaksi tidak pernah tersimpan;
+//    guard `existingTx.renovItemLinkId` di transaksi.js mencegah dobel kalau
+//    transaksi yang diedit memang SUDAH ter-link sebelumnya).
 //  - 🛒 Belum Dibeli: item masuk daftar belanja proyek sbg BELUM lunas
 //    (estimasi harga = nominal yang diisi di form Jumlah), TAPI transaksi
 //    Keuangan-nya SENGAJA TIDAK ikut dicatat (barangnya belum benar-benar
@@ -73,6 +77,20 @@ setTxRenovStatus(_txRenovStatus);
 // "🛒 Belum Dibeli", sudah ditangani lebih awal oleh
 // handleTxRenovBelumDibeli() (yg early-return sblm transaksi dibuat sama
 // sekali) -- jadi di sini cukup early-return supaya tidak dobel proses.
+//
+// BUGFIX (s436): dulu fungsi ini panggil toast() sendiri di akhir (baik jalur
+// sukses maupun jalur "⚠️ Pilih dulu Proyek Renovasi-nya") -- tapi pemanggil
+// (_saveTxInner di transaksi.js) SELALU panggil toast() lagi tepat
+// sesudahnya ("✅ Transaksi diperbarui"/"✅ Transaksi tersimpan"). toast() cuma
+// pegang 1 elemen #toast (lihat format-tema.js) jadi toast kedua LANGSUNG
+// menimpa toast pertama dlm hitungan milidetik -- user tidak pernah sempat
+// baca konfirmasi/peringatan Renov ini, padahal datanya (atau justru
+// TIDAK-tersimpannya data, utk kasus "belum pilih proyek") sudah valid di
+// balik layar. Fix: fungsi ini sekarang `return` string pesan alih-alih
+// toast sendiri; early-return (panel tidak aktif/status "belum") tetap
+// return undefined tanpa pesan apapun (sama seperti sebelumnya -- memang
+// tidak ada apapun yg perlu diberitahukan). _saveTxInner yg menggabungkan
+// pesan ini ke toast final-nya (lihat komentar di transaksi.js).
 function applyTxRenovFromTx(note,txId,date,amt,cat,accId){
 const chk=document.getElementById('txAddRenov');
 if(!chk||!chk.checked)return;
@@ -81,7 +99,7 @@ if(!panel||panel.style.display==='none')return;
 if(_txRenovStatus==='belum')return;
 const projId=document.getElementById('txRenovProject').value;
 const p=projId?D.renovProjects.find(x=>x.id===projId):null;
-if(!p){toast('⚠️ Pilih dulu Proyek Renovasi-nya (item tidak dicatat ke Renovasi, transaksi Keuangan tetap tersimpan)');return;}
+if(!p)return '⚠️ Pilih dulu Proyek Renovasi-nya (item tidak dicatat ke Renovasi, transaksi Keuangan tetap tersimpan)';
 const itemName=(note||cat||'Item Renovasi').trim()||'Item Renovasi';
 const it={id:uid(),name:itemName,ukuran:'',harga:amt,hargaTotal:null,category:cat,accountId:accId,note:'',tglBayar:date,calcDetail:null,paid:true,txId:txId,paidDate:date};
 p.items.push(it);
@@ -92,7 +110,7 @@ if(typeof Renov!=='undefined'){
 Renov.render();
 if(sameId(Renov.curId,p.id))Renov.renderDetail();
 }
-toast(`🔨 Item "${escapeHtml(itemName)}" otomatis dicatat & lunas di proyek "${escapeHtml(p.name)}"`);
+return `🔨 Item "${escapeHtml(itemName)}" otomatis dicatat & lunas di proyek "${escapeHtml(p.name)}"`;
 }
 // handleTxRenovBelumDibeli(note,cat) -- dipanggil di AWAL _saveTxInner
 // (transaksi.js), SEBELUM transaksi Keuangan dibuat, khusus utk transaksi

@@ -8,6 +8,22 @@
 // lihat blok di akhir file & PEMISAHAN-FILE-ROADMAP.md.
 // PENTING: file ini HARUS dimuat sesuai urutan build.js (GROUP_A/GROUP_B) karena beberapa modul saling referensi. Urutan grup ini: data-default.js, features-helpers-global-security.js, diagnostik-versi.js, format-tema.js, error-handler.js, helper-teks.js, keamanan-pin.js, modal-navigasi.js, reset-gaji-mingguan.js, debug-console.js, pengaturan-search.js, onboarding.js, kalkulator-input.js, scan-ocr.js, akun.js, gaji-calc.js, transaksi.js, profil-pengaturan.js, kategori.js, tagihan-kalender.js, backup-restore.js, payroll-absensi.js, tukang-absensi.js
 
+// _amc015: fallback lokal addMonthsClamped() (BUG-015, s406) -- file ini kadang dimuat berdiri
+// sendiri lewat harness test (tests/helpers/loadSource.js) TANPA modules/shared/
+// features-helpers-global-security.js ikut dimuat di sandbox yang sama, jadi addMonthsClamped()
+// global belum tentu ada. Fallback ini pakai algoritma identik dgn versi global supaya hasil
+// selalu sama persis di manapun dipanggil (bukan re-implementasi logic baru).
+function _amc015(base,months){
+if(typeof addMonthsClamped==='function')return addMonthsClamped(base,months);
+if(!(base instanceof Date)||isNaN(base.getTime()))return base;
+const day=base.getDate();
+base.setDate(1);
+base.setMonth(base.getMonth()+months);
+const lastDayOfTargetMonth=new Date(base.getFullYear(),base.getMonth()+1,0).getDate();
+base.setDate(Math.min(day,lastDayOfTargetMonth));
+return base;
+}
+
 function setTxType(t){
 curTxType=t;
 document.getElementById('btnI').className='type-btn'+(t==='income'?' ai':'');
@@ -16,6 +32,82 @@ hideSuggestBox('txCatSuggestBox');
 hideSuggestBox('txSubCatSuggestBox');
 if(typeof AutoKat!=='undefined'){AutoKat.hideSuggest();AutoKat._lastNoteQueried='';}
 updateTxVehiclePanels();
+updateTxAssetWrapVisibility();
+}
+// resolveTxAssetSplit(tx) — Sesi 394 (lanjutan resolveEntryAssetSelfPorsi S394 di
+// piutang-utang.js, & MultiOwnerEngine S390): kalau transaksi Pemasukan ini
+// ditautkan ke aset multi-owner lewat field `assetId` (opsional, pola SAMA
+// dgn Piutang/Utang), balikin RINCIAN pembagian nominal transaksi ke SEMUA
+// pemilik aset itu (100% reuse MultiOwnerEngine.getOwners()+splitByPorsi(),
+// 0 rumus baru) — dipakai badge "👥 N pemilik" & rincian per pemilik di
+// tx-list-cashflow.js, dan live preview di modal Transaksi (modals.js).
+// BEDA sengaja dari resolveEntryAssetSelfPorsi(): fungsi itu cuma balikin
+// porsi % milik SELF (dipakai piutang/utang biar tidak overstated ke
+// Kekayaan Bersih); fungsi ini balikin split ke SEMUA pemilik (dipakai
+// tampilan info) — transaksi Pemasukan itu sendiri tetap tercatat PENUH
+// spt biasa (0 perubahan kalkulasi Kekayaan Bersih), cuma ditambah info
+// visual siapa kebagian berapa.
+// Parameter:
+//   tx (object) — transaksi (butuh field `assetId` & `amount`; bisa objek
+//     transaksi asli dari D.transactions atau objek sementara draft form).
+// Return: {ok:true, asset, splits} — `splits` array {ownerId, ownerName,
+//   porsi, bagian} (bagian = nilai * porsi/100, TIDAK dibulatkan, sama pola
+//   splitByPorsi()). {ok:false, reason} kalau: tx tanpa assetId, aset tidak
+//   ketemu, aset single-owner (0 info baru utk ditampilkan), atau
+//   MultiOwnerEngine belum dimuat — 0 regresi (transaksi tanpa assetId,
+//   mayoritas, tidak pernah masuk sini).
+function resolveTxAssetSplit(tx){
+if(!tx||!tx.assetId)return {ok:false,reason:'Transaksi tidak terkait aset'};
+if(typeof MultiOwnerEngine==='undefined')return {ok:false,reason:'MultiOwnerEngine belum dimuat'};
+const asset=(D.assets||[]).find(a=>sameId(a.id,tx.assetId));
+if(!asset)return {ok:false,reason:'Aset tidak ditemukan'};
+const info=MultiOwnerEngine.getOwners(asset);
+if(!info||!info.ok||!info.isMultiOwner)return {ok:false,reason:'Aset ini bukan aset multi-pemilik'};
+const nilai=typeof tx.amount==='number'&&isFinite(tx.amount)?tx.amount:0;
+const s=MultiOwnerEngine.splitByPorsi(nilai,info.owners);
+if(!s.ok)return {ok:false,reason:s.reason};
+return {ok:true,asset,splits:s.splits};
+}
+// updateTxAssetWrapVisibility() — show/hide blok "#txAssetWrap" (dropdown
+// "Kaitkan ke Aset Multi-Owner" + preview, modals.js). HANYA tampil utk
+// Pemasukan (curTxType==='income') & ada minimal 1 aset multi-owner
+// (getMultiOwnerAssets(), 100% reuse dari piutang-utang.js S394 — 0
+// duplikasi). Dipanggil dari setTxType()/openTxModal()/editTx() supaya
+// field ke-reset/terisi benar tiap ganti tipe transaksi atau buka modal.
+function updateTxAssetWrapVisibility(){
+const wrap=document.getElementById('txAssetWrap');
+if(!wrap)return;
+const show=curTxType==='income'&&typeof getMultiOwnerAssets==='function'&&getMultiOwnerAssets().length>0;
+wrap.style.display=show?'block':'none';
+if(show&&typeof populateEntryAssetSelect==='function'){
+const sel=document.getElementById('txAssetId');
+populateEntryAssetSelect('txAssetId',sel?sel.value:'');
+}
+updateTxAssetSplitPreview();
+}
+// onTxAssetChange() — dipanggil onchange #txAssetId (dropdown aset
+// multi-owner di form transaksi) — cuma perlu refresh live preview
+// pembagian, tidak ada state lain yg perlu disentuh.
+function onTxAssetChange(){
+updateTxAssetSplitPreview();
+}
+// updateTxAssetSplitPreview() — live preview "#txAssetSplitPreview"
+// (modals.js): baca #txAssetId + #txAmt (calcPreviewValue(), pola SAMA
+// dgn updateAmtPreview() S18), lalu tampilkan rincian bagian tiap pemilik
+// lewat resolveTxAssetSplit(). Kosongkan preview kalau tidak ada aset
+// dipilih/jumlah masih 0/split gagal (mis. field belum tampil krn bukan
+// Pemasukan, atau aset yg dipilih ternyata single-owner).
+function updateTxAssetSplitPreview(){
+const box=document.getElementById('txAssetSplitPreview');
+if(!box)return;
+const sel=document.getElementById('txAssetId');
+const assetId=sel?sel.value:'';
+if(!assetId){box.textContent='';return;}
+const amtEl=document.getElementById('txAmt');
+const nilai=amtEl&&typeof calcPreviewValue==='function'?calcPreviewValue(amtEl.value):0;
+const r=resolveTxAssetSplit({assetId,amount:nilai});
+if(!r.ok){box.textContent='';return;}
+box.textContent=r.splits.map(s=>s.ownerName+': '+fmt(s.bagian)).join(' · ');
 }
 function updateSubCatOptions(){
 updateTxVehiclePanels();
@@ -343,7 +435,7 @@ if(tenorEl&&dueEl&&parseInt(tenorEl.value)===1&&!txEditLinkedBillId){
 const todayStr=new Date().toISOString().split('T')[0];
 if(!dueEl.value||dueEl.value===todayStr){
 const d=new Date(dueEl.value||todayStr);
-d.setMonth(d.getMonth()+1);
+_amc015(d,1); // BUG-015 (s406): clamp overflow tanggal
 dueEl.value=d.toISOString().split('T')[0];
 }
 }
@@ -393,6 +485,7 @@ document.getElementById('txCicilanDue').value=new Date().toISOString().split('T'
 document.getElementById('txLanggananDue').value=new Date().toISOString().split('T')[0];
 document.getElementById('txCicilanPreview').style.display='none';
 populateAccFilters();
+const txAssetIdResetEl=document.getElementById('txAssetId');if(txAssetIdResetEl)txAssetIdResetEl.value='';
 setTxType(type);
 setPayMethod('tunai',false);
 const stockChk=document.getElementById('txAddStock');
@@ -472,6 +565,8 @@ document.getElementById('txAcc').value=t.accountId;
 document.getElementById('txAmt').value=t.amount;
 document.getElementById('txNote').value=t.note||'';
 document.getElementById('txDate').value=t.date;
+const txAssetIdEditEl=document.getElementById('txAssetId');if(txAssetIdEditEl)txAssetIdEditEl.value=t.assetId||'';
+updateTxAssetWrapVisibility();
 updateTxVehiclePanels();
 const stockChk=document.getElementById('txAddStock');
 if(stockChk)stockChk.checked=false;
@@ -625,6 +720,13 @@ const date=document.getElementById('txDate').value;
 const note=document.getElementById('txNote').value;
 const cat=document.getElementById('txCat').value;
 const accId=document.getElementById('txAcc').value;
+// Sesi 394: field "Kaitkan ke Aset Multi-Owner" (#txAssetId, modals.js)
+// cuma tampil & berlaku utk Pemasukan (lihat updateTxAssetWrapVisibility())
+// -- kalau curTxType bukan 'income', txAssetIdVal SENGAJA dikosongkan
+// biar assetId lama (kalau ada, dari edit sebelumnya) ikut terhapus di
+// jalur tunai/generik di bawah, bukan nyangkut jadi data basi.
+const txAssetIdSaveEl=document.getElementById('txAssetId');
+const txAssetIdVal=(curTxType==='income'&&txAssetIdSaveEl)?txAssetIdSaveEl.value:'';
 if(cat==='__add_new_cat__'){toast('⚠️ Pilih atau buat kategori dulu');return;}
 // Panel "🔨 Catat juga ke Proyek Renovasi?" dgn status "🛒 Belum Dibeli" (lihat
 // tx-renov.js): barangnya belum benar-benar dibeli, jadi transaksi Keuangan
@@ -885,7 +987,7 @@ const billId=uid();
 const sisaTenor=tenor-1;
 if(sisaTenor>0){
 const nextDueDate=new Date(due);
-nextDueDate.setMonth(nextDueDate.getMonth()+1);
+_amc015(nextDueDate,1); // BUG-015 (s406): clamp overflow tanggal
 const nextDue=nextDueDate.toISOString().split('T')[0];
 const txCicilanIsKprNewEl=document.getElementById('txCicilanIsKpr');
 const isKprNew=txCicilanIsKprNewEl?txCicilanIsKprNewEl.checked:false;
@@ -923,7 +1025,7 @@ const nama=document.getElementById('txLanggananNama').value.trim()||cat;
 const freq=document.getElementById('txLanggananFreq').value;
 const due=document.getElementById('txLanggananDue').value||date;
 const dueNext=new Date(due);
-if(freq==='bulanan')dueNext.setMonth(dueNext.getMonth()+1);
+if(freq==='bulanan')_amc015(dueNext,1); // BUG-015 (s406): clamp overflow tanggal
 else if(freq==='mingguan')dueNext.setDate(dueNext.getDate()+7);
 else if(freq==='tahunan')dueNext.setFullYear(dueNext.getFullYear()+1);
 if(existingTx) D.transactions=D.transactions.filter(t=>t.id!==existingTx.id);
@@ -954,6 +1056,7 @@ if(existingTx){
 // asli transaksi dipertahankan apa adanya, tidak dipaksa jadi 'tunai'.
 const keepPayMethod=_txPayMethodTouchedByUser?'tunai':(existingTx.payMethod||'tunai');
 Object.assign(existingTx,{type:curTxType,amount:amt,category:cat,subcategory:subCat,accountId:accId,payMethod:keepPayMethod,note,date});
+if(txAssetIdVal)existingTx.assetId=txAssetIdVal;else delete existingTx.assetId;
 delete existingTx.billLinkId;
 if(existingTx.servisLinkId&&D.servisLogs){
 const linkedServis=D.servisLogs.find(s=>s.id===existingTx.servisLinkId);
@@ -986,12 +1089,14 @@ SewaKios.onLinkedTxEdited(existingTx);
 savedTxId=existingTx.id;
 } else {
 savedTxId=uid();
-D.transactions.push({
+const newTx={
 id:savedTxId,type:curTxType,amount:amt,
 category:cat,subcategory:subCat,
 accountId:accId,payMethod:'tunai',
 note:note,date
-});
+};
+if(txAssetIdVal)newTx.assetId=txAssetIdVal;
+D.transactions.push(newTx);
 WorthIt.applyBuyLink(savedTxId);
 if(typeof SewaKios!=='undefined')SewaKios.applyPaymentLink(savedTxId);
 Tukang.applyPendingPayment(savedTxId);
@@ -1000,13 +1105,42 @@ applyTxStockFromTx(note,savedTxId,date,amt,existingTx);
 applyTxBbmFromTx(savedTxId,amt,date,accId,note,existingTx);
 applyTxShopStockFromTx(savedTxId,note,existingTx);
 applyTxShopSaleFromTx(savedTxId,date,accId,note,existingTx);
-if(!existingTx&&typeof applyTxRenovFromTx==='function')applyTxRenovFromTx(note,savedTxId,date,amt,cat,accId);
+// BUGFIX (s433): dulu applyTxRenovFromTx() cuma dipanggil kalau `!existingTx`
+// (transaksi BARU) -- akibatnya panel "🔨 Catat juga ke Proyek Renovasi?" bisa
+// dicentang & diisi waktu EDIT transaksi yang sudah ada, tapi centangnya tidak
+// pernah diproses sama sekali (silently diabaikan, tidak ada toast error).
+// Fix: panggil juga saat edit, SELAMA transaksi yang diedit belum pernah
+// ter-link ke item Renovasi (`existingTx.renovItemLinkId` kosong) -- kalau
+// SUDAH ter-link, re-sync-nya sudah ditangani terpisah oleh
+// `Renov.onLinkedTxEdited()` di atas (baris ~1080), jadi guard ini mencegah 1
+// edit menghasilkan 2 item Renovasi dobel utk transaksi yang sama.
+// BUGFIX (s436): dulu applyTxRenovFromTx() toast() sendiri, lalu toast()
+// generik di akhir fungsi ini (✅ Transaksi diperbarui/tersimpan) LANGSUNG
+// menimpanya (toast cuma 1 elemen, lihat format-tema.js) -- pesan Renov
+// (baik sukses maupun peringatan "belum pilih proyek") tidak pernah sempat
+// terbaca user. Sekarang applyTxRenovFromTx() cuma `return` pesannya,
+// ditampung di sini & digabung ke toast final di bawah (pola sama seperti
+// txAssetSplitMsg utk info "dibagi ke N pemilik" yg sudah ada duluan).
+let txRenovMsg='';
+if((!existingTx||!existingTx.renovItemLinkId)&&typeof applyTxRenovFromTx==='function')txRenovMsg=applyTxRenovFromTx(note,savedTxId,date,amt,cat,accId)||'';
 txEditId=null;
 rememberLastAccForCat(cat,accId);
 if(_txCatLearnSource){learnCatFromItemName(_txCatLearnSource,cat);_txCatLearnSource=null;}
 save();closeModal('txModal');renderDashboard();renderKeuangan();renderCnTab();
 if(typeof AIBus!=="undefined")AIBus.emit("finance.updated",{txId:savedTxId,category:cat,type:curTxType,amount:amt});
-toast(existingTx?'✅ Transaksi diperbarui':'✅ Transaksi tersimpan');
+// Sesi 394: tambah info jumlah pemilik ke toast sukses kalau transaksi ini
+// dikaitkan ke aset multi-owner (reuse resolveTxAssetSplit(), 0 kalkulasi baru).
+let txAssetSplitMsg='';
+if(txAssetIdVal){
+const txAssetSplitInfo=resolveTxAssetSplit({assetId:txAssetIdVal,amount:amt});
+if(txAssetSplitInfo.ok)txAssetSplitMsg=' (dibagi ke '+txAssetSplitInfo.splits.length+' pemilik)';
+}
+// (s436): kalau ada pesan Renov (sukses ATAU peringatan "belum pilih
+// proyek"), gabung ke toast final ini alih-alih dua toast terpisah yg saling
+// menimpa (lihat komentar txRenovMsg di atas) -- durasi dipanjangkan jadi
+// 4000ms krn pesan gabungan lebih panjang dari toast biasa (pola sama dgn
+// toast pesan panjang lain, mis. error-handler.js/features-helpers.js).
+toast((existingTx?'✅ Transaksi diperbarui':'✅ Transaksi tersimpan')+txAssetSplitMsg+(txRenovMsg?' — '+txRenovMsg:''),txRenovMsg?4000:2200);
 }
 function saveCatatan(){
 const text=document.getElementById('catatanText').value;

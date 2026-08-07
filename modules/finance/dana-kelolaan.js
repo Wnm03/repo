@@ -122,20 +122,41 @@ byType(type) {
   return this.sumAccounts(type) + this.sumAssets(type) + this.sumInvestasi(type) + this.sumShop(type) + this.sumPiutang(type);
 },
 
-// sumTitipanAset() — jumlah titipanAmount (Sesi 249-250, Buku Aset ->
-// toggle "Ada Dana Titipan?") dari SEMUA aset yang kepemilikan efektifnya
-// SELF. SENGAJA dipisah dari sumAssets('THIRD_PARTY') dkk di atas: field
-// `ownership` = status SELURUH aset (whole-entity), sedangkan titipanAmount
-// = porsi SEBAGIAN nilai aset SELF yang dananya titipan orang lain (dicatat
-// jadi utang di Buku Utang lewat Aset._syncTitipanDebt(), TIDAK mengubah
-// `ownership`). Filter ownership===SELF di sini murni jaga-jaga anti dobel:
-// kalau suatu saat ada aset non-SELF yang titipanAmount-nya ikut terisi,
-// nilainya SUDAH kehitung penuh lewat sumAssets(type) di atas, jadi TIDAK
-// perlu (dan TIDAK boleh) dijumlah lagi di sini.
+// sumTitipanAset() — jumlah porsi NON-SELF dari `nilai` SEMUA aset yang
+// kepemilikan efektifnya SELF. SENGAJA dipisah dari sumAssets('THIRD_PARTY')
+// dkk di atas: field `ownership` = status SELURUH aset (whole-entity),
+// sedangkan porsi titipan = SEBAGIAN nilai aset SELF yang dananya titipan
+// orang lain (dicatat jadi utang di Buku Utang lewat
+// Aset._syncOwnerDebts(), TIDAK mengubah `ownership`). Filter
+// ownership===SELF di sini murni jaga-jaga anti dobel: kalau suatu saat
+// ada aset non-SELF yang porsi titipannya ikut terisi, nilainya SUDAH
+// kehitung penuh lewat sumAssets(type) di atas, jadi TIDAK perlu (dan
+// TIDAK boleh) dijumlah lagi di sini.
+//
+// Sesi D (lanjutan migrasi Dana Titipan -> Multi-Owner Engine, S406b-408):
+// SEBELUM sesi ini baca `a.titipanAmount` legacy langsung. Sekarang baca
+// lewat MultiOwnerEngine.selfPorsi(a) (100% reuse, 0 rumus baru) supaya
+// ikut porsi MAJEMUK hasil "Atur Porsi Kepemilikan" (392a-e, `a.owners`
+// >1 baris non-SELF), bukan cuma 1 slot titipan tunggal. 0 REGRESI: aset
+// yang belum sempat auto-migrate (Sesi C) TETAP terhitung benar karena
+// MultiOwnerEngine.getOwners() sendiri masih baca titipanAmount legacy
+// lewat cabang sintesis _synthesizeFromTitipan() (Sesi 406b) kalau
+// `a.owners` belum ada — sumTitipanAset() TIDAK PERLU TAHU beda keduanya,
+// tinggal pakai porsi efektif apa pun sumbernya. Guard typeof
+// MultiOwnerEngine: kalau engine belum dimuat, fallback 0 (pola sama
+// persis guard OwnershipEngine di _resolveType() di atas).
 sumTitipanAset() {
+  if (typeof MultiOwnerEngine === 'undefined') return 0;
   return (D.assets || [])
     .filter((a) => this._resolveType(a) === 'SELF')
-    .reduce((s, a) => s + (a.titipanAmount || 0), 0);
+    .reduce((s, a) => {
+      const nilai = typeof a.nilai === 'number' && isFinite(a.nilai) ? a.nilai : 0;
+      const selfPorsi = MultiOwnerEngine.selfPorsi(a);
+      // Math.round per aset (bukan di total) -- jaga presisi Rupiah &
+      // hindari residu float (mis. .../3*3 != nilai persis) menumpuk kalau
+      // dijumlah dulu baru dibulatkan di akhir.
+      return s + Math.round(nilai * (1 - selfPorsi / 100));
+    }, 0);
 },
 
 // summary() — ringkasan Dana Kelolaan, 1 angka per tipe kepemilikan

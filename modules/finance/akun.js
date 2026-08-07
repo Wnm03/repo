@@ -104,6 +104,15 @@ return linkedAssetAccountIds().has(String(accId));
 // (sesuai spesifikasi), tapi recalcAccBalance() per-akun (dipakai buku
 // Akun Uang & histori transaksi) TIDAK disentuh sama sekali — saldo akun
 // itu sendiri tetap kehitung normal, cuma tidak ikut dijumlah ke total.
+// Sesi 422c (REVERT Sesi 396): blok "porsi SELF akun tertaut ikut kehitung"
+// dari S396 DIHAPUS -- ternyata bikin DOUBLE-COUNT di Kekayaan Bersih:
+// porsi SELF dari aset yg sama SUDAH ikut kehitung lewat Aset.totalValue()
+// (S422c: pakai MultiOwnerEngine.selfOwnedValue() per-aset, lihat aset.js),
+// jadi kalau akun tertautnya JUGA nambah porsi SELF di sini, porsi itu
+// kehitung 2x (sekali dari sisi Aset, sekali dari sisi Akun). Akun yang
+// tertaut ke Aset (linked) kembali ke perilaku SEBELUM S396: dikecualikan
+// PENUH dari Total Saldo Akun apa pun status single/multi-owner-nya --
+// representasi porsi SELF-nya SEPENUHNYA jadi tanggung jawab Aset.totalValue().
 function totalSaldoAkun(){
 if(_totalSaldoCache!==undefined)return _totalSaldoCache;
 const linked=linkedAssetAccountIds();

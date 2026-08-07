@@ -12,6 +12,23 @@
 // Fungsi murni ini nentuin kapan toggle harus dikunci -- dipisah dari
 // setBillType() (yang baca/tulis DOM) supaya bisa dites tanpa DOM, pola sama
 // fungsi murni lain (lihat tests/helpers/loadSource.js).
+
+// _amc015: fallback lokal addMonthsClamped() (BUG-015, s406) -- file ini kadang dimuat berdiri
+// sendiri lewat harness test (tests/helpers/loadSource.js) TANPA modules/shared/
+// features-helpers-global-security.js ikut dimuat di sandbox yang sama, jadi addMonthsClamped()
+// global belum tentu ada. Fallback ini pakai algoritma identik dgn versi global supaya hasil
+// selalu sama persis di manapun dipanggil (bukan re-implementasi logic baru).
+function _amc015(base,months){
+if(typeof addMonthsClamped==='function')return addMonthsClamped(base,months);
+if(!(base instanceof Date)||isNaN(base.getTime()))return base;
+const day=base.getDate();
+base.setDate(1);
+base.setMonth(base.getMonth()+months);
+const lastDayOfTargetMonth=new Date(base.getFullYear(),base.getMonth()+1,0).getDate();
+base.setDate(Math.min(day,lastDayOfTargetMonth));
+return base;
+}
+
 function isBillTypeLocked(kind){
 return kind==='cicilan'||kind==='utang';
 }
@@ -58,9 +75,25 @@ return ids.length?Math.max(...ids):null;
 function getBillArchiveEditSource(b,transactions){
 const txId=getLatestBillPaymentTxId(b.id,transactions);
 const tx=txId!=null?(transactions||[]).find(t=>t.id===txId):null;
+// FIX (BUG-FIN-003, sesi 443 -- double-proration): utk tagihan SHARED,
+// tx.amount cuma nyimpen PORSI SENDIRI (BUKAN Total -- lihat BUG-002 sesi
+// 342, t.amount SELALU porsi yg beneran keluar dari kantong sendiri). Field
+// #billAmt yg diisi dari sini berlabel "Jumlah Total per Periode"
+// (toggleBillSharedFields) & _saveBillInner() SELALU mem-prorata ULANG
+// isinya lewat sharedPct (rawAmt*sharedPct/100). Sebelum fix ini, porsi
+// (tx.amount) langsung dikembalikan apa adanya sbg `amount` -> kepakai jadi
+// rawAmt di _saveBillInner -> diprorata LAGI -> Total asli terpotong pct DUA
+// KALI (mis. split 50/50: porsi 500rb dari total 1jt kepatok jadi 250rb
+// tiap kali modal ✏️ Edit Tagihan (Lunas) dibuka+disimpan tanpa ubah field
+// apa pun). Fix: utk shared, ambil Total dari b.totalAmount (field yg SELALU
+// nyimpen Total apa adanya, tidak pernah diprorata -- lihat data.totalAmount
+// di _saveBillInner) -- tx.amount cuma dipakai sbg fallback kalau kebetulan
+// b.totalAmount kosong (data lama/anomali sebelum field ini ada). Non-shared
+// TIDAK terpengaruh (tidak ada proraso -- tx.amount == Total == porsi, sama
+// persis seperti sebelumnya, 0 regresi).
 return {
-date:tx?tx.date:(b.completedAt||''),
-amount:tx?tx.amount:(b.shared?b.totalAmount:b.amount)
+amount:tx?(b.shared?(b.totalAmount!=null?b.totalAmount:tx.amount):tx.amount):(b.shared?b.totalAmount:b.amount),
+date:tx?tx.date:(b.completedAt||'')
 };
 }
 // findFallbackBillPaymentTxId(archivedBill, transactions) -- FIX (laporan user,
@@ -422,6 +455,11 @@ const rawAmt=parseFloat(document.getElementById('billAmt').value);
 // record arsip memang sudah tidak dipakai lagi, dibiarkan basi apa adanya).
 const due=document.getElementById('billDue').value;
 if(!name||!rawAmt||!due){toast('⚠️ Lengkapi nama, jumlah, dan tanggal');return;}
+// FIX (BUG-FIN-002): guard rawAmt<0 -- !rawAmt di atas cuma nangkap 0/NaN
+// (angka negatif itu truthy di JS, jadi lolos). Beda dari saveBillHistoryEdit()
+// di file yg sama (jumlah<=0) yg sudah benar. Nominal tagihan negatif yg lolos
+// di sini ikut ke amount bill & transaksi pembayaran otomatisnya.
+if(rawAmt<0){toast('⚠️ Jumlah tidak boleh negatif');return;}
 const shared=document.getElementById('billShared').checked;
 const sharedPct=shared?Math.min(99,Math.max(1,parseFloat(document.getElementById('billSharedPct').value)||50)):null;
 const amt=shared?Math.round(rawAmt*sharedPct/100):rawAmt;
@@ -768,7 +806,7 @@ if(hasSnapshot){
 linkedBill.nextDue=t.billPrevNextDue;
 } else {
 const d=new Date(linkedBill.nextDue);
-d.setMonth(d.getMonth()-1);
+_amc015(d,-1); // BUG-015 (s406): clamp overflow tanggal saat mundur 1 bulan (batalkan pembayaran cicilan)
 linkedBill.nextDue=d.toISOString().split('T')[0];
 }
 } else if(linkedBill.kind==='utang'&&linkedBill.debtId){
@@ -781,7 +819,7 @@ if(hasSnapshot){
 linkedBill.nextDue=t.billPrevNextDue;
 } else {
 const d=new Date(linkedBill.nextDue);
-d.setMonth(d.getMonth()-1);
+_amc015(d,-1); // BUG-015 (s406): clamp overflow tanggal saat mundur 1 bulan (batalkan pembayaran utang)
 linkedBill.nextDue=d.toISOString().split('T')[0];
 }
 } else if((linkedBill.kind==='langganan'||linkedBill.kind==='tagihan')&&linkedBill.freq){
@@ -789,7 +827,7 @@ if(hasSnapshot){
 linkedBill.nextDue=t.billPrevNextDue;
 } else {
 const d=new Date(linkedBill.nextDue);
-if(linkedBill.freq==='bulanan')d.setMonth(d.getMonth()-1);
+if(linkedBill.freq==='bulanan')_amc015(d,-1); // BUG-015 (s406): clamp overflow tanggal
 else if(linkedBill.freq==='mingguan')d.setDate(d.getDate()-7);
 else if(linkedBill.freq==='tahunan')d.setFullYear(d.getFullYear()-1);
 linkedBill.nextDue=d.toISOString().split('T')[0];
@@ -850,7 +888,7 @@ const ref=today?new Date(today):new Date();
 ref.setHours(0,0,0,0);
 let guard=0;
 while(guard<600){
-if(freq==='bulanan')d.setMonth(d.getMonth()+1);
+if(freq==='bulanan')_amc015(d,1); // BUG-015 (s406): clamp overflow tanggal
 else if(freq==='mingguan')d.setDate(d.getDate()+7);
 else if(freq==='tahunan')d.setFullYear(d.getFullYear()+1);
 else return d;
@@ -1208,7 +1246,7 @@ let i=0;
 while(i<maxOcc&&i<BILLCAL_MAX_ITER&&d<=rangeEnd){
 if(d>=rangeStart&&d<=rangeEnd)occurrences.push(new Date(d));
 const nd=new Date(d);
-if(b.freq==='bulanan')nd.setMonth(nd.getMonth()+1);
+if(b.freq==='bulanan')_amc015(nd,1); // BUG-015 (s406): clamp overflow tanggal
 else if(b.freq==='mingguan')nd.setDate(nd.getDate()+7);
 else if(b.freq==='tahunan')nd.setFullYear(nd.getFullYear()+1);
 else break;
@@ -1264,7 +1302,7 @@ let i=0;
 while(i<maxOcc&&i<BILLCAL_MAX_ITER&&d<=monthEnd){
 if(d>=monthStart&&d<=monthEnd)occurrences.push(new Date(d));
 const nd=new Date(d);
-if(b.freq==='bulanan')nd.setMonth(nd.getMonth()+1);
+if(b.freq==='bulanan')_amc015(nd,1); // BUG-015 (s406): clamp overflow tanggal
 else if(b.freq==='mingguan')nd.setDate(nd.getDate()+7);
 else if(b.freq==='tahunan')nd.setFullYear(nd.getFullYear()+1);
 else break;

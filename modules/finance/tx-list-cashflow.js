@@ -31,9 +31,18 @@ const acc=D.accounts.find(a=>a.id===t.accountId);
 const subText=t.subcategory?(' · '+t.subcategory):'';
 const pmIcons={cicilan:'💳',langganan:'🔁',tunai:''};
 const pmBadge=(t.payMethod&&t.payMethod!=='tunai')?` <span class="acc-chip">${pmIcons[t.payMethod]||''} ${t.payMethod}</span>`:'';
+// Sesi 394: badge "👥 N pemilik" di judul + rincian pembagian per pemilik di
+// tx-meta, kalau transaksi ini dikaitkan ke aset multi-owner (t.assetId,
+// lihat resolveTxAssetSplit() di transaksi.js -- 0 kalkulasi baru di sini).
+// Guard typeof resolveTxAssetSplit: aman kalau transaksi.js belum dimuat
+// (urutan build.js) atau fitur belum ada -- badge/rincian cuma tidak tampil,
+// bukan error.
+const assetSplit=(t.assetId&&typeof resolveTxAssetSplit==='function')?resolveTxAssetSplit(t):null;
+const ownerBadge=(assetSplit&&assetSplit.ok)?` <span class="acc-chip">👥 ${assetSplit.splits.length} pemilik</span>`:'';
+const ownerSplitLine=(assetSplit&&assetSplit.ok)?`<div class="tx-meta">👥 ${assetSplit.splits.map(s=>escapeHtml(s.ownerName)+': '+fmt(s.bagian)).join(' · ')}</div>`:'';
 return`<div class="tx-item u-pointer" data-action="editTx" data-args="${escapeHtml(JSON.stringify([t.id]))}">
     <div class="tx-icon" style="background:${bg}">${icon}</div>
-    <div class="tx-info"><div class="tx-name">${escapeHtml(t.category)}${escapeHtml(subText)}</div><div class="tx-meta">${t.date}${t.note?' · '+escapeHtml(t.note):''}${acc?` <span class="acc-chip">${acc.emoji} ${escapeHtml(acc.name)}</span>`:''}${pmBadge}</div></div>
+    <div class="tx-info"><div class="tx-name">${escapeHtml(t.category)}${escapeHtml(subText)}${ownerBadge}</div><div class="tx-meta">${t.date}${t.note?' · '+escapeHtml(t.note):''}${acc?` <span class="acc-chip">${acc.emoji} ${escapeHtml(acc.name)}</span>`:''}${pmBadge}</div>${ownerSplitLine}</div>
     <div class="u-flex u-aic u-gap6">
       <div class="tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
       <button class="tx-del" data-stop="1" data-action="delTx" data-args="${escapeHtml(JSON.stringify([t.id]))}" aria-label="Hapus">🗑</button>
@@ -43,6 +52,26 @@ return`<div class="tx-item u-pointer" data-action="editTx" data-args="${escapeHt
 async function delTx(id){
 if(!await askConfirm('Hapus transaksi ini?'))return;
 const t=D.transactions.find(x=>x.id===id);
+// SESI 432 (audit fitur Transfer Antar Akun): transfer_out/transfer_in
+// SEKARANG dibuat berpasangan lewat `transferPairId` (baru, lihat
+// tx-transfer.js saveTransfer()) -- sebelum sesi ini, delTx() cuma
+// menghapus 1 baris transaksi yg diklik, jadi kalau salah satu kaki
+// transfer dihapus, kaki satunya jadi ORPHAN (saldo akun tujuan/asal
+// jadi pincang permanen krn transaksi lawan pasangnya masih ada sendirian
+// -- bug yg ditemukan audit, lihat FIX-*-s433-audit-fix-renov-edit-not-saving.md).
+// Fix: kalau transaksi yg dihapus adalah salah satu kaki transfer & PUNYA
+// transferPairId (transfer baru, dibuat setelah sesi ini), pasangannya
+// (transferPairId sama, id beda) ikut dicari & dihapus BARENGAN.
+// Transfer LAMA (dibuat sebelum sesi ini, belum punya field
+// `transferPairId` sama sekali) TIDAK bisa dipasangkan otomatis -- 0 cara
+// aman menebak pasangannya cuma dari amount/date/accountId (bisa salah
+// pasang kalau ada transfer lain dgn nominal/tanggal sama) -- tetap
+// berperilaku SAMA seperti sebelum sesi ini (hapus 1 sisi saja, TIDAK
+// ada regresi utk data lama).
+let pairedTx=null;
+if(t&&(t.type==='transfer_out'||t.type==='transfer_in')&&t.transferPairId){
+pairedTx=D.transactions.find(x=>x.id!==id&&x.transferPairId===t.transferPairId);
+}
 if(t&&t.bbmLinkId&&D.bbmLogs)D.bbmLogs=D.bbmLogs.filter(b=>b.id!==t.bbmLinkId);
 if(t&&t.partStockId&&typeof revertStockPurchase==='function'){
 revertStockPurchase(t.partStockId,t.partStockQty);
@@ -89,9 +118,10 @@ SewaKios.onLinkedTxDeleted(t);
 if(t&&t.tukangPaymentEntryIds&&t.tukangPaymentEntryIds.length){
 Tukang.unmarkPaidEntries(t.tukangPaymentEntryIds);
 }
-D.transactions=D.transactions.filter(t=>t.id!==id);
+D.transactions=D.transactions.filter(x=>x.id!==id&&(!pairedTx||x.id!==pairedTx.id));
 save();renderDashboard();renderKeuangan();renderCnTab();renderProductList();
-if(!t||(!t.stockProductId&&!t.cobekLinkId&&!t.servisLinkId&&!t.partStockId&&!(t.stockItems&&t.stockItems.length)))toast('🗑 Dihapus'+(t&&t.renovItemLinkId?' (status lunas di Proyek Renovasi dibatalkan)':(t&&t.wishlistLinkId?' (barang dikembalikan ke Prioritas Belanja)':(t&&t.tukangPaymentEntryIds&&t.tukangPaymentEntryIds.length?' (absensi tukang terkait dibuka kembali)':''))));
+if(pairedTx)toast('🗑 Transfer dihapus (2 sisi sekaligus, saldo kedua akun ikut disesuaikan)');
+else if(!t||(!t.stockProductId&&!t.cobekLinkId&&!t.servisLinkId&&!t.partStockId&&!(t.stockItems&&t.stockItems.length)))toast('🗑 Dihapus'+(t&&t.renovItemLinkId?' (status lunas di Proyek Renovasi dibatalkan)':(t&&t.wishlistLinkId?' (barang dikembalikan ke Prioritas Belanja)':(t&&t.tukangPaymentEntryIds&&t.tukangPaymentEntryIds.length?' (absensi tukang terkait dibuka kembali)':''))));
 }
 function changeMonth(dir){
 curMonth+=dir;

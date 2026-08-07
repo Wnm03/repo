@@ -110,7 +110,12 @@ const cat=document.getElementById('wiCategory').value;
 const catExtra=WorthIt.readCatExtra(cat,'wi');
 if(price<=0){toast('⚠️ Isi dulu harga barangnya');return;}
 const dp=method==='cicilan'?parsePzNum(document.getElementById('wiDP').value):0;
-const tenor=method==='cicilan'?(parseInt(document.getElementById('wiTenor').value)||0):0;
+// FIX (BUG-FIN-002): guard tenor<0 -- parseInt(...)||0 cuma nangkap 0/NaN
+// (angka negatif truthy), jadi tenor negatif dulu lolos sampai ke _last.tenor
+// & bocor ke txCicilanTenor (WorthIt.catatBeli(), "d.tenor||6" -- negatif juga
+// truthy jadi tetap kepakai, bukan fallback ke 6).
+const tenorRaw=method==='cicilan'?(parseInt(document.getElementById('wiTenor').value)||0):0;
+const tenor=tenorRaw<0?0:tenorRaw;
 const cicilanBulan=method==='cicilan'?parsePzNum(document.getElementById('wiCicilanBulan').value):0;
 const totalBayarCicilan=dp+(cicilanBulan*tenor);
 const selisihBunga=(method==='cicilan'&&tenor>0&&totalBayarCicilan>0)?Math.max(0,totalBayarCicilan-price):0;
@@ -331,6 +336,12 @@ WorthIt.renderList();
 computeScore(it){
 const reasons=[];
 let score=0;
+// FIX (BUG-FIN-002): guard defensif spt Number(it.price)||0 yg sudah dipakai
+// renderList() (baris totalHarga) tapi belum ada di sini -- record wishlist
+// lama/korup (price bukan angka valid) sebelumnya bikin score NaN & ngerusak
+// sort di renderList(). 0 perubahan utk data normal (Number(n)===n).
+const price=Number(it.price)||0;
+const hargaNormal=Number(it.hargaNormal)||0;
 if(it.cat==='kebutuhan'){
 const belumPunya=it.catExtra==='belum_punya';
 score+=belumPunya?30:40;
@@ -348,9 +359,9 @@ score-=25;
 const customText=(it.sudahPunyaAlasan||'').trim();
 reasons.push({level:'red',text:customText?('📦 '+escapeHtml(customText)):'📦 Barang lama masih ada & masih bisa dipakai — ini lebih ke ganti karena lebih murah, bukan karena beneran butuh. Justru di sini seringnya "hemat" jadi alasan buat belanja yang sebenarnya belum perlu.'});
 }
-if(it.isDiskon&&it.hargaNormal>it.price){
-const hematRp=it.hargaNormal-it.price;
-const hematPersen=(hematRp/it.hargaNormal)*100;
+if(it.isDiskon&&hargaNormal>price){
+const hematRp=hargaNormal-price;
+const hematPersen=(hematRp/hargaNormal)*100;
 const diskonScore=Math.min(50,hematPersen)*(it.sudahPunya?0.2:0.4);
 score+=diskonScore;
 if(hematPersen>=30)reasons.push({level:it.sudahPunya?'orange':'green',text:'🏷️ Diskon lumayan gede: hemat '+fmtFull(hematRp)+' ('+hematPersen.toFixed(0)+'%)'+(it.sudahPunya?', tapi tetap perlu diingat barang lama masih jalan.':'.')});
@@ -358,7 +369,7 @@ else if(hematPersen>=10)reasons.push({level:'orange',text:'🏷️ Diskon lumaya
 else reasons.push({level:'red',text:'🏷️ Diskon tipis, cuma '+hematPersen.toFixed(0)+'% — hati-hati taktik "diskon palsu".'});
 }
 const saldo=totalSaldoAkun();
-const pctSaldo=(saldo>0)?(it.price/saldo)*100:0;
+const pctSaldo=(saldo>0)?(price/saldo)*100:0;
 if(pctSaldo>50){score-=15;reasons.push({level:'red',text:'💸 Harganya bakal menguras >50% saldo kamu sekarang.'});}
 else if(pctSaldo>25){score-=7;reasons.push({level:'orange',text:'💸 Harganya cukup besar, ~'+pctSaldo.toFixed(0)+'% dari saldo sekarang.'});}
 score=Math.max(0,Math.min(100,Math.round(score)));

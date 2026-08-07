@@ -7,6 +7,66 @@
 // PENTING: DebtStrategy.computeDSR() memanggil WorthIt (di worthit.js, guarded typeof check, aman krn runtime call — walau worthit.js sekarang dimuat SETELAH piutang-utang.js di urutan GROUP_A, tetap aman krn guard & dipanggil runtime setelah semua file ter-load, bukan saat load).
 // PENTING: Bill.openLinkTxModal() memakai curBillHistoryId (dideklarasikan di tagihan-kalender.js) & LinkTx (di linktx.js) — dipanggil saat runtime (dari klik tombol), bukan saat load, jadi aman walau dideklarasikan di file lain asalkan semua file ikut ter-load (selalu, lewat build.js).
 
+// _amc015: fallback lokal addMonthsClamped() (BUG-015, s406) -- file ini kadang dimuat berdiri
+// sendiri lewat harness test (tests/helpers/loadSource.js) TANPA modules/shared/
+// features-helpers-global-security.js ikut dimuat di sandbox yang sama, jadi addMonthsClamped()
+// global belum tentu ada. Fallback ini pakai algoritma identik dgn versi global supaya hasil
+// selalu sama persis di manapun dipanggil (bukan re-implementasi logic baru).
+function _amc015(base,months){
+if(typeof addMonthsClamped==='function')return addMonthsClamped(base,months);
+if(!(base instanceof Date)||isNaN(base.getTime()))return base;
+const day=base.getDate();
+base.setDate(1);
+base.setMonth(base.getMonth()+months);
+const lastDayOfTargetMonth=new Date(base.getFullYear(),base.getMonth()+1,0).getDate();
+base.setDate(Math.min(day,lastDayOfTargetMonth));
+return base;
+}
+
+// resolveEntryAssetSelfPorsi(entry) — Sesi 394 (lanjutan S390 MultiOwnerEngine
+// & S393 Zakat Self-Owned Portion): kalau piutang/utang ini ditautkan ke aset
+// multi-owner lewat field `assetId` (opsional), balikin porsi % milik sendiri
+// dari aset itu (lewat MultiOwnerEngine.selfPorsi()) -- dipakai supaya
+// piutang/utang yang terkait aset patungan tidak dihitung PENUH ke Total
+// Piutang/Utang (yang mengalir ke Kekayaan Bersih). BEDA sengaja dari Dana
+// Titipan (dana-kelolaan.js, S195/S255): Dana Titipan mengecualikan SELURUH
+// entity ber-ownership non-SELF (OwnershipEngine, 1 tipe per entity), sedang
+// ini men-split porsi piutang/utang mengikuti SPLIT porsi kepemilikan aset
+// terkait (MultiOwnerEngine, bisa >1 pemilik beda porsi) -- dua mekanisme
+// TERPISAH, tidak saling menggantikan. Guard: assetId kosong/tidak ketemu/
+// aset single-owner/engine belum dimuat -> fallback 100 (0 regresi kasus
+// umum, piutang/utang tanpa assetId dihitung penuh spt sebelumnya).
+function resolveEntryAssetSelfPorsi(entry){
+if(!entry||!entry.assetId)return 100;
+if(typeof MultiOwnerEngine==='undefined')return 100;
+const asset=(D.assets||[]).find(a=>sameId(a.id,entry.assetId));
+if(!asset)return 100;
+const res=MultiOwnerEngine.getOwners(asset);
+if(!res||!res.ok||!res.isMultiOwner)return 100;
+return MultiOwnerEngine.selfPorsi(asset);
+}
+// getMultiOwnerAssets() — daftar aset (D.assets) yang punya >1 pemilik lewat
+// MultiOwnerEngine.getOwners() (isMultiOwner true), dipakai isi pilihan
+// "Kaitkan ke Aset Multi-Owner" di modal Piutang/Utang. Guard typeof
+// MultiOwnerEngine -> array kosong kalau engine belum dimuat.
+function getMultiOwnerAssets(){
+if(typeof MultiOwnerEngine==='undefined')return [];
+return (D.assets||[]).filter(a=>{
+const r=MultiOwnerEngine.getOwners(a);
+return r&&r.ok&&r.isMultiOwner;
+});
+}
+// populateEntryAssetSelect(selId, curAssetId) — isi <select> pilihan aset
+// multi-owner, dipakai SAMA PERSIS oleh modal Piutang & Utang (1 fungsi,
+// tidak diduplikasi). Opsi pertama selalu "Tidak dikaitkan" (assetId kosong
+// -> resolveEntryAssetSelfPorsi() fallback 100, perilaku lama).
+function populateEntryAssetSelect(selId,curAssetId){
+const sel=document.getElementById(selId);
+if(!sel)return;
+const assets=getMultiOwnerAssets();
+sel.innerHTML='<option value="">— Tidak dikaitkan —</option>'+assets.map(a=>`<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+sel.value=(curAssetId&&assets.some(a=>sameId(a.id,curAssetId)))?curAssetId:'';
+}
 // isPiutangOwnershipSelf(p) — helper REUSE dari OwnershipEngine (Sesi 255,
 // Ownership Sync Piutang & Utang), pola SAMA PERSIS isAssetOwnershipSelf()
 // (Sesi 193, modules/asset/aset.js). Guard typeof OwnershipEngine: kalau
@@ -165,6 +225,7 @@ document.getElementById('piutangNilai').value=p?p.nilai:'';
 document.getElementById('piutangTanggal').value=p?(p.tanggal||''):todayStr();
 document.getElementById('piutangJatuhTempo').value=p?(p.jatuhTempo||''):'';
 document.getElementById('piutangCatatan').value=p?(p.catatan||''):'';
+populateEntryAssetSelect('piutangAssetId',p?p.assetId:'');
 Piutang._lunasState=p?!!p.lunas:false;
 const btn=document.getElementById('piutangLunasBtn');
 btn.textContent=Piutang._lunasState?'✓ Lunas':'Belum Lunas';
@@ -177,7 +238,8 @@ const btn=document.getElementById('piutangLunasBtn');
 btn.textContent=Piutang._lunasState?'✓ Lunas':'Belum Lunas';
 btn.className='chip-btn'+(Piutang._lunasState?' active':'');
 },
-save(){
+save(){return withSaveGuard('piutang','piutangModal',Piutang._saveInner);},
+_saveInner(){
 const name=document.getElementById('piutangName').value.trim();
 if(!name){toast('⚠️ Nama peminjam wajib diisi');return;}
 const nilai=parsePzNum(document.getElementById('piutangNilai').value);
@@ -189,12 +251,14 @@ if(!nilai||nilai<=0){toast('⚠️ Nilai piutang harus lebih dari 0');return;}
 const tanggal=document.getElementById('piutangTanggal').value||'';
 const jatuhTempo=document.getElementById('piutangJatuhTempo').value||'';
 const catatan=document.getElementById('piutangCatatan').value.trim();
+const assetIdEl=document.getElementById('piutangAssetId');
+const assetId=assetIdEl?assetIdEl.value:'';
 if(Piutang.editId){
 const p=D.piutang.find(x=>sameId(x.id,Piutang.editId));
 if(!p){toast('⚠️ Piutang tidak ditemukan, coba tutup dan buka lagi');return;}
-Object.assign(p,{name,nilai,tanggal,jatuhTempo,catatan,lunas:Piutang._lunasState});
+Object.assign(p,{name,nilai,tanggal,jatuhTempo,catatan,assetId,lunas:Piutang._lunasState});
 } else {
-D.piutang.push({id:uid(),name,nilai,tanggal,jatuhTempo,catatan,lunas:Piutang._lunasState});
+D.piutang.push({id:uid(),name,nilai,tanggal,jatuhTempo,catatan,assetId,lunas:Piutang._lunasState});
 }
 save();
 closeModal('piutangModal');
@@ -214,7 +278,10 @@ Piutang.renderList();renderKekayaanBersih();hitungZakatMaal();
 // (yang mengalir ke Net Worth/Dashboard/Report/AI lewat totalPiutangValue()),
 // TAPI TIDAK dihapus dari D.piutang (histori tetap tersimpan, masih
 // tampil di Piutang.renderList()). 0 rumus diubah.
-totalValue(){return(D.piutang||[]).filter(isPiutangOwnershipSelf).filter(p=>!p.lunas).reduce((s,p)=>s+(p.nilai||0),0);},
+// S394: kalikan tiap piutang dgn resolveEntryAssetSelfPorsi(p)/100 --
+// piutang tanpa assetId (mayoritas) selalu porsi 100, jadi rumus TETAP
+// PERSIS `nilai` seperti sebelumnya (0 regresi kasus umum).
+totalValue(){return(D.piutang||[]).filter(isPiutangOwnershipSelf).filter(p=>!p.lunas).reduce((s,p)=>s+(p.nilai||0)*(resolveEntryAssetSelfPorsi(p)/100),0);},
 overdueDays(p){
 if(p.lunas||!p.jatuhTempo)return 0;
 const jt=new Date(p.jatuhTempo);
@@ -266,6 +333,10 @@ if(p.catatan)metaParts.push(escapeHtml(p.catatan));
 // data-stop="1" wajib supaya klik chip tidak ikut trigger data-action="openPiutangModal"
 // milik parent tx-item (pola sama dgn tombol 🗑 Hapus di bawah).
 if(p.autoBillId)metaParts.push(`<span class="u-fs10 u-pointer u-r6" style="color:var(--text2);background:var(--bg3);padding:1px 6px;border:1px solid var(--border)" data-stop="1" data-action="openBillModal" data-args="${escapeHtml(JSON.stringify([p.autoBillId]))}" title="Lihat tagihan asal">🧾 Tagihan asal</span>`);
+// S394: badge porsi kepemilikan kalau piutang ini ditautkan ke aset
+// multi-owner (assetId) & porsinya < 100 -- kasus umum (tanpa assetId)
+// tidak pernah menampilkan badge ini.
+if(p.assetId){const _porsi=resolveEntryAssetSelfPorsi(p);if(_porsi<100)metaParts.push(`👥 Porsi Anda ${_porsi}% dari aset multi-owner`);}
 const badge=p.lunas?' <span class="bill-due-badge bill-due-ok u-ml4">Lunas</span>'
 :(isPrioritas?' <span class="u-fs10 u-r6 u-ml4" style="color:#fff;background:var(--accent2);padding:1px 5px">🔥 Prioritas</span>'
 :(overdue?' <span class="bill-due-badge bill-due-urgent u-ml4">Jatuh Tempo</span>':''));
@@ -319,6 +390,7 @@ document.getElementById('debtCicilan').value=d?(d.cicilanBulanan||''):'';
 document.getElementById('debtTanggal').value=d?(d.tanggal||''):todayStr();
 document.getElementById('debtJatuhTempo').value=d?(d.jatuhTempo||''):'';
 document.getElementById('debtCatatan').value=d?(d.catatan||''):'';
+populateEntryAssetSelect('debtAssetId',d?d.assetId:'');
 updateAmtPreview('debtNilai','debtNilaiPreview');
 updateAmtPreview('debtCicilan','debtCicilanPreview');
 Debt._lunasState=d?!!d.lunas:false;
@@ -333,7 +405,8 @@ const btn=document.getElementById('debtLunasBtn');
 btn.textContent=Debt._lunasState?'✓ Lunas':'Belum Lunas';
 btn.className='chip-btn'+(Debt._lunasState?' active':'');
 },
-save(){
+save(){return withSaveGuard('debt','debtModal',Debt._saveInner);},
+_saveInner(){
 const name=document.getElementById('debtName').value.trim();
 if(!name){toast('⚠️ Nama pemberi pinjaman wajib diisi');return;}
 const jenis=document.getElementById('debtJenis').value||'lainnya';
@@ -341,18 +414,34 @@ const nilai=parsePzNum(document.getElementById('debtNilai').value);
 // FIX (BUG-FIN-001): guard nilai<=0 -- pola sama persis dgn Piutang.save()
 // di atas (lihat komentar di sana).
 if(!nilai||nilai<=0){toast('⚠️ Nilai utang harus lebih dari 0');return;}
-const bunga=parseFloat(document.getElementById('debtBunga').value)||0;
-const cicilanBulanan=parsePzNum(document.getElementById('debtCicilan').value);
+const bungaRaw=parseFloat(document.getElementById('debtBunga').value)||0;
+// FIX (BUG-FIN-002): guard bunga<0 -- sebelumnya parseFloat()||0 meloloskan
+// bunga NEGATIF (mis. input diawali "-") tanpa peringatan, lolos tersimpan &
+// langsung dipakai sbg suku bunga majemuk di Debt.simulate() (dipakai
+// debt-optimizer-*, snowball/avalanche) -- bunga negatif bikin proyeksi
+// pelunasan & total bunga salah arah. Pola guard sama semangat dgn
+// BUG-FIN-001 di atas (nilai<=0), tapi bunga 0 tetap valid (utang tanpa
+// bunga itu wajar), makanya cuma clamp ke 0, bukan tolak simpan.
+const bunga=bungaRaw<0?0:bungaRaw;
+const cicilanBulananRaw=parsePzNum(document.getElementById('debtCicilan').value);
+// FIX (BUG-FIN-002): guard cicilanBulanan<0 -- parsePzNum() membolehkan tanda
+// minus lolos (dipakai jg utk field lain yg boleh negatif), tapi di sini nilai
+// negatif ikut ke Debt.syncBill() (shouldHaveBill jadi salah) & Debt.simulate()
+// (baris balance-=Math.min(cicilanBulanan,balance) malah MENAMBAH saldo utang).
+// cicilanBulanan 0 tetap valid (utang tanpa cicilan tetap/lunas manual).
+const cicilanBulanan=cicilanBulananRaw<0?0:cicilanBulananRaw;
 const tanggal=document.getElementById('debtTanggal').value||'';
 const jatuhTempo=document.getElementById('debtJatuhTempo').value||'';
 const catatan=document.getElementById('debtCatatan').value.trim();
+const assetIdEl=document.getElementById('debtAssetId');
+const assetId=assetIdEl?assetIdEl.value:'';
 let d;
 if(Debt.editId){
 d=D.debts.find(x=>sameId(x.id,Debt.editId));
 if(!d){toast('⚠️ Utang tidak ditemukan, coba tutup dan buka lagi');return;}
-Object.assign(d,{name,jenis,nilai,bunga,cicilanBulanan,tanggal,jatuhTempo,catatan,lunas:Debt._lunasState});
+Object.assign(d,{name,jenis,nilai,bunga,cicilanBulanan,tanggal,jatuhTempo,catatan,assetId,lunas:Debt._lunasState});
 } else {
-d={id:uid(),name,jenis,nilai,bunga,cicilanBulanan,tanggal,jatuhTempo,catatan,lunas:Debt._lunasState};
+d={id:uid(),name,jenis,nilai,bunga,cicilanBulanan,tanggal,jatuhTempo,catatan,assetId,lunas:Debt._lunasState};
 D.debts.push(d);
 }
 Debt.syncBill(d);
@@ -370,7 +459,7 @@ d.billId=null;
 return;
 }
 const today=new Date().toISOString().slice(0,10);
-const defaultNextDue=()=>{const dt=new Date();dt.setMonth(dt.getMonth()+1);return dt.toISOString().split('T')[0];};
+const defaultNextDue=()=>{const dt=new Date();_amc015(dt,1);return dt.toISOString().split('T')[0];}; // BUG-015 (s406): clamp overflow tanggal
 if(bill){
 bill.name='Cicilan: '+d.name;
 bill.amount=d.cicilanBulanan;
@@ -397,7 +486,10 @@ Debt.renderList();renderKekayaanBersih();hitungZakatMaal();renderBillList();chec
 // mengalir ke Net Worth/Dashboard/Report/AI lewat totalDebtValue()/
 // DebtStrategy.computeDSR()), TAPI TIDAK dihapus dari D.debts (histori
 // tetap tersimpan, masih tampil di Debt.renderList()). 0 rumus diubah.
-totalValue(){return(D.debts||[]).filter(isDebtOwnershipSelf).filter(d=>!d.lunas).reduce((s,d)=>s+(d.nilai||0),0);},
+// S394: kalikan tiap utang dgn resolveEntryAssetSelfPorsi(d)/100 -- pola
+// SAMA PERSIS Piutang.totalValue(), utang tanpa assetId (mayoritas) selalu
+// porsi 100 (0 regresi kasus umum).
+totalValue(){return(D.debts||[]).filter(isDebtOwnershipSelf).filter(d=>!d.lunas).reduce((s,d)=>s+(d.nilai||0)*(resolveEntryAssetSelfPorsi(d)/100),0);},
 totalCicilanBulanan(){return(D.debts||[]).filter(isDebtOwnershipSelf).filter(d=>!d.lunas).reduce((s,d)=>s+(d.cicilanBulanan||0),0);},
 // billCicilanAktif() — KW-170: cicilan barang aktif dari Buku Tagihan
 // (D.bills kind:'cicilan', sisaTenor>0) — dianggap "utang beneran": ikut
@@ -431,6 +523,9 @@ if(d.bunga)metaParts.push('Bunga '+d.bunga+'%/th');
 if(d.cicilanBulanan)metaParts.push('Cicilan '+fmt(d.cicilanBulanan)+'/bln');
 if(d.jatuhTempo)metaParts.push((overdue?'⚠️ Lewat jatuh tempo ':'Jatuh tempo ')+d.jatuhTempo);
 if(d.catatan)metaParts.push(escapeHtml(d.catatan));
+// S394: badge porsi kepemilikan kalau utang ini ditautkan ke aset
+// multi-owner (assetId) & porsinya < 100 — pola sama Piutang.renderList().
+if(d.assetId){const _porsi=resolveEntryAssetSelfPorsi(d);if(_porsi<100)metaParts.push(`👥 Porsi Anda ${_porsi}% dari aset multi-owner`);}
 return `<div class="tx-item u-pointer" data-action="openDebtModal" data-args="${escapeHtml(JSON.stringify([d.id]))}"><div class="tx-icon" style="background:var(--accent2-soft)">📕</div><div class="tx-info"><div class="tx-name">${escapeHtml(d.name)}${d.lunas?' <span class="bill-due-badge bill-due-ok u-ml4">Lunas</span>':(overdue?' <span class="bill-due-badge bill-due-urgent u-ml4">Jatuh Tempo</span>':'')}</div><div class="tx-meta">${metaParts.join(' · ')}</div></div><div class="tx-amount${d.lunas?'':' red'}">${fmt(d.nilai)}</div><button class="tx-del" data-stop="1" data-action="delDebt" data-args="${escapeHtml(JSON.stringify([d.id]))}" aria-label="Hapus">🗑</button></div>`;
 }).join('');
 // KW-170: baris cicilan barang — read-only dari sini (edit/hapus/riwayat
