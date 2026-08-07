@@ -123,14 +123,17 @@ return OwnershipEngine.resolve(a).type==='SELF';
 // akun itu, tapi `a.nilai` di Buku Aset sebelumnya tidak pernah ketarik balik
 // -- user harus edit manual. Fix: dipanggil dari save() (titik tunggal,
 // pola sama invalidateAccBalCache()), tiap aset yang py accountId di-cek:
-// kalau saldo akun tertaut (ownPortion aktual) BEDA dari ownPortion yang
-// konsisten dgn a.nilai+porsi SEKARANG, `a.nilai` dikoreksi supaya kembali
-// konsisten -- porsi TIDAK diubah, cuma nilai TOTAL instrumen yang di-scale
-// balik dari ownPortion aktual (nilai = ownPortion/selfPorsi%). Idempotent:
-// kalau akun tertaut baru saja disamakan oleh Aset.save()/saveOwners()
-// (txDelta pattern), ownPortion aktual = ownPortion konsisten -> 0 perubahan.
-// Guard: skip aset tanpa accountId, akun yang sudah dihapus, atau selfPorsi
-// 0 (tidak bisa dibagi/tidak representatif).
+// kalau saldo akun tertaut BEDA dari `a.nilai` sekarang, `a.nilai` dikoreksi
+// mengikuti saldo akun. Idempotent: kalau akun tertaut baru saja disamakan
+// oleh Aset.save()/saveOwners() (txDelta pattern), saldo akun = a.nilai ->
+// 0 perubahan. Guard: skip aset tanpa accountId / akun yang sudah dihapus.
+// SESI 449 (BUG-OWN-002 lanjutan): sebelumnya nilai akun tertaut di-scale
+// balik lewat selfPorsi (nilai = ownPortion/selfPorsi%) karena akun tertaut
+// dulu cuma nyimpen porsi SELF. Sekarang akun tertaut nyimpen NILAI PENUH
+// instrumen (lihat "linkedAccNilai" di Aset.save()/saveOwners()), jadi arah
+// sync balik ini juga disederhanakan: a.nilai = saldo akun apa adanya, 0
+// scaling/pembagian porsi lagi (MultiOwnerEngine.selfPorsi() TIDAK dipakai
+// di sini lagi).
 // FIX (BUG-OWN-001, audit s444): sebelum fix ini, koreksi a.nilai di sini
 // (arah Akun->Aset, dari transaksi riwayat NYATA yang terjadi langsung di
 // akun tertaut) tidak pernah ketarik ke utang "dana titipan" milik owner
@@ -139,18 +142,14 @@ return OwnershipEngine.resolve(a).type==='SELF';
 // nilaiBaru!=a.nilai (transaksi riwayat beneran mengubah nilai), panggil
 // Aset._syncOwnerDebts(a) juga -- guard typeof Aset (fungsi ini murni &
 // dites headless tanpa Aset dimuat, lihat tests/asset-nilai-sync-from-akun-
-// s422f.test.js) supaya tidak WAJIB Aset ada di scope, sama pola guard
-// typeof MultiOwnerEngine di atas.
+// s422f.test.js) supaya tidak WAJIB Aset ada di scope.
 function syncLinkedAssetNilaiFromAkun(){
 if(!Array.isArray(D.assets)||typeof recalcAccBalance!=='function')return;
 D.assets.forEach((a)=>{
 if(!a.accountId)return;
 const acc=(D.accounts||[]).find(x=>sameId(x.id,a.accountId));
 if(!acc)return;
-const selfPorsi=(typeof MultiOwnerEngine!=='undefined')?MultiOwnerEngine.selfPorsi(a):100;
-if(!(selfPorsi>0))return;
-const ownPortionAktual=recalcAccBalance(acc.id);
-const nilaiBaru=Math.round(ownPortionAktual/(selfPorsi/100));
+const nilaiBaru=recalcAccBalance(acc.id);
 if(nilaiBaru!==a.nilai){
 a.nilai=nilaiBaru;
 if(typeof Aset!=='undefined'&&typeof Aset._syncOwnerDebts==='function')Aset._syncOwnerDebts(a);
@@ -634,6 +633,17 @@ Aset.updateOwnersTotal();
 //   lain (pola sama seperti onOwnerPorsiInput/onOwnerNominalInput sendiri:
 //   ubah DOM langsung, BUKAN _renderOwnersList ulang, supaya fokus/kursor
 //   input yang sedang diketik user tidak hilang).
+// SESI 449 (BUG-OWN-002, audit s448): sebelumnya sisa porsi dibagi RATA
+// (sisaPorsi/otherIdx.length) ke SEMUA baris lain, terlepas dari porsi lama
+// mereka apa. Untuk 2 pemilik ini kebetulan tidak kelihatan (sisa cuma
+// jatuh ke 1 baris = otomatis "benar"), tapi utk 3+ pemilik ini salah:
+// mis. porsi lama A=70%,B=20%,C=10%, user isi Nominal A jadi lebih kecil
+// (porsi A turun ke 40%) -- sisa 60% seharusnya dibagi PROPORSIONAL ke rasio
+// lama B:C (20:10 = 2:1), bukan rata 30%/30%. Fix: bagi proporsional ke
+// porsi LAMA baris lain (draft[k].porsi SEBELUM method ini menimpanya).
+// Fallback ke rata kalau total porsi lama baris lain = 0 (mis. semua baris
+// baru ditambah & belum py porsi sama sekali) -- SAMA PERSIS perilaku lama,
+// jadi 0 regresi utk kasus itu maupun kasus 2-pemilik yang sudah benar.
 _autoDistributeRemaining(editedIndex){
 const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
 if(!draft[editedIndex])return;
@@ -644,13 +654,22 @@ for(let k=0;k<draft.length;k++){if(k!==editedIndex)otherIdx.push(k);}
 if(!otherIdx.length)return;
 const editedPorsi=typeof draft[editedIndex].porsi==='number'&&isFinite(draft[editedIndex].porsi)?draft[editedIndex].porsi:0;
 const sisaPorsi=Math.max(0,100-editedPorsi);
-const sharePorsi=Math.round((sisaPorsi/otherIdx.length)*100)/100;
 const lastIdx=otherIdx[otherIdx.length-1];
+const oldPorsi={};
+let totalOldPorsi=0;
+otherIdx.forEach((k)=>{
+const p=typeof draft[k].porsi==='number'&&isFinite(draft[k].porsi)?Math.max(0,draft[k].porsi):0;
+oldPorsi[k]=p;
+totalOldPorsi+=p;
+});
 let usedPorsi=0;
 otherIdx.forEach((k)=>{
 if(k===lastIdx)return;
-draft[k].porsi=sharePorsi;
-usedPorsi+=sharePorsi;
+const share=totalOldPorsi>0
+?Math.round((sisaPorsi*(oldPorsi[k]/totalOldPorsi))*100)/100
+:Math.round((sisaPorsi/otherIdx.length)*100)/100;
+draft[k].porsi=share;
+usedPorsi+=share;
 });
 draft[lastIdx].porsi=Math.round((sisaPorsi-usedPorsi)*100)/100;
 otherIdx.forEach((k)=>{
@@ -699,18 +718,24 @@ if(!res.ok){toast('⚠️ '+res.reason);return;}
 Object.assign(a,{owners:res.entity.owners});
 // Sesi 422e: SYNC SALDO AKUN TERTAUT ke porsi BARU -- sebelumnya saveOwners()
 // cuma nulis owners[]/render ulang tampilan (S422c), tapi baseBalance akun
-// tertaut (kalau ADA, lihat assetAccId) tetap pakai ownPortion porsi LAMA
-// sampai form Aset utama dibuka & disimpan ulang secara terpisah. Reuse
-// PERSIS pola txDelta dari Aset.save() (baris ~681) -- riwayat transaksi akun
-// (kalau sudah ada, mis. sudah dipakai bayar/terima) TIDAK diubah, cuma
-// baseBalance-nya digeser supaya recalcAccBalance() = ownPortion porsi baru.
+// tertaut (kalau ADA, lihat assetAccId) tetap pakai nilai LAMA sampai form
+// Aset utama dibuka & disimpan ulang secara terpisah. Reuse PERSIS pola
+// txDelta dari Aset.save() (baris ~681) -- riwayat transaksi akun (kalau
+// sudah ada, mis. sudah dipakai bayar/terima) TIDAK diubah, cuma baseBalance-
+// nya digeser supaya recalcAccBalance() = nilai penuh instrumen sekarang.
+// SESI 449 (BUG-OWN-002 lanjutan): sebelumnya di sini dipakai
+// MultiOwnerEngine.selfOwnedValue(a,a.nilai) (porsi SELF saja) -- diganti
+// a.nilai (nilai PENUH), lihat komentar panjang "linkedAccNilai" di Aset.save()
+// di atas utk alasan lengkap (exclude dobel-hitung sudah dijamin totalSaldoAkun()
+// via linkedAssetAccountIds(), tidak butuh baseBalance/balance dipotong ke
+// porsi SELF lagi).
 if(a.accountId){
 const linkedAcc=D.accounts.find(x=>sameId(x.id,a.accountId));
 if(linkedAcc){
-const ownPortion=MultiOwnerEngine.selfOwnedValue(a,a.nilai||0);
+const linkedAccNilai=a.nilai||0;
 const txDelta=recalcAccBalance(linkedAcc.id)-(linkedAcc.baseBalance!==undefined?linkedAcc.baseBalance:(linkedAcc.balance||0));
-linkedAcc.baseBalance=ownPortion-txDelta;
-linkedAcc.balance=ownPortion;
+linkedAcc.baseBalance=linkedAccNilai-txDelta;
+linkedAcc.balance=linkedAccNilai;
 // BUGFIX (audit kepemilikan, sama alasan dgn Aset.save()): saveOwners()
 // cuma resync saldo, `ownership` akun tertaut tidak ikut disamakan ke
 // `a.ownership` -- pakai OwnershipEngine.resolve() (bukan a.ownership
@@ -832,18 +857,22 @@ const hargaBeli=parseDecStr(document.getElementById('assetHargaBeli').value);
 const jumlahUnit=parseDecStr(document.getElementById('assetJumlahUnit').value);
 const tanggal=document.getElementById('assetTanggal').value||'';
 let accountId=document.getElementById('assetAccId').value||null;
-// ownPortion -- SESI C (tahap terakhir migrasi Dana Titipan -> Multi-Owner Engine):
-// akun tertaut (Akun Transaksi) HARUS nunjukin cuma uang milik sendiri, BUKAN nilai
-// penuh instrumen. SEBELUM sesi ini dihitung dari toggle+nominal Dana Titipan manual
-// (dihapus dari assetModal sesi ini). Sekarang dihitung dari porsi SELF EFEKTIF aset
-// yang SUDAH TERSIMPAN (kalau sedang Edit Aset) lewat MultiOwnerEngine.selfOwnedValue()
-// (S390/393, 100% reuse -- 0 rumus baru), diterapkan ke `nilai` yang BARU diketik di
-// form ini. Aset BARU (Aset.editId belum ada, jadi belum py owners tersimpan) selalu
-// 100% SELF di titik simpan pertama ini -- porsi kepemilikan majemuk/titipan diatur
-// SETELAHNYA lewat tombol "⚖️ Atur Porsi Kepemilikan" (pola sama sejak S392a, cuma
-// sekarang jadi SATU-SATUNYA pintu, tidak lagi ada jalur toggle titipan terpisah).
-const existingForPorsi=Aset.editId?D.assets.find(x=>sameId(x.id,Aset.editId)):null;
-const ownPortion=(existingForPorsi&&typeof MultiOwnerEngine!=='undefined')?MultiOwnerEngine.selfOwnedValue(existingForPorsi,nilai):nilai;
+// linkedAccNilai -- SESI C (tahap terakhir migrasi Dana Titipan -> Multi-Owner
+// Engine) awalnya nulis cuma porsi SELF ke sini (bukan nilai penuh instrumen),
+// SUPAYA Total Saldo Akun tidak dobel-hitung dgn Aset.totalValue(). SESI 449
+// (BUG-OWN-002 lanjutan, audit s448) REVISI keputusan itu: exclude dobel-hitung
+// SUDAH sepenuhnya jadi tanggung jawab totalSaldoAkun() lewat linkedAssetAccountIds()
+// (lihat komentar totalSaldoAkun(), akun.js) -- akun tertaut dikecualikan PENUH
+// dari Total Saldo Akun terlepas dari nilai apa pun yang tersimpan di
+// baseBalance/balance-nya. Jadi menulis porsi SELF-saja ke sini TIDAK PERLU utk
+// cegah dobel-hitung, tapi PUNYA efek samping buruk: kalau porsi SELF 0% (mis.
+// semua owner "Ini saya"-nya belum dicentang), kartu akun tertaut nampilin
+// Rp 0 padahal instrumennya ada isinya -- membingungkan user (dicatat Sesi 434
+// sbg gejala, dikasih catatan penjelas doang waktu itu, BUKAN di-fix akarnya).
+// Fix: tulis NILAI PENUH instrumen (bukan porsi SELF saja) -- kartu akun
+// tertaut sekarang selalu representatif/informatif, exclude dari Kekayaan
+// Bersih tetap terjamin oleh totalSaldoAkun() (independen dari field ini).
+const linkedAccNilai=nilai;
 // BUGFIX-FEATURE: opsi "__new__" = bukan menautkan ke akun yang SUDAH ADA, tapi
 // bikin akun baru otomatis dari aset ini -- biar akun itu langsung nongol di
 // daftar 🏦 Akun & bisa langsung dipakai buat transaksi (bayar/terima) seperti
@@ -862,7 +891,7 @@ let _createdNewAcc=false;
 const ownRawA=document.getElementById('assetOwnership')?.value;
 const ownership=(typeof OwnershipEngine!=='undefined'&&OwnershipEngine.isValidType(ownRawA))?OwnershipEngine.normalize(ownRawA):(typeof OwnershipEngine!=='undefined'?OwnershipEngine.DEFAULT:'SELF');
 if(accountId==='__new__'){
-const newAcc={id:'acc_'+Date.now(),name,emoji:Aset.ICON[jenis]||'📦',baseBalance:ownPortion,balance:ownPortion,includeInBalance:true,ownership};
+const newAcc={id:'acc_'+Date.now(),name,emoji:Aset.ICON[jenis]||'📦',baseBalance:linkedAccNilai,balance:linkedAccNilai,includeInBalance:true,ownership};
 D.accounts.push(newAcc);
 accountId=newAcc.id;
 _createdNewAcc=true;
@@ -872,19 +901,20 @@ _createdNewAcc=true;
 // tidak pernah kepropagasi ke akunnya, jadi keduanya cepat divergen. Fix: tiap kali
 // aset disimpan (nilai berubah/tidak) & sudah tertaut ke akun YANG SUDAH ADA
 // (bukan baru dibuat di blok atas, itu sudah otomatis sama), akun itu di-"koreksi"
-// ke nominal = ownPortion SEKARANG, pakai pola txDelta yang SAMA PERSIS dgn
-// _saveAccInner() (akun.js) -- riwayat transaksi akun (kalau ada, mis. sudah
-// dipakai bayar/terima) TIDAK diubah, cuma baseBalance-nya digeser supaya hasil
-// recalcAccBalance() = ownPortion. Buku Aset (variabel `nilai`) TIDAK disentuh
-// oleh blok ini sama sekali -- arah sync SATU ARAH dari Aset -> Akun, bukan
-// sebaliknya, jadi nilai di Buku Aset tetap ikut update manual tersendiri,
+// ke nominal = linkedAccNilai (nilai penuh instrumen, SESI 449 lihat komentar di
+// atas) SEKARANG, pakai pola txDelta yang SAMA PERSIS dgn _saveAccInner()
+// (akun.js) -- riwayat transaksi akun (kalau ada, mis. sudah dipakai bayar/
+// terima) TIDAK diubah, cuma baseBalance-nya digeser supaya hasil
+// recalcAccBalance() = linkedAccNilai. Buku Aset (variabel `nilai`) TIDAK
+// disentuh oleh blok ini sama sekali -- arah sync SATU ARAH dari Aset -> Akun,
+// bukan sebaliknya, jadi nilai di Buku Aset tetap ikut update manual tersendiri,
 // tidak pernah ketarik balik oleh transaksi yang terjadi di akun tertaut.
 if(accountId&&!_createdNewAcc){
 const linkedAcc=D.accounts.find(x=>sameId(x.id,accountId));
 if(linkedAcc){
 const txDelta=recalcAccBalance(linkedAcc.id)-(linkedAcc.baseBalance!==undefined?linkedAcc.baseBalance:(linkedAcc.balance||0));
-linkedAcc.baseBalance=ownPortion-txDelta;
-linkedAcc.balance=ownPortion;
+linkedAcc.baseBalance=linkedAccNilai-txDelta;
+linkedAcc.balance=linkedAccNilai;
 // BUGFIX (audit kepemilikan): akun EXISTING yang BARU ditautkan (atau sudah
 // tertaut & aset ini disimpan ulang) sebelumnya TIDAK ikut mewarisi
 // `ownership` aset -- cuma jalur __new__ (buat akun baru dari aset) di atas
@@ -1031,16 +1061,15 @@ const a=D.assets.find(x=>sameId(x.id,id));
 if(!a)return;
 document.getElementById('assetActionsTitle').textContent=`${Aset.ICON[a.jenis]||'📦'} ${a.name}`;
 const linkedAcc=a.accountId?D.accounts.find(x=>sameId(x.id,a.accountId)):null;
-// Sesi 434 (audit "nominal akun tertaut selalu 0"): akun tertaut SENGAJA cuma
-// menampung porsi Milik Sendiri (MultiOwnerEngine.selfOwnedValue(), lihat komentar
-// panjang di totalSaldoAkun()/Aset.save() -- supaya tidak dobel hitung sama Buku
-// Aset). Ini benar secara hitungan, TAPI dari sisi user gejalanya sama persis
-// spt bug ("kok saldonya 0?") kalau field Kepemilikan bukan Milik Sendiri, atau
-// porsi Milik Sendiri di "⚖️ Atur Porsi Kepemilikan" 0%. Tambah 1 baris info
-// numerik di sini (0 perubahan hitungan/logic, cuma tampilan) supaya user
-// langsung lihat SEBABNYA tiap buka menu ini, bukan cuma nama akun tertaut.
-const ownPortionMeta=(linkedAcc&&typeof MultiOwnerEngine!=='undefined')?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):null;
-const linkMeta=linkedAcc?('🔗 Akun tertaut: '+escapeHtml(linkedAcc.name)+(ownPortionMeta!=null?(' (saldo '+fmt(ownPortionMeta)+(ownPortionMeta<(a.nilai||0)?' — porsi Milik Sendiri dari nilai aset '+fmt(a.nilai||0):'')+')'):'')):(a.accountId?'🔗 Akun tertaut: (akun terhapus)':'');
+// Sesi 434 (audit "nominal akun tertaut selalu 0") tadinya nampilin porsi Milik
+// Sendiri di sini karena akun tertaut memang cuma disinkron ke porsi SELF saja
+// (lihat versi lama komentar ini) -- SESI 449 (BUG-OWN-002 lanjutan) akun tertaut
+// sekarang disinkron ke NILAI PENUH instrumen (lihat "linkedAccNilai" di
+// Aset.save()/saveOwners()), jadi saldo yang ditampilkan di sini otomatis sama
+// dgn a.nilai, tidak lagi butuh catatan "porsi Milik Sendiri" -- dobel-hitung ke
+// Kekayaan Bersih tetap dicegah oleh totalSaldoAkun() (linkedAssetAccountIds()),
+// independen dari saldo tampilan ini.
+const linkMeta=linkedAcc?('🔗 Akun tertaut: '+escapeHtml(linkedAcc.name)+' (saldo '+fmt(recalcAccBalance(linkedAcc.id))+')'):(a.accountId?'🔗 Akun tertaut: (akun terhapus)':'');
 const ownResolved=(typeof OwnershipEngine!=='undefined')?OwnershipEngine.resolve(a):null;
 const ownMeta=ownResolved?('👤 Kepemilikan: '+escapeHtml(OwnershipEngine.label(ownResolved.type))):'';
 const titipanLabel=a.titipanOwnerType==='keluarga'?'Keluarga':(a.titipanOwnerType==='lainnya'?'Pihak Lain':'Investor');
