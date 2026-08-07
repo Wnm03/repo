@@ -83,9 +83,9 @@
 <link rel="preconnect" href="https://accounts.google.com" crossorigin>
 <link rel="dns-prefetch" href="https://accounts.google.com">
 <title>Keluarga W</title>
-<link rel="stylesheet" href="styles.css?v=1182">
-<link rel="stylesheet" href="modern-ui-layer.css?v=1182">
-<script src="nav-scroll.js?v=1182" defer></script>
+<link rel="stylesheet" href="styles.css?v=1197">
+<link rel="stylesheet" href="modern-ui-layer.css?v=1197">
+<script src="nav-scroll.js?v=1197" defer></script>
 <script>
 /* Debug console (Eruda) — aktifkan sekali lewat ?debug=1 di URL, nempel via localStorage.
    Matikan lagi lewat ?debug=0. Tidak aktif buat user biasa. */
@@ -151,17 +151,17 @@ function ensureZXing(){return _loadScriptOnce('https://cdn.jsdelivr.net/npm/@zxi
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn CDN di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // > Proyek Renovasi pertama dibuka.
-function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1182');}
+function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1197');}
 // sewakios.js dikeluarkan dari app-bundle-a.min.js (scripts/build.js GROUP_A),
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn Renov di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // pertama dibuka.
-function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1182');}
+function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1197');}
 // business-intelligence-presenter.js dikeluarkan dari app-bundle-b.min.js
 // (scripts/build.js GROUP_B), dimuat on-demand lewat pola sama.
 // Dipanggil dari setShopTab() (cobek-io.js) saat tab Shop > Business
 // Intelligence pertama dibuka.
-function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1182');}
+function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1197');}
 </script>
 <script>
 window.__moduleLoadFail=function(name){
@@ -250,8 +250,8 @@ window.location.reload();
 }catch(e){}
 })();
 </script>
-<script src="app-bundle-a.min.js?v=1182" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
-<script src="modules/shared/smoke-test.js?v=1182" defer></script>
+<script src="app-bundle-a.min.js?v=1197" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
+<script src="modules/shared/smoke-test.js?v=1197" defer></script>
 <link rel="manifest" id="pwaManifestLink" href="manifest.json">
 </head>
 <body data-theme="fresh">
@@ -466,6 +466,7 @@ window.location.reload();
     <div class="fg u-mb10">
       <input type="text" class="fi" id="kfSearch" placeholder="🔎 Cari catatan/keterangan transaksi..." oninput="onKfSearchInput()">
     </div>
+    <div id="allTxVirtualBills"></div>
     <div id="allTx"><div class="empty"><div class="empty-icon">💸</div><div class="empty-text">Belum ada transaksi</div></div></div>
     <div class="u-dnone u-tac u-mt10" id="allTxLoadMoreWrap">
       <button class="btn btn-ghost" data-action="loadMoreTx">⬇️ Tampilkan lebih banyak</button>
@@ -2167,6 +2168,7 @@ window.location.reload();
     <button class="cn-tab" data-action="setAsetTab" data-args='["buku", "$el"]'>📋 Buku Aset</button>
     <button class="cn-tab" data-action="setAsetTab" data-args='["analisis", "$el"]'>🧮 Analisis &amp; Pajak</button>
     <button class="cn-tab" data-action="setAsetTab" data-args='["manajemen", "$el"]'>🏢 Manajemen</button>
+    <button class="cn-tab" data-action="setAsetTab" data-args='["investasi", "$el"]'>💹 Investasi</button>
   </div>
 
   <!-- RINGKASAN -->
@@ -2371,6 +2373,32 @@ window.location.reload();
     </div>
   </div>
   <!-- /MANAJEMEN -->
+
+  <!-- INVESTASI (Fase 1, BUG-INV-001 Opsi 3 -- lihat AUDIT-BUILD-UI-INVESTASI-OPSI3.md) -->
+  <div id="asetTab-investasi" class="u-dnone">
+    <div class="card u-mb12">
+      <div class="card-title">💹 Ringkasan Portofolio Investasi</div>
+      <div class="u-hint10">Terpisah dari Buku Aset -- domain data ini (Investment/D.investments) sudah punya backend lengkap sejak lama, sekarang baru punya halaman/form-nya sendiri. Cuma menghitung holding kepemilikan SELF (porsi titipan/patungan dikecualikan, sama pola Buku Aset).</div>
+      <div class="budget-summary-grid">
+        <div class="budget-sum-box"><div class="budget-sum-val purple" id="investSummaryValue">Rp 0</div><div class="budget-sum-lbl">Nilai Saat Ini</div></div>
+        <div class="budget-sum-box"><div class="budget-sum-val" id="investSummaryCost">Rp 0</div><div class="budget-sum-lbl">Modal (Cost Basis)</div></div>
+      </div>
+      <div class="u-fs13 u-mt10" id="investSummaryGain"></div>
+      <div class="u-fs12 u-t2 u-mt8" id="investSummaryMeta"></div>
+    </div>
+    <div class="card u-mb12">
+      <div class="card-title">📋 Daftar Holding <span class="u-flexc8"><span class="card-setting-btn u-pointer" data-action="InvestmentListUI.openModal">＋ Tambah Holding</span></span></div>
+      <div class="u-hint10">Catat instrumen investasi (saham, reksa dana, obligasi, deposito, kripto, emas, dll) di sini. Tap salah satu holding untuk edit/hapus atau atur porsi kepemilikan (dana titipan/patungan).</div>
+      <div id="investmentHoldingList"><div class="empty"><div class="empty-icon">💹</div><div class="empty-text">Belum ada holding investasi tercatat</div></div></div>
+    </div>
+    <!-- Watchlist (Fase 3, BUG-INV-001 Opsi 3 §3.5 -- lihat AUDIT-BUILD-UI-INVESTASI-OPSI3.md) -->
+    <div class="card u-mb12">
+      <div class="card-title">📈 Watchlist <span class="u-flexc8"><span class="card-setting-btn u-pointer" data-action="InvestmentWatchUI.openModal">＋ Tambah Pantauan</span></span></div>
+      <div class="u-hint10">Pantau instrumen yang belum kamu beli, tapi mau dibeli kalau harganya turun ke level tertentu. Item ditandai "🎯 Target tercapai" begitu Harga Terakhir sudah turun sampai Harga Target atau lebih rendah.</div>
+      <div id="investmentWatchlist"><div class="empty"><div class="empty-icon">📈</div><div class="empty-text">Belum ada instrumen dipantau</div></div></div>
+    </div>
+  </div>
+  <!-- /INVESTASI -->
 </div>
 
 <!-- AI -->
@@ -3868,7 +3896,10 @@ window.location.reload();
 <script>document.write(MODAL_HTML[90]);</script><!-- modal:shopKatalogDinamisModal (fix: sebelumnya tidak pernah di-write) -->
 <script>document.write(MODAL_HTML[91]);</script><!-- modal:assetOwnersModal (fix s422b: sebelumnya tidak pernah di-write, sebab TypeError {} saat klik "Atur Porsi Kepemilikan") -->
 <script>document.write(MODAL_HTML[92]);</script><!-- modal:investmentOwnersModal (S464, AUD-008 lanjutan S462) -->
+<script>document.write(MODAL_HTML[93]);</script><!-- modal:investmentModal (S466, Fase 1 BUG-INV-001 Opsi 3) -->
+<script>document.write(MODAL_HTML[94]);</script><!-- modal:investmentTxModal (S467, Fase 2 BUG-INV-001 Opsi 3) -->
+<script>document.write(MODAL_HTML[95]);</script><!-- modal:investmentWatchModal (S467, Fase 3 BUG-INV-001 Opsi 3) -->
 
-<script src="app-bundle-b.min.js?v=1182" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
+<script src="app-bundle-b.min.js?v=1197" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
 </body>
 </html>

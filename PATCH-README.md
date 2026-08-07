@@ -1,69 +1,44 @@
-# Patch s350 — Fix race condition dialog custom ("tombol Bayar/Riwayat macet, 0 toast")
+# Patch — Sesi 474 (Virtual Bill Item, s468d: buffer/regression final)
+# = kw_patch_virtual-bill-item-tx-list-s468-final.zip (gabungan a+b+c+d)
 
-Patch ini menutup laporan user: tombol "📋 Katalog"/Import PDF tidak ada
-respon/toast, dan tombol "Riwayat"/"✅ Bayar" di Tagihan delay/macet
-(baru "hidup" setelah tap tombol lain).
+Lihat `CHANGELOG.md` (bagian "Sesi 474", juga 471-473 di atasnya) untuk
+detail lengkap. Fitur "Virtual Bill Item di List Transaksi"
+(`s468-PLAN-virtual-bill-item-tx-list.md`) **SELESAI** — semua Definition
+of Done terpenuhi.
 
-## Akar masalah (diverifikasi ke source, bukan tebakan)
+## Ringkasan fitur (gabungan s468a+b+c+d)
+- `modules/finance/tagihan-kalender.js` — `generateVirtualBillItemsForMonth(year,month)`
+  murni: exclude bill lunas/arsip, id prefix `vbill_${billId}_${year}${month}`,
+  nominal shared = `b.amount` apa adanya.
+- `modules/finance/tx-list-cashflow.js` — `txHTML()` render kartu virtual
+  (badge "⏳ Terjadwal", klik→`openBillModal`, 0 tombol hapus); `delTx()`
+  guard baris pertama (id virtual → toast, tidak pernah sampai `askConfirm`).
+- `modules/shared/modules-render.js` — `renderKeuangan()` wiring section
+  `#allTxVirtualBills` di atas `#allTx`, **hanya** tampil saat
+  `txListPeriode==='bulan'` & bulan/tahun = aktual sekarang.
+- `index.html`, `app_production.html` — elemen `#allTxVirtualBills` baru.
+- 18 test baru total (`virtual-bill-generator-s468a`,
+  `virtual-bill-txhtml-deltx-guard-s468b`, `virtual-bill-alltx-wiring-s468c`,
+  `virtual-bill-manual-scenario-s468d`).
+- `app-bundle-a.min.js`, `app-bundle-b.min.js`, `sw.js`, `index.html`,
+  `app_production.html` → versi 1196; konstanta versi module disamakan ke
+  `s474-virtual-bill-item-final`.
+- `docs/FILE-MAP.md`, `docs/COVERAGE-PER-MODULE.md` — regenerasi otomatis.
 
-1. **`modules/shared/modal-navigasi.js`** — `askConfirm()`/`showPromptModal()`/
-   `showChoiceModal()`/`showAlertModal()`/`showPinPromptModal()` masing-masing
-   cuma punya SATU variabel resolver module-scope. Kalau terpanggil 2x
-   sebelum jawaban pertama masuk (double-tap tombol "Bayar" — umum di HP),
-   panggilan kedua **menimpa** resolver panggilan pertama -> Promise pertama
-   jadi orphan permanen, tanpa toast/error (bukan reject, cuma diam
-   menggantung).
-   **Fix:** `_queueDialog()`/`_resolveDialog()` — antrean per-jenis dialog,
-   tidak ada lagi Promise yang hilang. Signature pemanggil tidak berubah.
+## Verifikasi final (gabungan)
+- `node scripts/build.js s474-virtual-bill-item-final` — lolos, 0 error
+  blocking.
+- `node --test tests/*.test.js` → **3051/3051 lolos, 0 gagal**.
+- `node scripts/verify-window-expose.js` / `verify-bundle-freshness.js` →
+  lolos.
 
-2. **`modules/shared/features-helpers-global-security.js`** —
-   `_dataActionClickHandler()` tidak mencegah 1 elemen yang sama terpicu 2x
-   nyaris bersamaan selagi action async-nya masih pending.
-   **Fix:** guard `dataset.pendingAction` — klik ulang pada elemen yang
-   sama diabaikan sampai action pertama selesai/gagal.
+## Cara apply patch ini
+Timpa (overwrite) file-file di atas ke root project hasil baseline
+`kw_release_v1187_s466-...` (atau lebih baru, mis. bisa langsung dari
+v1187 tanpa perlu patch s471/s472/s473 terpisah — patch ini SUDAH
+gabungan penuh). Kalau sudah pernah apply patch s471/s472/s473 satu-satu,
+patch ini idempotent (hasil akhirnya sama).
 
-3. **`modules/asset/aset.js`** — `IDBStore._open()` (`indexedDB.open()`)
-   tidak punya `onblocked` maupun timeout; kalau open request blocked,
-   `_dbPromise` gantung selamanya -> semua fitur lewat IDBStore (Vehicle
-   Catalog/Import PDF Katalog/dll) jadi tombol mati tanpa toast.
-   **Fix:** tambah `onblocked` (log) + timeout 8 detik yang reject dgn
-   pesan jelas & reset cache, supaya paling buruk muncul toast error yang
-   bisa dilaporkan.
-
-Detail lengkap: `docs/sessions/FIX-v1014-s350-dialog-resolver-race-bayar-riwayat.md`.
-
-## Test
-
-`tests/modal-navigasi-dialog-queue.test.js` (baru) — 2 test membuktikan
-panggilan `askConfirm()`/`showPromptModal()` concurrent semuanya resolve
-dengan jawaban masing-masing yang benar, tidak ada yang orphan/hang.
-
-Full suite: **2404/2404 pass, 0 fail** (`node --test tests/*.test.js`).
-
-## Cara pasang
-
-Timpa file-file berikut ke lokasi yang sama persis di project:
-
-```
-modules/shared/modal-navigasi.js
-modules/shared/features-helpers-global-security.js
-modules/asset/aset.js
-tests/modal-navigasi-dialog-queue.test.js   (baru)
-app-bundle-a.min.js
-app-bundle-b.min.js
-index.html
-app_production.html
-sw.js
-docs/FILE-MAP.md
-docs/COVERAGE-PER-MODULE.md
-```
-
-`app-bundle-a.min.js`/`app-bundle-b.min.js` sudah di-rebuild otomatis lewat
-`node scripts/build.js` (WAJIB di-upload juga — bukan cuma source-nya,
-karena app_production.html/index.html memuat bundle, bukan file source
-individual). Versi naik dari v1012 → **v1014** (`?v=1014` di HTML,
-`kw-cache-v1014` di `sw.js`).
-
-Setelah dipasang: hard-refresh / clear cache PWA supaya `sw.js` versi baru
-kepakai (service worker lama masih bisa nyangkut cache versi lama sampai
-di-update).
+## Status
+Release ini (`kw_release_v1196_s474-virtual-bill-item-final.zip`) siap
+jadi baseline audit/sesi berikutnya.
