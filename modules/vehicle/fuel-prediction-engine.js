@@ -44,6 +44,20 @@
 // KONTRAK ERROR: semua method publik balikin {ok:false, reason} kalau
 // gagal (kendaraan tidak ditemukan, fuel state/profil tangki/histori
 // belum cukup, dependency belum dimuat) — TIDAK PERNAH throw.
+//
+// SESI 4 (FUEL-AUTOSYNC-07, lanjutan rencana "Fuel Estimation
+// Auto-Update"): predictRemainingDistance()/predictNextRefuel() sekarang
+// ambil liter via _currentLiter() (BARU, di bawah) — 100% REUSE
+// FuelStateEstimator.estimateCurrentLiter() (s415) kalau tersedia, jadi
+// prediksi ikut "hidup" mengikuti km tanpa nunggu BBM log baru (selaras
+// FuelCard s417). Fallback ke fuelState.currentFuelLiter snapshot lama
+// tetap ada, 0 behavior lama hilang.
+//
+// SESI 5 (FUEL-AUTOSYNC-08): _confidence() sekarang REUSE
+// FuelStateEstimator.estimateCurrentLiter().decayedConfidenceScore (BARU)
+// — confidenceScore yang dibalikin predictRemainingDistance() sudah
+// meluruh sesuai km sejak titik acuan, bukan angka statis 70/90/100 lagi.
+// Fallback ke fuelState.confidenceScore apa adanya tetap ada, pola sama.
 const FuelPredictionEngine = {
 
 // RP_ROUND_PER_LITER — presisi pembulatan liter di hasil publik (2
@@ -76,12 +90,38 @@ _fuelState(vehicleId) {
   return fs;
 },
 
-// _confidence(fuelState) — baca confidenceScore APA ADANYA dari
-// fuelState (ditulis FuelBarCorrection.save(), TASK-144) — null kalau
-// belum pernah diisi (bukan angka), 0 rumus confidence baru dihitung
-// di sini (dependency task cuma minta REUSE, bukan bikin ulang).
-_confidence(fuelState) {
+// _confidence(vehicleId, fuelState) — SESI 5 (FUEL-AUTOSYNC-08, lanjutan
+// rencana "Fuel Estimation Auto-Update", confidence decay dinamis): 100%
+// REUSE FuelStateEstimator.estimateCurrentLiter().decayedConfidenceScore
+// (BARU, s419 estimator) kalau tersedia & ok:true — confidenceScore yang
+// dibalikin sekarang sudah meluruh sesuai km sejak titik acuan, bukan
+// angka statis lagi. Fallback ke fuelState.confidenceScore APA ADANYA
+// (pola lama) kalau FuelStateEstimator belum dimuat ATAU estimator
+// ok:false — 0 behavior lama hilang, pola guard sama persis
+// _currentLiter() di bawah.
+_confidence(vehicleId, fuelState) {
+  if (typeof FuelStateEstimator !== 'undefined' && typeof FuelStateEstimator.estimateCurrentLiter === 'function') {
+    const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+    if (est && est.ok && typeof est.decayedConfidenceScore === 'number') return est.decayedConfidenceScore;
+  }
   return (fuelState && typeof fuelState.confidenceScore === 'number') ? fuelState.confidenceScore : null;
+},
+
+// _currentLiter(vehicleId, fuelState) — SESI 4 (FUEL-AUTOSYNC-07, lanjutan
+// rencana "Fuel Estimation Auto-Update", selaras FuelCard._liveEstimate()
+// s417): 100% REUSE FuelStateEstimator.estimateCurrentLiter() (s415) kalau
+// tersedia & ok:true — balikin liter TERKINI (dihitung ulang berdasarkan
+// akumulasi km sejak titik acuan SETIAP dipanggil), bukan snapshot beku
+// fuelState.currentFuelLiter. Fallback ke fuelState.currentFuelLiter apa
+// adanya kalau FuelStateEstimator belum dimuat ATAU estimator ok:false
+// (mis. belum ada titik acuan sama sekali) — prediksi TIDAK PERNAH gagal
+// gara-gara sumber baru ini, pola guard sama persis FuelCard s417.
+_currentLiter(vehicleId, fuelState) {
+  if (typeof FuelStateEstimator !== 'undefined' && typeof FuelStateEstimator.estimateCurrentLiter === 'function') {
+    const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+    if (est && est.ok && typeof est.liter === 'number') return est.liter;
+  }
+  return fuelState.currentFuelLiter;
 },
 
 // _applyAdjustments(value, vehicleId, kind) — EXTENSION POINT (requirement
@@ -111,14 +151,15 @@ predictRemainingDistance(vehicleId) {
   const fuelState = this._fuelState(vehicleId);
   if (!fuelState) return { ok: false, reason: 'Data BBM saat ini belum ada (lakukan Koreksi BBM dulu)' };
   if (typeof FuelGaugeEngine === 'undefined') return { ok: false, reason: 'FuelGaugeEngine belum dimuat' };
-  const dist = FuelGaugeEngine.estimateRemainingDistance(vehicleId, fuelState.currentFuelLiter);
+  const liter = this._currentLiter(vehicleId, fuelState);
+  const dist = FuelGaugeEngine.estimateRemainingDistance(vehicleId, liter);
   if (!dist.ok) return dist;
   return {
     ok: true,
     remainingKm: this._applyAdjustments(dist.km, vehicleId, 'distance'),
-    currentFuelLiter: fuelState.currentFuelLiter,
+    currentFuelLiter: liter,
     kmPerLiter: dist.kmPerLiter,
-    confidenceScore: this._confidence(fuelState),
+    confidenceScore: this._confidence(vehicleId, fuelState),
   };
 },
 
@@ -142,7 +183,7 @@ predictNextRefuel(vehicleId) {
   const fuelState = this._fuelState(vehicleId);
   if (!fuelState) return { ok: false, reason: 'Data BBM saat ini belum ada (lakukan Koreksi BBM dulu)' };
   if (typeof FuelGaugeEngine === 'undefined') return { ok: false, reason: 'FuelGaugeEngine belum dimuat' };
-  const reserve = FuelGaugeEngine.getReserveStatus(vehicleId, fuelState.currentFuelLiter);
+  const reserve = FuelGaugeEngine.getReserveStatus(vehicleId, this._currentLiter(vehicleId, fuelState));
   if (!reserve.ok) return reserve;
   const dist = FuelGaugeEngine.estimateRemainingDistance(vehicleId, reserve.literAboveReserve);
   if (!dist.ok) return dist;

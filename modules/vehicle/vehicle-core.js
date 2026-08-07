@@ -338,7 +338,7 @@ const incM=(D.transactions||[]).filter(t=>{const dd=new Date(t.date);return dd.g
 if(incM>=pz.nisabPenghasilanBulan){
 items.push(`💰 Zakat penghasilan bulan ini sudah WAJIB (≈${fmtFull(Math.round(incM*0.025))}), pemasukan udah lewat nisab`);
 }
-const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(a.nilai||0),0);
+const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);
 const totalHartaZakat=Math.max(0,totalSaldoAkun()+asetZakatable-(pz.utangJT||0)-totalDebtValue()-totalCicilanOutstanding());
 const nisabMaal=85*pz.hargaEmasPerGram;
 if(totalHartaZakat>=nisabMaal&&pz.haulMaalMulai){
@@ -589,6 +589,71 @@ const kms=[
 ...D.kmLogs.filter(k=>k.vehicleId===vehicleId).map(k=>k.km)
 ];
 return kms.length?Math.max(...kms):0;
+}
+// getVehicleKmSource() — rekomendasi tambahan audit S444 (belum dikerjakan
+// sesi lalu, lihat FIX doc s444): getVehicleKm() balikin Math.max() dari 3
+// sumber log (bbmLogs/servisLogs/kmLogs) TANPA expose log mana yang menang
+// — user bisa salah kira odometer di Car Notes datang dari input manual
+// terakhir, padahal km tertinggi itu bisa saja tercatat lebih dulu di log
+// BBM/servis (baca: bukan Math.max([...].slice(-1)), tapi Math.max
+// murni). Fungsi ini 100% REUSE 3 array yang sama persis dgn getVehicleKm()
+// (0 query baru), cuma dipisah per-sumber dulu supaya bisa tahu source dari
+// nilai max-nya. Tie-break (kalau 2 sumber sama2 punya nilai max): bbm >
+// servis > manual — urutan sama dengan urutan array getVehicleKm(), jadi
+// hasil km-nya identik/konsisten dengan getVehicleKm(), cuma nambah label
+// source di sampingnya. 0 field baru ditulis ke D, murni read-only.
+function getVehicleKmSource(vehicleId){
+const bbmKms=D.bbmLogs.filter(b=>b.vehicleId===vehicleId).map(b=>b.km);
+const servisKms=D.servisLogs.filter(s=>s.vehicleId===vehicleId&&s.km).map(s=>s.km);
+const manualKms=D.kmLogs.filter(k=>k.vehicleId===vehicleId).map(k=>k.km);
+const all=[...bbmKms,...servisKms,...manualKms];
+if(!all.length)return{km:0,source:null};
+const max=Math.max(...all);
+const source=bbmKms.includes(max)?'bbm':servisKms.includes(max)?'servis':'manual';
+return{km:max,source};
+}
+// kmSourceLabel() — label kecil buat #cnCurKmSrc (Car Notes odometer),
+// dipasangkan dgn getVehicleKmSource() di atas.
+function kmSourceLabel(source){
+if(source==='bbm')return'📋 dari log BBM';
+if(source==='servis')return'🔧 dari log Servis';
+if(source==='manual')return'✍️ dari input manual';
+return'';
+}
+// healFuelStateReferenceKm() — SELF-HEAL (audit S444+, temuan "fuel bar
+// statis walau KM di-update"): fuelState YANG DITULIS SEBELUM Sesi 415
+// (FUEL-AUTOSYNC-04) tidak punya field `referenceKm` sama sekali (field
+// itu baru ada mulai sesi itu, TIDAK ADA migrasi otomatis by design saat
+// itu — lihat FIX-v1121-to-v1122-s415-fuel-state-estimator.md). Akibatnya
+// FuelStateEstimator.estimateCurrentLiter() PERMANEN balikin
+// estimationLimited:true utk kendaraan itu (liter beku di angka lama,
+// TIDAK PERNAH dikurangi walau KM terus bertambah) — SATU-SATUNYA cara
+// keluar sebelumnya adalah user tap manual "⚙️ Koreksi" ulang, yang
+// mudah tidak disadari perlu dilakukan (silent gap, 0 indikator di UI).
+// FUNGSI INI: sekali jalan per kendaraan yang kena gap ini — isi
+// `referenceKm` pakai getVehicleKm() SAAT INI (titik acuan baru mulai
+// SEKARANG; KM yang sudah ditempuh SEBELUM heal ini TIDAK direkonstruksi
+// mundur — sama persis prinsip yang sudah dipakai FuelStateEstimator:
+// "lebih baik angka lama yang benar drpd angka baru yang salah krn
+// extrapolasi dari baseline yang tidak diketahui km-nya", lihat catatan
+// header fuel-state-estimator.js). Idempotent & murah (early-return diam2
+// kalau tidak ada yang perlu di-heal) — AMAN dipanggil berkali-kali,
+// dipanggil dari renderCnTab() (modules-render.js) pola sama self-heal
+// lain di project ini (mis. openModal ScannerSession self-heal, s360).
+// 0 field lain diubah, 0 rumus konsumsi baru — murni backfill 1 field
+// yang sudah ADA di skema fuelState, cuma belum pernah ditulis di data
+// lama.
+function healFuelStateReferenceKm(){
+if(typeof D==='undefined'||!D.vehicles)return;
+let healed=false;
+D.vehicles.forEach(v=>{
+const fs=v.fuelState;
+if(fs&&typeof fs.currentFuelLiter==='number'&&isFinite(fs.currentFuelLiter)&&(fs.referenceKm===undefined||fs.referenceKm===null)){
+fs.referenceKm=getVehicleKm(v.id);
+healed=true;
+}
+});
+if(healed&&typeof save==='function')save();
 }
 // estimateKmPerDay/estimateServiceDateISO — dipakai Servis.renderReminder() &
 // renderDashboardServisReminder() utk "Rekomendasi Servis AI": selain "sisa X km" (yang sudah ada),

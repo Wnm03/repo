@@ -188,6 +188,29 @@ _partialFillDriftHint(vehicleId) {
   return { ok: true };
 },
 
+// _estimationLimitedHint(vehicleId) — audit S444+ (temuan "fuel bar
+// statis walau KM di-update"): SEBELUM ini, kalau estimator balikin
+// estimationLimited:true (kmPerLiter kendaraan itu belum bisa dihitung
+// -- butuh min. 2 log "Isi Full Tank" dgn km naik, lihat fuelEfficiency()
+// vehicle-core.js), liter cuma jadi baseLiter+addedLiter APA ADANYA
+// (konsumsi km TIDAK dikurangi) TANPA ada penjelasan apa pun di UI --
+// user lihat angka "macet" tanpa tahu kenapa. Beda dari
+// referenceKm-kosong (SEKARANG di-self-heal otomatis, lihat
+// healFuelStateReferenceKm() di vehicle-core.js) -- ini kasus yang
+// MEMANG butuh aksi user (isi lebih banyak log full-tank), jadi
+// hint-nya proaktif kasih tahu caranya, bukan cuma diam. 100% REUSE
+// FuelStateEstimator.estimateCurrentLiter() (0 rumus baru) -- {ok:false}
+// kalau estimator belum dimuat, ok:false, atau estimationLimited falsy
+// (pola sama persis 3 guard hint di atas).
+_estimationLimitedHint(vehicleId) {
+  if (typeof FuelStateEstimator === 'undefined' || typeof FuelStateEstimator.estimateCurrentLiter !== 'function') {
+    return { ok: false };
+  }
+  const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+  if (!est || !est.ok || !est.estimationLimited) return { ok: false };
+  return { ok: true, reason: (est.kmPerLiter === null) ? 'kmPerLiter' : 'referenceKm' };
+},
+
 // SOURCE_BADGE_LABEL — Sesi FUEL-AUTOSYNC (badge sumber estimasi, murni
 // presenter). Peta estimatedSource -> label singkat. 100% REUSE nilai
 // yang SUDAH ditulis field lain (FuelBarCorrection.ESTIMATED_SOURCE_MANUAL
@@ -330,7 +353,74 @@ _gaugeHtml(vehicleId) {
     if (filled) cls += isReserve ? ' fbc-seg-reserve' : ' fbc-seg-fill';
     segs += `<div class="${cls}"></div>`;
   }
-  return `<div class="fuelcard-gauge" data-action="FuelBarCorrection.open" data-args="${escapeHtml(JSON.stringify([vehicleId]))}" role="button" tabindex="0" aria-label="Koreksi estimasi BBM dengan speedometer" style="cursor:pointer">${segs}</div>`;
+  // BUKAN data-action lagi (rekomendasi #1 audit S444/S445, "diagnostic
+  // view long-press gauge"): tap singkat & tap-lama harus buka 2 hal
+  // BEDA (koreksi speedometer vs diagnostic mentah) dari elemen yang
+  // SAMA, jadi ditangani manual lewat pointerdown/up/leave (lihat
+  // _fuelGaugePointerDown/Up/Cancel di bawah) -- dispatcher data-action
+  // global cuma bisa 1 aksi per klik, tidak cukup di sini.
+  return `<div class="fuelcard-gauge" onpointerdown="FuelCard._gaugePointerDown(event,'${vehicleId}')" onpointerup="FuelCard._gaugePointerUp(event,'${vehicleId}')" onpointerleave="FuelCard._gaugePointerCancel()" onpointercancel="FuelCard._gaugePointerCancel()" role="button" tabindex="0" aria-label="Tap: koreksi estimasi BBM dengan speedometer. Tap lama: lihat diagnostic mentah." style="cursor:pointer">${segs}</div>`;
+},
+
+// _gaugePointerDown/Up/Cancel — long-press detector utk gauge di atas
+// (rekomendasi #1 audit S444/S445): tap singkat = FuelBarCorrection.open()
+// (perilaku LAMA, tidak berubah), tap-tahan >=550ms = showDiagnostic()
+// (BARU). _longPressed dipakai supaya pointerup SETELAH long-press
+// terpicu tidak ikut membuka FuelBarCorrection juga (1 gesture = 1 aksi).
+_gaugeTimer: null,
+_gaugeLongPressed: false,
+_gaugePointerDown(e, vehicleId) {
+  clearTimeout(this._gaugeTimer);
+  this._gaugeLongPressed = false;
+  this._gaugeTimer = setTimeout(() => {
+    this._gaugeLongPressed = true;
+    this.showDiagnostic(vehicleId);
+  }, 550);
+},
+_gaugePointerUp(e, vehicleId) {
+  clearTimeout(this._gaugeTimer);
+  if (this._gaugeLongPressed) { this._gaugeLongPressed = false; return; }
+  if (typeof FuelBarCorrection !== 'undefined') FuelBarCorrection.open(vehicleId);
+},
+_gaugePointerCancel() {
+  clearTimeout(this._gaugeTimer);
+  this._gaugeLongPressed = false;
+},
+
+// showDiagnostic(vehicleId) — rekomendasi #1 audit S444/S445 ("Diagnostic
+// view untuk dev"): expose field MENTAH dari FuelStateEstimator.
+// estimateCurrentLiter() (referenceKm/deltaKm/estimationLimited dst, lihat
+// catatan header fuel-state-estimator.js) apa adanya lewat showAlertModal()
+// (infoModalMsg sudah white-space:pre-line, jadi newline di sini tampil
+// sebagai baris terpisah) -- 100% REUSE engine yang sudah ada, 0 kalkulasi
+// baru, murni presenter read-only. Tujuan: audit kasus "fuel bar
+// statis"-serupa ke depan tidak perlu lagi baca kode/console.log manual.
+showDiagnostic(vehicleId) {
+  if (typeof showAlertModal !== 'function') return;
+  if (typeof FuelStateEstimator === 'undefined' || typeof FuelStateEstimator.estimateCurrentLiter !== 'function') {
+    showAlertModal('FuelStateEstimator belum dimuat.', { icon: '🔍', title: 'Diagnostic Fuel Estimator' });
+    return;
+  }
+  const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+  if (!est.ok) {
+    showAlertModal(est.reason || 'Data BBM belum ada.', { icon: '🔍', title: 'Diagnostic Fuel Estimator' });
+    return;
+  }
+  const fmt = (n) => (n === null || n === undefined || !isFinite(n)) ? '–' : (Math.round(n * 100) / 100);
+  const lines = [
+    'referenceKm: ' + (est.referenceKm === null ? '– (belum ada)' : fmt(est.referenceKm)),
+    'currentKm: ' + fmt(est.currentKm),
+    'deltaKm: ' + (est.deltaKm === null ? '– (estimationLimited)' : fmt(est.deltaKm) + (est.kmClamped ? ' (di-clamp dari negatif)' : '')),
+    'kmPerLiter: ' + (est.kmPerLiter === null ? '– (data full-tank kurang)' : fmt(est.kmPerLiter)),
+    'baseLiter (titik acuan): ' + fmt(est.baseLiter),
+    'addedLiter (partial fill): ' + fmt(est.addedLiter) + ' (' + est.partialFillsCounted + 'x)',
+    'consumedLiter: ' + fmt(est.consumedLiter),
+    'liter (hasil akhir): ' + fmt(est.liter),
+    'estimationLimited: ' + (est.estimationLimited ? 'YA' : 'tidak'),
+    'partialFillDriftRisk: ' + (est.partialFillDriftRisk ? 'YA' : 'tidak'),
+    'confidenceScore: ' + (est.confidenceScore === null ? '–' : est.confidenceScore) + ' → decayed: ' + (est.decayedConfidenceScore === null ? '–' : est.decayedConfidenceScore)
+  ];
+  showAlertModal(lines.join('\n'), { icon: '🔍', title: '🔍 Diagnostic Fuel Estimator', okText: 'Tutup' });
 },
 
 // _body(insight) — insight dari FuelIntelligenceEngine.vehicleInsight()
@@ -376,6 +466,18 @@ _body(insight) {
   const lowConfidenceHtml = lowConfidence.ok
     ? `<div class="u-fs12 orange" style="margin:0 0 10px;line-height:1.5">⚠️ Estimasi mulai kurang akurat. Disarankan sinkronkan dengan speedometer.</div>`
     : '';
+  // audit S444+: _estimationLimitedHint() — sisi UI dari estimationLimited
+  // (lihat catatan fungsinya). Hanya tampil kalau penyebabnya kmPerLiter
+  // (data full-tank kendaraan ini belum cukup) — kasus referenceKm SUDAH
+  // di-self-heal otomatis (healFuelStateReferenceKm(), dipanggil dari
+  // renderCnTab() SEBELUM card ini render), jadi praktis tidak pernah
+  // ketemu reason:'referenceKm' lagi di sini kecuali di render pertama
+  // yang sama persis (langsung ke-heal juga). Independen dari 3 hint di
+  // atas — bisa tampil bersamaan.
+  const estLimited = this._estimationLimitedHint(insight.vehicleId);
+  const estLimitedHtml = (estLimited.ok && estLimited.reason === 'kmPerLiter')
+    ? `<div class="u-fs12 orange" style="margin:0 0 10px;line-height:1.5">⚠️ Estimasi belum mengurangi konsumsi km (butuh min. 2x catat "Isi Full Tank" dengan km naik). Liter di atas belum berkurang otomatis sampai data ini cukup.</div>`
+    : '';
   return `
     <div class="dashhub-cat-head">
       <div class="dashhub-cat-icon">⛽</div>
@@ -390,6 +492,7 @@ _body(insight) {
     ${kmClampedHtml}
     ${partialFillDriftHtml}
     ${lowConfidenceHtml}
+    ${estLimitedHtml}
     ${this._briefingHtml(insight.vehicleId)}
     <div class="btn-row3" style="margin:10px 0 0">
       <button class="btn btn-ghost btn-sm" data-action="FuelModal.open" data-args="${escapeHtml(JSON.stringify([insight.vehicleId]))}">📊 Lihat Detail</button>

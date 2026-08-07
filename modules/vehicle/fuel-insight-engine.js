@@ -72,13 +72,24 @@ _vehicle(vehicleId) {
   return this._vehicles().find((v) => v.id === vehicleId) || null;
 },
 
-// _currentFuelLiter(vehicleId) — baca D.vehicles[i].fuelState.
-// currentFuelLiter APA ADANYA (field additive TASK-144, ditulis
-// FuelBarCorrection.save()), pola SAMA PERSIS FuelPredictionEngine.
-// _fuelState() — null kalau belum pernah dikoreksi/bukan angka valid.
-// Dipakai HANYA sbg input parameter FuelGaugeEngine.getReserveStatus()
-// (yang wajib terima liter) — bukan hasil hitungan baru.
+// _currentFuelLiter(vehicleId) — SESI 4 (FUEL-AUTOSYNC-07, lanjutan
+// rencana "Fuel Estimation Auto-Update", selaras FuelCard._liveEstimate()
+// s417 & FuelPredictionEngine._currentLiter() sesi ini): 100% REUSE
+// FuelStateEstimator.estimateCurrentLiter() (s415) kalau tersedia &
+// ok:true — balikin liter TERKINI (dihitung ulang dari akumulasi km
+// sejak titik acuan SETIAP dipanggil), bukan snapshot beku
+// fuelState.currentFuelLiter. Fallback ke D.vehicles[i].fuelState.
+// currentFuelLiter APA ADANYA (field additive TASK-144, pola lama) kalau
+// FuelStateEstimator belum dimuat ATAU estimator ok:false (mis. belum
+// ada titik acuan sama sekali) — null kalau kedua sumber tidak tersedia.
+// Dipakai HANYA sbg input parameter FuelGaugeEngine.getReserveStatus()/
+// calculateFuelBar()/calculateFuelPercent() (yang wajib terima liter) —
+// bukan hasil hitungan baru di sini.
 _currentFuelLiter(vehicleId) {
+  if (typeof FuelStateEstimator !== 'undefined' && typeof FuelStateEstimator.estimateCurrentLiter === 'function') {
+    const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+    if (est && est.ok && typeof est.liter === 'number') return est.liter;
+  }
   const veh = this._vehicle(vehicleId);
   const fs = veh && veh.fuelState;
   if (!fs || typeof fs.currentFuelLiter !== 'number' || !isFinite(fs.currentFuelLiter)) return null;

@@ -243,7 +243,22 @@ save() {
     correctedAt: new Date().toISOString(),
     estimatedSource: this.ESTIMATED_SOURCE_MANUAL,
     confidenceScore: 100,
+    // referenceKm — FUEL-AUTOSYNC-04 (Sesi 1 asli rencana "Fuel Estimation
+    // Auto-Update"): km kendaraan SAAT titik acuan ini ditulis, 100% REUSE
+    // getVehicleKm() global (vehicle-core.js, SUDAH ADA) — dibutuhkan
+    // FuelStateEstimator.estimateCurrentLiter() utk menghitung km yang
+    // ditempuh sejak titik acuan (0 rumus km baru di sini, cuma nyimpen
+    // baseline). Guard typeof: null kalau getVehicleKm() belum dimuat
+    // (mis. test yang cuma load fuel-intelligence-ui.js sendirian) —
+    // estimator sudah menangani referenceKm:null sbg "tidak bisa hitung
+    // delta km", TIDAK PERNAH menggagalkan koreksi manual gara-gara ini.
+    referenceKm: (typeof getVehicleKm === 'function') ? getVehicleKm(this.curVehicleId) : null,
   };
+  // Histori estimasi (opsional, lanjutan rencana Fuel Estimation Auto-
+  // Update): simpan snapshot fuelState yang barusan ditulis di atas.
+  // Guard typeof -- diam kalau modul belum dimuat, TIDAK PERNAH
+  // menggagalkan save() koreksi manual gara-gara histori opsional ini.
+  if (typeof FuelStateHistory !== 'undefined') FuelStateHistory.record(this.curVehicleId, veh.fuelState);
   if (typeof save === 'function') save();
 
   const vid = this.curVehicleId;

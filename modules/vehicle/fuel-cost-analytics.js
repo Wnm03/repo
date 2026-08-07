@@ -80,11 +80,19 @@ _validLogs(vehicleId) {
   ));
 },
 
-// _confidenceScore(vehicleId) — baca D.vehicles[i].fuelState.confidenceScore
-// APA ADANYA (ditulis FuelBarCorrection.save(), TASK-144), pola SAMA
-// PERSIS FuelPredictionEngine._confidence() — null kalau belum pernah
-// diisi, 0 rumus confidence baru dihitung di sini.
+// _confidenceScore(vehicleId) — SESI 5 (FUEL-AUTOSYNC-08, confidence
+// decay dinamis, pola SAMA PERSIS FuelPredictionEngine._confidence()):
+// 100% REUSE FuelStateEstimator.estimateCurrentLiter().
+// decayedConfidenceScore (BARU) kalau tersedia & ok:true. Fallback ke
+// D.vehicles[i].fuelState.confidenceScore APA ADANYA (ditulis
+// FuelBarCorrection.save(), TASK-144, pola lama) kalau FuelStateEstimator
+// belum dimuat ATAU estimator ok:false — null kalau kedua sumber tidak
+// tersedia, 0 rumus confidence baru dihitung di sini.
 _confidenceScore(vehicleId) {
+  if (typeof FuelStateEstimator !== 'undefined' && typeof FuelStateEstimator.estimateCurrentLiter === 'function') {
+    const est = FuelStateEstimator.estimateCurrentLiter(vehicleId);
+    if (est && est.ok && typeof est.decayedConfidenceScore === 'number') return est.decayedConfidenceScore;
+  }
   const veh = this._vehicle(vehicleId);
   const fs = veh && veh.fuelState;
   return (fs && typeof fs.confidenceScore === 'number') ? fs.confidenceScore : null;
