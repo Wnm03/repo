@@ -5,6 +5,22 @@
 // ini murni scan OCR, jadi di v88 filenya di-rename jadi scan-ocr.js (isi tidak berubah, cuma nama file + komentar).
 // PENTING: file ini HARUS dimuat sesuai urutan build.js (GROUP_A/GROUP_B) karena beberapa modul saling referensi. Urutan grup ini: data-default.js, features-helpers-global-security.js, diagnostik-versi.js, format-tema.js, error-handler.js, helper-teks.js, keamanan-pin.js, modal-navigasi.js, reset-gaji-mingguan.js, debug-console.js, pengaturan-search.js, onboarding.js, kalkulator-input.js, scan-ocr.js, filter-laporan.js, akun.js, gaji-calc.js, transaksi.js, profil-pengaturan.js, kategori.js, tagihan-kalender.js, backup-restore.js, payroll-absensi.js, tukang-absensi.js
 
+// _amc015: fallback lokal addMonthsClamped() (BUG-015, s406) -- file ini kadang dimuat berdiri
+// sendiri lewat harness test (tests/helpers/loadSource.js) TANPA modules/shared/
+// features-helpers-global-security.js ikut dimuat di sandbox yang sama, jadi addMonthsClamped()
+// global belum tentu ada. Fallback ini pakai algoritma identik dgn versi global supaya hasil
+// selalu sama persis di manapun dipanggil (bukan re-implementasi logic baru).
+function _amc015(base,months){
+if(typeof addMonthsClamped==='function')return addMonthsClamped(base,months);
+if(!(base instanceof Date)||isNaN(base.getTime()))return base;
+const day=base.getDate();
+base.setDate(1);
+base.setMonth(base.getMonth()+months);
+const lastDayOfTargetMonth=new Date(base.getFullYear(),base.getMonth()+1,0).getDate();
+base.setDate(Math.min(day,lastDayOfTargetMonth));
+return base;
+}
+
 // BUGFIX: semua fungsi scan* di file ini dulu punya pengecekan `if(typeof Tesseract==='undefined')`
 // SEBELUM memanggil ocrRecognize() -- niatnya kasih pesan jelas kalau modul OCR belum siap. Tapi
 // Tesseract cuma didaftarkan sbg global lewat ensureTesseract() di DALAM getOcrWorker() di bawah,
@@ -797,7 +813,7 @@ if(!paylater)return;
 const amt=paylater.amount||fallbackAmt;
 if(!amt||amt<=0)return;
 const baseDate=fallbackDateStr&&!isNaN(new Date(fallbackDateStr).getTime())?new Date(fallbackDateStr):new Date();
-const due=new Date(baseDate);due.setMonth(due.getMonth()+1);
+const due=new Date(baseDate);_amc015(due,1); // BUG-015 (s406): clamp overflow tanggal
 const dueStr=due.toISOString().slice(0,10);
 const amtLabel=typeof fmt==='function'?fmt(amt):('Rp'+amt);
 const ok=await askConfirm('Terdeteksi metode bayar nanti/bulan depan ('+paylater.label+') senilai '+amtLabel+'. Tambahkan pengingat jatuh tempo '+dueStr+' ke 🧾 Tagihan?',{icon:'📅',okText:'✅ Ya, Tambahkan',cancelText:'Tidak Usah',danger:false});

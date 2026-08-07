@@ -34,6 +34,28 @@ updateProfilPTKPPreview();
 updateUsiaPreview();
 save();
 }
+// renderSalaryAllocationSuggestion — UI wrapper utk SalaryAllocation.suggest()
+// (modules-calc.js). Cuma nampilin saran angka ke hint box, TIDAK nulis ke
+// D.targets / manapun — user isi manual sendiri kalau setuju (persis pola
+// hint 6× di onTargetDanaDaruratToggle, tx-target.js).
+function renderSalaryAllocationSuggestion(){
+const hint=document.getElementById('salaryAllocHint');
+if(!hint)return;
+const s=(typeof SalaryAllocation!=='undefined')?SalaryAllocation.suggest():null;
+if(!s||!s.bulanan){
+hint.innerHTML='⚠️ Belum ada transaksi bertipe "Pemasukan" (+ Masuk) yang tercatat, jadi rata-rata bulanan belum bisa dihitung. Kalau gaji/pendapatanmu selama ini dicatat sbg "Transfer" atau langsung diedit saldo akun, coba catat ulang minimal 1 transaksi lewat tombol "+ Masuk" di Keuangan supaya kehitung di sini.';
+hint.classList.remove('u-dnone');
+return;
+}
+hint.innerHTML=`📊 Rata-rata Pemasukan: <b>${fmtFull(s.bulanan)}</b>/bulan (dari histori transaksi asli kamu)<br><br>`
++`💡 Saran umum alokasi (bukan aturan baku, sesuaikan kondisi kamu — tidak otomatis tersimpan):<br>`
++`🚨 Target Dana Darurat: <b>${fmtFull(s.danaDaruratTarget)}</b> (6× bulanan)<br>`
++`🏖️ Target Pensiun/FI: <b>${fmtFull(s.pensiunFiTarget)}</b> (${s.fiMultiplier.toFixed(1)}× bulanan, ikut asumsi SWR di Kebebasan Finansial)<br>`
++`🍽️ Biaya Hidup (kebutuhan sehari-hari, bukan "uang jajan"): <b>${fmtFull(s.biayaHarian)}</b>/bulan (50% dari total pemasukan)<br>`
++`📈 Investasi: <b>${fmtFull(s.investasi)}</b>/bulan (30%)<br>`
++`🎁 Self-Reward: <b>${fmtFull(s.selfReward)}</b>/bulan (20%)`;
+hint.classList.remove('u-dnone');
+}
 function profilePTKPStatus(){
 const kawin=!!(D.profile&&D.profile.statusKawin);
 let tanggungan=(D.profile&&D.profile.tanggungan)||0;

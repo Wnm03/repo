@@ -2,7 +2,7 @@
 // Dipindah ke modules/shared/modules-render.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
 // Semua fungsi ini murni definisi function global (bukan module), jadi tetap bisa dipanggil dari file manapun
 // yang loadnya belakangan (sama seperti modules-calc.js/features-*.js).
-const MODULE_RENDER_VERSION='s434-audit-fix-linked-acc-nol-riwayat-kosong';
+const MODULE_RENDER_VERSION='s446-diagnostic-longpress-gauge';
 
 function renderPageContent(name){
 // KW perf fix: jaring pengaman selain hook di save() -- pastikan cache saldo akun juga fresh
@@ -1509,6 +1509,12 @@ return `<div class="tx-item u-pointer" data-action="openSimModal" data-args="${e
 }
 
 function renderCnTab(){
+// SELF-HEAL (audit S444+): backfill fuelState.referenceKm yang kosong di
+// data lama SEBELUM presenter fuel di bawah dipanggil, supaya begitu
+// halaman Car Notes ini dibuka, estimasi liter langsung mulai reaktif
+// thd KM terbaru (0 aksi manual dibutuhkan). Idempotent & murah — lihat
+// catatan lengkap di healFuelStateReferenceKm() (vehicle-core.js).
+if(typeof healFuelStateReferenceKm==='function')healFuelStateReferenceKm();
 if(typeof MobilInsight!=='undefined')MobilInsight.render();
 // Vehicle Dashboard/Insight/Brief/Alert/Insight Feed/Analytics/Decision/
 // Automation (Sesi 77-83, Batch 7) — DIPINDAH ke sini dari
@@ -1560,7 +1566,12 @@ if(typeof FuelCompare!=='undefined')FuelCompare.render();
 if(typeof FuelTrendDashboard!=='undefined')FuelTrendDashboard.render();
 if(typeof VehicleAutomationPresenter!=='undefined')VehicleAutomationPresenter.render();
 const curKmEl=document.getElementById('cnCurKm');
-if(curKmEl&&!document.getElementById('cnCurKmInput'))curKmEl.textContent=getVehicleKm(curVehicleId).toLocaleString('id-ID')+' km';
+const curKmSrcEl=document.getElementById('cnCurKmSrc');
+if(curKmEl&&!document.getElementById('cnCurKmInput')){
+const kmSrc=getVehicleKmSource(curVehicleId);
+curKmEl.textContent=kmSrc.km.toLocaleString('id-ID')+' km';
+if(curKmSrcEl)curKmSrcEl.textContent=kmSourceLabel(kmSrc.source);
+}
 renderCarImportVehicleSelect();
 renderVehTaxSim();
 if(curCnTab==='bbm')renderBbmList();
