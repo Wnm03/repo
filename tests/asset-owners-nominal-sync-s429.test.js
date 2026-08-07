@@ -138,7 +138,20 @@ test('onOwnerNominalInput(): field porsi hasil sync tetap dipakai saveOwners() (
   );
 });
 
-test('_renderOwnersList(): field Nominal DINONAKTIFKAN kalau aset belum punya nilai (konversi Rp<->% butuh nilai dasar)', () => {
+
+// FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
+// 4 test di bawah ini GANTIKAN test lama "field Nominal DINONAKTIFKAN kalau
+// aset belum punya nilai" & "onOwnerNominalInput(): no-op kalau nilai aset
+// 0" -- perilaku lama (blokir input Nominal sampai "Estimasi Nilai Saat
+// Ini" diisi di form Aset) TERNYATA salah utk skenario nyata dilaporkan
+// user: Porsi (%) tiap pemilik SUDAH diisi manual (total 100%), tapi field
+// Nominal tetap terkunci cuma krn nilai dasar aset belum ada -- padahal
+// user justru mau ISI Nominal dulu utk MENURUNKAN nilai total instrumennya.
+// Field sekarang SELALU enabled; arah derivasi baru (Nominal+Porsi->nilai
+// dasar) ditangani _ownersDraftNilai, lihat komentar onOwnerNominalInput()
+// & _ownersAssetNilai() di aset.js.
+
+test('_renderOwnersList(): field Nominal SELALU AKTIF (tidak pernah disabled), termasuk saat aset belum punya nilai', () => {
   const D = makeD(undefined); // nilai belum diisi
   const dom = makeStatefulDom();
   const ctx = makeCtx(D, dom);
@@ -146,16 +159,49 @@ test('_renderOwnersList(): field Nominal DINONAKTIFKAN kalau aset belum punya ni
   ctx.Aset.openOwnersModal();
   const rowHtml = dom.getElementById('assetOwnersList').innerHTML;
   const inputTag = /<input[^>]*id="ownerNominal0"[^>]*>/.exec(rowHtml)[0];
-  assert.match(inputTag, /\bdisabled\b/, 'field nominal harus nonaktif (atribut disabled) kalau aset.nilai belum diisi/0');
+  assert.doesNotMatch(inputTag, /\bdisabled\b/, 'field nominal harus tetap AKTIF walau aset.nilai belum diisi/0 -- user boleh isi Nominal duluan');
 });
 
-test('onOwnerNominalInput(): no-op kalau nilai aset 0 (guard jaga-jaga saat field disabled)', () => {
+test('onOwnerNominalInput(): nilai aset 0 TAPI porsi baris ini sudah diisi (kasus 3-pemilik dilaporkan user) -> nilai dasar tersirat dihitung, field Nominal baris LAIN ikut tersinkron', () => {
+  const D = makeD(undefined);
+  D.assets[0].owners = [
+    { ownerId: 'self', ownerName: 'mas sihab (Keluarga)', porsi: 15.15, isSelf: false },
+    { ownerId: 'kamera', ownerName: 'Kamera', porsi: 84.85, isSelf: false },
+  ];
+  const dom = makeStatefulDom();
+  const ctx = makeCtx(D, dom);
+  ctx.Aset.editId = 'a1';
+  ctx.Aset.openOwnersModal();
+  // User isi Nominal baris ke-2 (Kamera, porsi 84.85%) = Rp10.000.000
+  // -> nilai total tersirat = 10.000.000 / 0.8485 = 11.786.682 (dibulatkan)
+  ctx.Aset.onOwnerNominalInput(1, '10000000');
+  assert.equal(ctx.Aset._ownersDraftNilai, 11785504, 'nilai dasar instrumen harus tersirat dari nominal/porsi baris yang diisi');
+  assert.equal(ctx.Aset._ownersDraft[0].porsi, 15.15, 'porsi baris lain TIDAK berubah -- cuma tampilan Nominal Rp-nya yang menyusul');
+  assert.equal(dom.getElementById('ownerNominal0').value, Math.round(11785504 * 0.1515), 'field Nominal baris lain harus ikut update ke nilai tersirat baru');
+});
+
+test('onOwnerNominalInput(): nilai aset 0 DAN porsi baris ini JUGA belum diisi -> no-op (0 persamaan 2 unknown, tidak ada cara aman menebak)', () => {
   const D = makeD(0);
   const dom = makeStatefulDom();
   const ctx = makeCtx(D, dom);
   ctx.Aset.editId = 'a1';
   ctx.Aset.openOwnersModal();
-  const porsiBefore = ctx.Aset._ownersDraft[0].porsi;
+  ctx.Aset._ownersDraft[0].porsi = null; // simulasikan baris yang porsinya juga belum diisi
   ctx.Aset.onOwnerNominalInput(0, '999999');
-  assert.equal(ctx.Aset._ownersDraft[0].porsi, porsiBefore, 'porsi draft tidak boleh berubah kalau nilai aset 0 (nominal tidak bisa dikonversi)');
+  assert.equal(ctx.Aset._ownersDraftNilai, null, 'nilai dasar tidak boleh tersirat kalau porsi baris ini JUGA tidak diketahui');
+});
+
+test('saveOwners(): nilai dasar tersirat dari Nominal (Rp) ikut tersimpan ke a.nilai (bukan cuma draft sementara)', () => {
+  const D = makeD(undefined);
+  D.assets[0].owners = [
+    { ownerId: 'self', ownerName: 'mas sihab (Keluarga)', porsi: 15.15, isSelf: false },
+    { ownerId: 'kamera', ownerName: 'Kamera', porsi: 84.85, isSelf: false },
+  ];
+  const dom = makeStatefulDom();
+  const ctx = makeCtx(D, dom);
+  ctx.Aset.editId = 'a1';
+  ctx.Aset.openOwnersModal();
+  ctx.Aset.onOwnerNominalInput(1, '10000000');
+  ctx.Aset.saveOwners();
+  assert.equal(D.assets[0].nilai, 11785504, 'a.nilai (Estimasi Nilai Saat Ini) harus ikut terisi otomatis dari nilai tersirat, TIDAK perlu user isi manual di form Aset lagi');
 });
