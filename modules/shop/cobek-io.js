@@ -520,16 +520,44 @@ commit(){
 if(!this.parsedRows.length){toast('⚠️ Belum ada data yang terbaca dari file');return;}
 let created=0,updated=0;
 if(this.target==='produsen'){
+// Modul 16 (sesi ini): Import Excel Produsen Mutation Gate — reroute
+// titik TULIS `pr.contact=...`/`pr.note=...`/`pr.jarakKm=...`/
+// `pr.biayaPerKm=...`/`D.produsen.push({...object literal...})` mentah
+// (target 'produsen', sebelumnya 0 gate — beda dgn target 'etalase' di
+// bawah yang sudah digate Modul 14/15) lewat SupplierStore (SSOT SUDAH
+// ADA, Modul 7), pola & fallback PERSIS SAMA dgn cabang 'etalase': guard
+// typeof SupplierStore, 0 gate baru, 0 validasi baru.
+// CATATAN mutateSetRoute(): gate itu all-or-nothing (jarakKm & biayaPerKm
+// divalidasi BERSAMA, sesuai kontrak aslinya utk OngkirCalc.
+// saveProdusenPref() yang SELALU kirim keduanya) — beda dari baris impor
+// yang bisa punya SALAH SATU kolom kosong (independen). Supaya business
+// logic partial-update yang sudah ada tidak berubah (instruksi sesi ini:
+// tidak boleh ubah business logic), mutateSetRoute() DIPAKAI hanya saat
+// kedua kolom terisi (pasangan lengkap, persis kontrak gate); saat cuma
+// salah satu terisi, tetap assignment mentah SAMA PERSIS spt sebelum
+// Modul 16 (bukan bypass baru — mengikuti scope gate yang sudah ada, tidak
+// melebarkannya di luar kontraknya sendiri).
 this.parsedRows.forEach(r=>{
 let pr=D.produsen.find(x=>x.name.toLowerCase()===r.name.toLowerCase());
 if(pr){
-pr.contact=r.kontak||pr.contact||'';
-pr.note=r.catatan||pr.note||'';
+const newContact=r.kontak||pr.contact||'';
+const newNote=r.catatan||pr.note||'';
+if(typeof SupplierStore!=='undefined')SupplierStore.mutateUpdate(pr,{name:pr.name,contact:newContact,note:newNote});else{pr.contact=newContact;pr.note=newNote;}
+if(r.jarakKm!==''&&r.biayaPerKm!==''){
+if(typeof SupplierStore!=='undefined')SupplierStore.mutateSetRoute(pr,r.jarakKm,r.biayaPerKm);else{pr.jarakKm=r.jarakKm;pr.biayaPerKm=r.biayaPerKm;}
+}else{
 if(r.jarakKm!=='')pr.jarakKm=r.jarakKm;
 if(r.biayaPerKm!=='')pr.biayaPerKm=r.biayaPerKm;
+}
 updated++;
 } else {
-D.produsen.push({id:'prd_'+Date.now()+'_'+uid(),name:r.name,contact:r.kontak||'',note:r.catatan||'',jarakKm:r.jarakKm||'',biayaPerKm:r.biayaPerKm||''});
+const rawSupplier={id:'prd_'+Date.now()+'_'+uid(),name:r.name,contact:r.kontak||'',note:r.catatan||'',jarakKm:r.jarakKm||'',biayaPerKm:r.biayaPerKm||''};
+if(typeof SupplierStore!=='undefined'){
+const sr=SupplierStore.mutateCreate({name:r.name,contact:r.kontak||'',note:r.catatan||''});
+if(sr.ok)D.produsen.push({...sr.supplier,id:rawSupplier.id,jarakKm:r.jarakKm||'',biayaPerKm:r.biayaPerKm||''});else D.produsen.push(rawSupplier);
+}else{
+D.produsen.push(rawSupplier);
+}
 created++;
 }
 });
@@ -549,7 +577,29 @@ if(kategoriId){if(typeof ProductRepository!=='undefined')ProductRepository.mutat
 if(produsenMatch){if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(p,'produsenId',produsenMatch.id);else p.produsenId=produsenMatch.id;}
 updated++;
 } else {
+// Modul 14 (sesi ini, "Import Excel Product Mutation Gate"): reroute
+// titik TULIS `D.products.push({...object literal...})` mentah (create
+// produk BARU saat Import Excel .xlsx target 'etalase') lewat
+// ProductRepository.createProduct()+saveProduct() (SSOT yang SUDAH ADA
+// sejak Tahap 4/6 — dipakai Etalase.save()/applyTxShopStockFromTx()
+// Modul 11/ShopDataIO.commitShopRows() Modul 13). Pola & fallback PERSIS
+// SAMA dgn Modul 13 (lihat shop-data-io-api.js): id TETAP pakai generator
+// LOKAL 'prod_'+Date.now()+'_'+uid() (bukan ProductRepository._genId()),
+// ditimpa SETELAH createProduct(); kalau ProductRepository belum dimuat
+// ATAU createProduct()/saveProduct() menolak, fallback ke object literal
+// mentah PERSIS spt sebelum Modul 14 supaya baris tidak pernah hilang.
+if(typeof ProductRepository!=='undefined'){
+const cr=ProductRepository.createProduct({name:r.name,stock:r.stock,hargaBeli:r.hargaBeli,hargaJual:r.hargaJual,hargaReseller:r.hargaReseller!=null?r.hargaReseller:null,diskonPersen:r.diskonPersen||0,kategoriId,produsenId:produsenMatch?produsenMatch.id:'',hargaByProdusen:{}});
+if(cr.ok){
+const newProduct={...cr.product,id:'prod_'+Date.now()+'_'+uid()};
+const sr=ProductRepository.saveProduct(D.products,newProduct);
+if(sr.ok)D.products=sr.products;else D.products.push(newProduct);
+} else {
 D.products.push({id:'prod_'+Date.now()+'_'+uid(),name:r.name,stock:r.stock,hargaBeli:r.hargaBeli,hargaJual:r.hargaJual,hargaReseller:r.hargaReseller!=null?r.hargaReseller:null,diskonPersen:r.diskonPersen||0,kategoriId,produsenId:produsenMatch?produsenMatch.id:'',hargaByProdusen:{}});
+}
+} else {
+D.products.push({id:'prod_'+Date.now()+'_'+uid(),name:r.name,stock:r.stock,hargaBeli:r.hargaBeli,hargaJual:r.hargaJual,hargaReseller:r.hargaReseller!=null?r.hargaReseller:null,diskonPersen:r.diskonPersen||0,kategoriId,produsenId:produsenMatch?produsenMatch.id:'',hargaByProdusen:{}});
+}
 created++;
 }
 });

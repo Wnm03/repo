@@ -216,14 +216,13 @@ if(product&&it.kategoriInput){
 const kat=resolveShopKategori(it.kategoriInput);
 // kat bisa '' kalau kategoriInput whitespace-only (resolveShopKategori() balikin
 // '' — lihat definisinya) — perilaku LAMA tetap menimpa kategoriId jadi '' di
-// kasus itu (bukan biarkan value lama), jadi gate (yang menolak string kosong,
-// fail-safe) HANYA dipakai kalau kat valid; kat kosong tetap assignment mentah
-// SAMA PERSIS sebelumnya supaya 0 perubahan perilaku di edge-case ini.
-if(kat){
+// kasus itu (bukan biarkan value lama). Modul 15 (sesi ini): gate
+// mutateSetField() diperluas menerima string kosong utk kategoriId/
+// produsenId (lihat komentarnya di product-repository.js), jadi edge-case
+// kat==='' ini sekarang IKUT lewat gate juga (sebelumnya assignment mentah
+// sengaja krn gate lama menolak string kosong) — 0 perubahan nilai akhir,
+// cuma dipindah+guard typeof, fallback raw PERSIS sebelumnya.
 if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(product,'kategoriId',kat);else product.kategoriId=kat;
-} else {
-product.kategoriId=kat;
-}
 }
 }
 if(!product)return;

@@ -35,7 +35,8 @@ document.getElementById('prContact').value=pr?(pr.contact||''):'';
 document.getElementById('prNote').value=pr?(pr.note||''):'';
 openModal('produsenModal');
 },
-save(){
+save(){return withSaveGuard('produsen','produsenModal',Produsen._saveInner.bind(Produsen));},
+_saveInner(){
 const name=document.getElementById('prName').value.trim();
 const contact=document.getElementById('prContact').value.trim();
 const note=document.getElementById('prNote').value.trim();
@@ -63,17 +64,20 @@ save();closeModal('produsenModal');this.renderList();toast('✅ Produsen disimpa
 async delete(id){
 if(!await askConfirm('Hapus produsen ini? Harga yang sudah tercatat di produk tidak akan terhapus otomatis.'))return;
 // Modul 7 — hapus Produsen dialihkan ke SupplierStore.mutateDelete()
-// (guard typeof + fallback mentah lama). Sisi-efek pembersihan
-// p.produsenId='' di SEMUA produk terkait SENGAJA TETAP mentah (mutasi
-// Product, bukan Supplier, & string kosong ditolak ProductRepository.
-// mutateSetField() — lihat catatan lengkap di SupplierStore.mutateDelete()).
+// (guard typeof + fallback mentah lama). Modul 15 (sesi ini): sisi-efek
+// pembersihan p.produsenId='' di SEMUA produk terkait dialihkan ke
+// ProductRepository.mutateSetField() (gate diperluas menerima string
+// kosong khusus kategoriId/produsenId — lihat komentar mutateSetField() di
+// product-repository.js). Sebelumnya SENGAJA TETAP mentah karena gate lama
+// menolak string kosong; guard typeof + fallback raw PERSIS pola Modul
+// 3-14, business logic 0 berubah (nilai akhir identik).
 if(typeof SupplierStore!=='undefined'){
 const r=SupplierStore.mutateDelete(D.produsen,id);
 if(r.ok)D.produsen=r.suppliers;
 } else {
 D.produsen=D.produsen.filter(x=>x.id!==id);
 }
-D.products.forEach(p=>{if(p.produsenId===id)p.produsenId='';});
+D.products.forEach(p=>{if(p.produsenId===id){if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(p,'produsenId','');else p.produsenId='';}});
 save();this.renderList();toast('🗑 Produsen dihapus');
 },
 renderList(){

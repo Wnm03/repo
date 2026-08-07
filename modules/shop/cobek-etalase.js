@@ -356,6 +356,25 @@ BusinessFlowPresenter.renderMovement(p.id);
 const elMv = document.getElementById('productMovementList');
 if (elMv) elMv.innerHTML = '';
 }
+// S379: entry point UI Purchase Order (lanjutan S378 — createPurchaseOrder()/
+// receivePurchaseOrder() sebelumnya cuma bisa dipanggil programatik). Sama
+// pola persis renderMovement() di atas — guard BusinessFlowPresenter+p,
+// kosongkan kalau produk baru (belum punya id).
+if (typeof BusinessFlowPresenter !== 'undefined' && BusinessFlowPresenter.renderPurchaseOrderBox) {
+BusinessFlowPresenter.renderPurchaseOrderBox(p ? p.id : null);
+} else {
+const elPo = document.getElementById('productPurchaseOrderBox');
+if (elPo) elPo.innerHTML = '';
+}
+// Sesi lanjutan S379: riwayat SEMUA Purchase Order per produk (bukan cuma
+// yg terbaru) — reuse guard p/BusinessFlowPresenter yg SUDAH ADA di atas,
+// sama pola persis renderPurchaseOrderBox().
+if (typeof BusinessFlowPresenter !== 'undefined' && BusinessFlowPresenter.renderPurchaseOrderHistory) {
+BusinessFlowPresenter.renderPurchaseOrderHistory(p ? p.id : null);
+} else {
+const elPoHist = document.getElementById('productPurchaseOrderHistory');
+if (elPoHist) elPoHist.innerHTML = '';
+}
 openModal('productModal');
 },
 async onProdusenChange(){
@@ -398,7 +417,8 @@ OngkirCalc.prefillFromProdusen();
 OngkirCalc.calc();
 }
 },
-save(){
+save(){return withSaveGuard('etalase','productModal',Etalase._saveInner.bind(Etalase));},
+_saveInner(){
 const name=document.getElementById('pName').value.trim();
 const stock=parseInt(document.getElementById('pStock').value)||0;
 const kategoriName=document.getElementById('pKategori').value.trim();
@@ -513,6 +533,12 @@ else D.products.splice(i,1);
 }else{
 D.products.splice(i,1);
 }
+// Sesi 376 (Inventory Movement manual override): bersihkan override lokasi
+// manual punya produk yg dihapus, kalau ada — cegah D.productMovementOverride
+// nyimpen entry basi mengarah ke productId yg sudah tidak eksis.
+if(p&&D.productMovementOverride&&D.productMovementOverride[p.id]){
+delete D.productMovementOverride[p.id];
+}
 save();this.renderList();toast('🗑 Dihapus');
 },
 katEditId:null,
@@ -580,15 +606,20 @@ if(!await askConfirm(msg,{title:'Hapus Kategori',okText:'Ya, Hapus'}))return;
 if(this.katEditId===id)this.cancelEditKategori();
 // dialihkan lewat CategoryStore.mutateDelete() (Modul 8) kalau tersedia,
 // guard + fallback raw PERSIS SAMA pola Produsen.delete() Modul 7.
-// p.kategoriId='' TETAP raw dgn sengaja (lihat catatan mutateDelete()
-// CategoryStore — sisi-efek Product, bukan Category, di luar scope gate ini).
+// Modul 15 (sesi ini): p.kategoriId='' dialihkan ke ProductRepository.
+// mutateSetField() (perluasan gate, lihat komentar mutateSetField() di
+// product-repository.js) — guard typeof + fallback raw PERSIS pola
+// Modul 3-14. Sebelumnya raw dgn sengaja (lihat catatan mutateDelete()
+// CategoryStore) karena gate lama menolak string kosong; sesi ini gate-nya
+// diperluas, bukan business logic-nya yang berubah (produk yang kategorinya
+// dihapus TETAP dikosongkan, nilai akhir identik).
 if(typeof CategoryStore!=='undefined'){
 const r=CategoryStore.mutateDelete(D.cobekKategori,id);
 if(r.ok)D.cobekKategori=r.categories;
 }else{
 D.cobekKategori=D.cobekKategori.filter(c=>c.id!==id);
 }
-D.products.forEach(p=>{if(p.kategoriId===id)p.kategoriId='';});
+D.products.forEach(p=>{if(p.kategoriId===id){if(typeof ProductRepository!=='undefined')ProductRepository.mutateSetField(p,'kategoriId','');else p.kategoriId='';}});
 save();this.renderKategoriList();this.renderList();toast('🗑 Kategori dihapus');
 },
 renderKategoriList(){
