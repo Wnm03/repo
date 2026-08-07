@@ -45,10 +45,20 @@ _resolveType(entity) {
 // sumAccounts(type) — jumlah saldo akun (D.accounts) ber-ownership `type`,
 // pakai recalcAccBalance() apa adanya (0 rumus baru, sama seperti
 // totalSaldoAkun() di akun.js). Guard typeof recalcAccBalance opsional.
+// SESI 449 (BUG-OWN-002 lanjutan): tambah 1 filter exclude akun tertaut ke
+// Buku Aset (linkedAssetAccountIds(), sama persis pola totalSaldoAkun()) --
+// sejak akun tertaut disinkron ke NILAI PENUH instrumen (bukan porsi SELF
+// saja lagi, lihat aset.js), kalau aset & akun tertautnya SAMA-SAMA
+// ber-ownership non-SELF (mis. INVESTOR), nilainya kehitung 2x di sini:
+// sekali dari sumAssets(type) (a.nilai), sekali lagi dari sini
+// (recalcAccBalance(akun tertaut) = a.nilai juga). Akun tertaut TETAP
+// tampil apa adanya di kartunya sendiri (Buku Akun) utk info saldo, cuma
+// dikecualikan dari AGREGAT Dana Kelolaan di sini.
 sumAccounts(type) {
   if (typeof recalcAccBalance !== 'function') return 0;
+  const linked = (typeof linkedAssetAccountIds === 'function') ? linkedAssetAccountIds() : new Set();
   return (D.accounts || [])
-    .filter((a) => this._resolveType(a) === type)
+    .filter((a) => this._resolveType(a) === type && !linked.has(String(a.id)))
     .reduce((s, a) => s + recalcAccBalance(a.id), 0);
 },
 
