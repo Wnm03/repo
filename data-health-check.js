@@ -55,6 +55,35 @@ issues.push({level:'warn',title:'Tagihan dengan akun tidak valid',detail:`"${esc
 if(a.accountId && !accIds.has(a.accountId)){
 issues.push({level:'warn',title:'Aset dengan akun tautan tidak valid',detail:`"${escapeHtml(a.name)}" ditautkan ke akun yang sudah dihapus — akun tautan otomatis dianggap kosong, cek/lepas tautannya di modal Aset.`});
 }
+// PERUBAHAN SESI 501 (F3, AUDIT-SESI-B-PERLUASAN-ASET.md §3.2, follow-up
+// dari Sesi B1/B2): aset yang punya KEDUANYA `a.ownership` non-SELF
+// (whole-entity, dropdown Kepemilikan) DAN `a.owners[]` EKSPLISIT non-SELF
+// (porsi majemuk, modal "Atur Porsi Kepemilikan") sekaligus -- kartu
+// "Dana Kelolaan" (DanaKelolaan.sumAssets(), 100% a.nilai sbg 1 tipe
+// generik) vs tab "Dana Titipan" (DanaTitipanPortfolioAPI.build(), HANYA
+// porsi owners[] per orang) bisa menampilkan pecahan BERBEDA utk aset yang
+// sama -- BUKAN dobel-hitung di mana pun (2 angka ini tidak pernah
+// dijumlah bareng), tapi bisa bikin user bingung ("kok di Dana Kelolaan
+// keitung 100rb, di Dana Titipan cuma 60rb"). Murni deteksi+beritahu
+// (level warn, 0 mutasi data, 0 perubahan ke sumAssets()/build() itu
+// sendiri -- REKOMENDASI audit F3 SENGAJA bukan mengubah rumus salah satu
+// sisi, karena keduanya "benar" utk definisi masing-masing/whole-entity vs
+// porsi eksplisit, cuma perlu USER TAHU ada 2 sumber kebenaran berbeda utk
+// aset itu). Guard ganda typeof OwnershipEngine/MultiOwnerEngine (pola
+// sama semua guard lain di file ini) -- kalau salah satu belum dimuat, cek
+// ini diam saja (0 false-positive).
+if(typeof OwnershipEngine!=='undefined' && typeof MultiOwnerEngine!=='undefined' && typeof MultiOwnerEngine.getOwners==='function'){
+const ownType=OwnershipEngine.resolve?OwnershipEngine.resolve(a).type:'SELF';
+if(ownType && ownType!=='SELF'){
+const res=MultiOwnerEngine.getOwners(a);
+if(res && res.ok && !res.isSynthesized){
+const nonSelfPorsi=(res.owners||[]).filter(o=>o&&!o.isSelf&&o.porsi>0).reduce((s,o)=>s+o.porsi,0);
+if(nonSelfPorsi>0){
+issues.push({level:'warn',title:'Aset dengan kepemilikan ganda (Kepemilikan + Porsi Majemuk) berpotensi tidak sinkron',detail:`"${escapeHtml(a.name)}" punya dropdown Kepemilikan non-SELF (dihitung 100% di kartu Dana Kelolaan) SEKALIGUS Porsi Kepemilikan eksplisit (${nonSelfPorsi}% dihitung di tab Dana Titipan) -- 2 tempat ini bisa menampilkan pecahan berbeda utk aset yang sama. Bukan bug hitung ganda, tapi cek konsistensinya di modal Aset kalau angka terasa janggal.`});
+}
+}
+}
+}
 });
 // PERUBAHAN SESI 293 (audit lanjutan Sesi 292 akun-del-targets-assets-gapfix):
 // D.targets punya accountId (dipakai progress "via Akun" — lihat akun.js
@@ -186,6 +215,36 @@ issues.push({level:'warn',title:'Piutang tertaut ke Aset Multi-Owner yang sudah 
 (D.partsStock||[]).forEach(p=>{
 if((p.qty||0)<0){
 issues.push({level:'error',title:'Stok sparepart minus',detail:`"${escapeHtml(p.name)}" stoknya ${p.qty} (minus). Cek riwayat pemakaian di catatan servis.`});
+}
+});
+// Cek tambahan (S506 — Vehicle ↔ Asset Identity Link, lihat PROMPT
+// IMPLEMENTASI S506 §9): D.vehicles[].assetId (opsional, dibuat lewat "🔗
+// Hubungkan ke Buku Aset" di modal Kelola Kendaraan, lihat modules/vehicle/
+// vehicle-core.js resolveVehicleAssetLink()/saveVehicle()) bisa jadi orphan
+// kalau asetnya sudah dihapus dari Buku Aset -- tautannya "diam-diam putus"
+// (field tetap ada di D.vehicles tapi tidak match apa pun, bukan crash).
+// Pola & level SAMA PERSIS cek assetId Transaksi/Piutang/Utang di atas.
+// Murni baca, TIDAK auto-repair/auto-null/auto-delete (guardrail S506 §9 —
+// level warn saja, bukan error yang blokir app).
+D.vehicles.forEach(v=>{
+if(v.assetId && !(D.assets||[]).some(a=>sameId(a.id,v.assetId))){
+issues.push({level:'warn',title:'Kendaraan tertaut ke Buku Aset yang sudah dihapus',detail:`"${escapeHtml(v.name||'?')}" masih menyimpan tautan ke entry Buku Aset yang sudah dihapus -- cek/lepas tautannya di modal Kelola Kendaraan.`});
+}
+});
+// Cek tambahan (S506 §10, duplicate link safety): 1 entry Buku Aset TIDAK
+// seharusnya jadi identity >1 kendaraan sekaligus (assetId kependa dipakai
+// dobel) -- pola sama persis cek catalogId duplikat (D.partsStock) di bawah.
+// Murni deteksi/warning, TIDAK ada aturan bisnis baru yang memblokir/
+// menghapus/mengubah data (guardrail S506 §10: "jangan merusak data
+// existing").
+const vehAssetIdCount={};
+D.vehicles.forEach(v=>{
+if(v.assetId)vehAssetIdCount[v.assetId]=(vehAssetIdCount[v.assetId]||0)+1;
+});
+Object.keys(vehAssetIdCount).forEach(aid=>{
+if(vehAssetIdCount[aid]>1){
+const names=D.vehicles.filter(v=>v.assetId===aid).map(v=>v.name).join(', ');
+issues.push({level:'warn',title:'Entry Buku Aset ditautkan ke lebih dari 1 kendaraan',detail:`${vehAssetIdCount[aid]} kendaraan menunjuk ke entry Buku Aset yang sama (${names}) -- cek apakah memang disengaja, lepas tautan salah satunya di modal Kelola Kendaraan kalau keliru.`});
 }
 });
 // Cek tambahan (S268 — bridge scan Keuangan->Stok, lihat NEXT_SESSION.md

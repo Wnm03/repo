@@ -83,9 +83,9 @@
 <link rel="preconnect" href="https://accounts.google.com" crossorigin>
 <link rel="dns-prefetch" href="https://accounts.google.com">
 <title>Keluarga W</title>
-<link rel="stylesheet" href="styles.css?v=1227">
-<link rel="stylesheet" href="modern-ui-layer.css?v=1227">
-<script src="nav-scroll.js?v=1227" defer></script>
+<link rel="stylesheet" href="styles.css?v=1243">
+<link rel="stylesheet" href="modern-ui-layer.css?v=1243">
+<script src="nav-scroll.js?v=1243" defer></script>
 <script>
 /* Debug console (Eruda) — aktifkan sekali lewat ?debug=1 di URL, nempel via localStorage.
    Matikan lagi lewat ?debug=0. Tidak aktif buat user biasa. */
@@ -151,17 +151,17 @@ function ensureZXing(){return _loadScriptOnce('https://cdn.jsdelivr.net/npm/@zxi
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn CDN di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // > Proyek Renovasi pertama dibuka.
-function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1227');}
+function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1243');}
 // sewakios.js dikeluarkan dari app-bundle-a.min.js (scripts/build.js GROUP_A),
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn Renov di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // pertama dibuka.
-function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1227');}
+function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1243');}
 // business-intelligence-presenter.js dikeluarkan dari app-bundle-b.min.js
 // (scripts/build.js GROUP_B), dimuat on-demand lewat pola sama.
 // Dipanggil dari setShopTab() (cobek-io.js) saat tab Shop > Business
 // Intelligence pertama dibuka.
-function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1227');}
+function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1243');}
 </script>
 <script>
 window.__moduleLoadFail=function(name){
@@ -250,8 +250,8 @@ window.location.reload();
 }catch(e){}
 })();
 </script>
-<script src="app-bundle-a.min.js?v=1227" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
-<script src="modules/shared/smoke-test.js?v=1227" defer></script>
+<script src="app-bundle-a.min.js?v=1243" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
+<script src="modules/shared/smoke-test.js?v=1243" defer></script>
 <link rel="manifest" id="pwaManifestLink" href="manifest.json">
 </head>
 <body data-theme="fresh">
@@ -977,6 +977,7 @@ window.location.reload();
     <button class="lap-subtab active" data-action="setLaporanTab" data-args='["ringkasan", "$el"]'>📊 Ringkasan</button>
     <button class="lap-subtab" data-action="setLaporanTab" data-args='["aruskas", "$el"]'>📅 Arus Kas &amp; Kategori</button>
     <button class="lap-subtab" data-action="setLaporanTab" data-args='["transaksi", "$el"]'>📋 Transaksi &amp; Export</button>
+    <button class="lap-subtab" data-action="setLaporanTab" data-args='["titipan", "$el"]'>💰 Dana Titipan</button>
   </div>
   <div class="page-breadcrumb">📊 Laporan › <span class="pb-current" id="laporanBreadcrumbSub">Ringkasan</span></div>
   <!-- 2026-07-17: Split tab 📊 Laporan (dalam page-keuangan) jadi 3 sub-tab —
@@ -1113,6 +1114,25 @@ window.location.reload();
   </div>
   </div>
   <!-- /TRANSAKSI & EXPORT -->
+  <!-- SESI 498 (Tab "Dana Titipan" Terpadu, Sesi A — AUDIT-DANA-TITIPAN-TAB-TERPADU.md
+       §2.2/§3): sub-tab ke-4 "💰 Dana Titipan", pola SAMA PERSIS 3 sub-tab
+       Laporan lain (murni toggle DOM via setLaporanTab(), tx-list-cashflow.js).
+       Ini bukan mesin finansial baru — kartu owner diisi
+       DanaTitipanPortfolioPresenter.renderInto('danaTitipanTabList')
+       (dana-titipan-portfolio-presenter.js), 100% reuse
+       DanaTitipanPortfolioAPI.build()/getCommitments()/getReturns() yang
+       SUDAH ADA (kartu lama #danaTitipanPortfolioList di dalam Dana
+       Kelolaan/Ringkasan TIDAK diubah/dihapus, tetap ada) — tujuannya
+       murni presenter, satu layar terpusat yang langsung dinavigasi
+       (menutup gap G1 di audit), bukan sumber data baru. -->
+  <div id="laporanTab-titipan" class="u-dnone">
+  <div class="card u-mb12" id="danaTitipanTabCard">
+    <div class="card-title">💰 Dana Titipan</div>
+    <div class="u-hint10">Semua pemilik dana titipan dalam 1 layar — pokok, teralokasi ke investasi, dan pengembalian. Angka bersumber sama persis dengan kartu Dana Kelolaan di tab Ringkasan (0 rumus baru, 0 data baru).</div>
+    <div id="danaTitipanTabList"></div>
+  </div>
+  </div>
+  <!-- /DANA TITIPAN -->
   </div>
 
   <!-- AKUN -->
@@ -3912,6 +3932,6 @@ window.location.reload();
 <script>document.write(MODAL_HTML[96]);</script><!-- modal:titipanCommitmentModal (S485d, Sesi 4/5 Gap #3 audit) -->
 <script>document.write(MODAL_HTML[97]);</script><!-- modal:titipanReturnModal (S486, Case F: Partial Return) -->
 
-<script src="app-bundle-b.min.js?v=1227" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
+<script src="app-bundle-b.min.js?v=1243" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
 </body>
 </html>
