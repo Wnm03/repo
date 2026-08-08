@@ -1879,6 +1879,21 @@ after:(backup)=>{ Aset.editId=backup; D.assets=D.assets.filter(a=>a.id!=='__swee
 // dijalankan kapan saja).
 {label:'InvestmentUI.openOwnersModal()',id:'investmentOwnersModal',
 call:()=>{ InvestmentUI.openOwnersModal(); }},
+// S481: investmentModal/investmentTxModal/investmentWatchModal (holding investasi,
+// dibuat S476-477) belum terdaftar di sweep manapun -- terdeteksi "(kelengkapan
+// cakupan) modal belum terdaftar" di Tes Buka/Tutup Modal. Ketiganya dipanggil TANPA
+// id/holdingId (persis InvestmentUI.openOwnersModal() di atas & Aset.openOwnersModal()
+// kalau Aset.editId kosong) tetap aman: openModal(id) & InvestmentTxUI.open(holdingId)
+// sudah menangani holding/watchlist-item tidak ditemukan (h/w jadi null) dengan render
+// mode "Tambah" lalu openModal() -- jadi TIDAK perlu before/after push+hapus dummy
+// holding ke D.investments/D.investmentWatchlist (0 mutasi data, sweep tetap 100% aman
+// dijalankan kapan saja), pola sama persis investmentOwnersModal di atas.
+{label:'InvestmentListUI.openModal()',id:'investmentModal',
+call:()=>{ InvestmentListUI.openModal(); }},
+{label:'InvestmentTxUI.open()',id:'investmentTxModal',
+call:()=>{ InvestmentTxUI.open(); }},
+{label:'InvestmentWatchUI.openModal()',id:'investmentWatchModal',
+call:()=>{ InvestmentWatchUI.openModal(); }},
 {label:'Piutang.openModal()',id:'piutangModal',
 call:()=>{ Piutang.openModal(); }},
 {label:'Debt.openModal()',id:'debtModal',
