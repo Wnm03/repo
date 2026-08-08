@@ -36,6 +36,25 @@
 // transaksi 'beli'/'jual' via recomputeHolding() setiap kali ada
 // tambah/ubah/hapus transaksi — bukan ditulis manual — supaya konsisten &
 // tidak pernah "nyasar" walau transaksi diedit/dihapus belakangan.
+//
+// AUD-008 (Sesi 462) — MULTI-OWNER TITIPAN: `fundSource`/`titipanOwner` di
+// atas cuma "1 flag + 1 nama" — tidak bisa merepresentasikan 1 holding yang
+// dititipkan >1 orang sekaligus (mis. 60% Ayah + 40% Budi). Ditambah opsional
+// `h.owners` (array `{ownerId,porsi,ownerName,isSelf}`, format & validasi
+// PERSIS sama dgn `a.owners` di aset.js) lewat MultiOwnerEngine (SUDAH ADA,
+// modules/shared/multi-owner-engine.js, Sesi 390/406b/masih dipakai aset.js
+// — 0 engine baru). `fundSource`/`titipanOwner` TETAP ada & tetap jadi jalur
+// single-owner default (backward compatible, addHolding/updateHolding tidak
+// berubah) — `h.owners` murni ADITIF, cuma diisi kalau user eksplisit pakai
+// Investment.setOwners() (>1 baris pemilik). Investment.getOwners(h) adalah
+// SATU titik baca yang tahu prioritas: h.owners valid (multi-owner) > sintesis
+// dari fundSource/titipanOwner (single-owner legacy) > default 100% SELF —
+// dipakai _syncTitipanDebt() supaya 1 holding titipan bisa menghasilkan LEBIH
+// DARI 1 entry Buku Utang (1 per owner non-SELF, ditandai
+// `linkedInvestmentId`+`linkedOwnerId` di object utangnya sendiri, pola SAMA
+// PERSIS Aset._syncOwnerDebts()/`linkedAssetId`+`linkedOwnerId`), TANPA
+// mengubah perilaku holding single-owner yang sudah ada (tetap 1 entry utang,
+// 0 regresi).
 
 const INVESTMENT_TYPES = ['Saham', 'Reksa Dana', 'Obligasi', 'Deposito', 'Kripto', 'Emas', 'Lainnya'];
 
@@ -79,7 +98,7 @@ const Investment = {
     return Investment.getHoldings().find((h) => String(h.id) === String(id)) || null;
   },
 
-  addHolding({ name, type, unit, avgPrice, currentPrice, notes, fundSource, titipanOwner } = {}) {
+  addHolding({ name, type, unit, avgPrice, currentPrice, notes, fundSource, titipanOwner, zakatable, purchaseDate } = {}) {
     if (!name || !String(name).trim()) throw new Error('Nama instrumen wajib diisi');
     D.investments = D.investments || [];
     const holding = {
@@ -90,6 +109,20 @@ const Investment = {
       avgPrice: isFinite(avgPrice) && avgPrice > 0 ? avgPrice : 0,
       currentPrice: isFinite(currentPrice) && currentPrice > 0 ? currentPrice : (isFinite(avgPrice) ? avgPrice : 0),
       notes: notes || '',
+      // purchaseDate (s476a2 — lihat docs/s476-PLAN-migrate-investasi-to-holdings.md, bagian
+      // "AUDIT ROI/CAGR lama vs baru"): field ADITIF opsional, dibawa dari a.tanggal saat
+      // migrasi dari Buku Aset. Dipakai holdingYieldPct()/portfolioSummary().yieldPct utk
+      // replikasi PERSIS formula CAGR lama (Aset.investmentPerformance(), aset.js) yang
+      // sebelumnya HILANG total di sisi Investment.* karena skema Holding tidak pernah
+      // punya field tanggal. null kalau tidak diisi (CAGR holding itu tidak bisa dihitung,
+      // konsisten dgn perilaku lama yang skip aset tanpa a.tanggal).
+      purchaseDate: purchaseDate || null,
+      // zakatable (s476a, Blocker B — lihat docs/s476-PLAN-migrate-investasi-to-holdings.md):
+      // field ADITIF, default false sama seperti aset baru di Buku Aset (a.zakatable).
+      // Dibawa saat migrasi dari D.assets & diikutsertakan hitungan Zakat Maal
+      // (pajak-pbb-zakat.js Zakat.hitungMaal()) & toggle FI "Hanya Zakatable"
+      // (modules-calc.js FI.investmentAssetValue()) — lihat wiring di kedua file itu.
+      zakatable: !!zakatable,
       // kw-invest-titipan: sumber dana holding ini. 'sendiri' (default) = modal sendiri, tidak
       // ada efek tambahan. 'titipan' = sebagian/seluruh dana ini bukan milik sendiri (dititipkan
       // orang lain buat diinvestasikan) — porsi titipan otomatis disinkronkan sbg 1 entry Buku
@@ -116,6 +149,8 @@ const Investment = {
       h.currentPrice = patch.currentPrice;
     }
     if (patch.notes !== undefined) h.notes = patch.notes;
+    if (patch.zakatable !== undefined) h.zakatable = !!patch.zakatable;
+    if (patch.purchaseDate !== undefined) h.purchaseDate = patch.purchaseDate || null;
     if (patch.fundSource !== undefined) h.fundSource = patch.fundSource === 'titipan' ? 'titipan' : 'sendiri';
     if (patch.titipanOwner !== undefined) h.titipanOwner = patch.titipanOwner || '';
     Investment._syncTitipanDebt(h);
@@ -125,8 +160,11 @@ const Investment = {
 
   deleteHolding(id) {
     const h = Investment.getHolding(id);
-    if (h && h.debtLinkId && typeof D !== 'undefined' && D.debts) {
-      D.debts = D.debts.filter((d) => String(d.id) !== String(h.debtLinkId));
+    if (h && typeof D !== 'undefined' && D.debts) {
+      // Hapus SEMUA entry utang tertaut, bukan cuma h.debtLinkId (yang cuma kepakai
+      // di kasus single-owner) — multi-owner (AUD-008) bisa punya >1 entry per
+      // holding, ditandai `linkedInvestmentId` di tiap object utangnya sendiri.
+      D.debts = D.debts.filter((d) => d.linkedInvestmentId !== h.id && String(d.id) !== String(h.debtLinkId));
     }
     const before = (D.investments || []).length;
     D.investments = (D.investments || []).filter((h) => String(h.id) !== String(id));
@@ -136,29 +174,99 @@ const Investment = {
     return deleted;
   },
 
+  // getOwners(h) — AUD-008 (Sesi 462): SATU titik baca daftar pemilik EFEKTIF
+  // sebuah holding, prioritas sama persis MultiOwnerEngine.getOwners() (aset.js):
+  //   1. h.owners (array) valid lewat MultiOwnerEngine.validateOwners() -> dipakai
+  //      apa adanya (multi-owner, hasil Investment.setOwners()).
+  //   2. h.fundSource==='titipan' (single-owner legacy, field lama) -> disintesis
+  //      1 baris owner non-SELF porsi 100%, nama dari h.titipanOwner.
+  //   3. Selain itu -> default 1 baris SELF porsi 100% (selaras OwnershipEngine/
+  //      MultiOwnerEngine default).
+  // MultiOwnerEngine TIDAK bisa dipakai langsung buat cabang 2 (beda nama field
+  // dari titipanAmount/nilai yang dibaca _synthesizeFromTitipan() punya aset.js —
+  // lihat komentar di file itu), jadi disintesis manual di sini; cabang 1 & 3
+  // tetap delegasi penuh ke MultiOwnerEngine (0 duplikasi validasi/porsi).
+  getOwners(h) {
+    if (!h) return [];
+    if (Array.isArray(h.owners) && typeof MultiOwnerEngine !== 'undefined') {
+      const res = MultiOwnerEngine.getOwners(h);
+      if (res && res.ok && !res.isSynthesized) return res.owners;
+    }
+    if (h.fundSource === 'titipan') {
+      const ownerName = (h.titipanOwner && String(h.titipanOwner).trim()) || 'Pemilik dana titipan';
+      return [{ ownerId: 'titipan_investor', porsi: 100, ownerName, isSelf: false }];
+    }
+    return [{ ownerId: 'SELF', porsi: 100, ownerName: 'Milik Sendiri', isSelf: true }];
+  },
+
+  // setOwners(id, owners) — AUD-008 (Sesi 462): tulis daftar pemilik MULTI-OWNER
+  // (>=1 baris, total porsi 100%, divalidasi MultiOwnerEngine.validateOwners() —
+  // 0 validasi baru) ke holding. Kasus balik ke 1 owner SELF 100%: `h.owners`
+  // dihapus & fundSource direset ke 'sendiri' supaya cuma ADA SATU sumber
+  // kebenaran aktif per holding (h.owners ATAU fundSource/titipanOwner, tidak
+  // dua-duanya sekaligus) — getOwners() di atas sudah toleran baca kondisi ini.
+  setOwners(id, owners) {
+    const h = Investment.getHolding(id);
+    if (!h) throw new Error('Holding tidak ditemukan');
+    if (typeof MultiOwnerEngine === 'undefined') throw new Error('MultiOwnerEngine belum dimuat');
+    const res = MultiOwnerEngine.setOwners(h, owners);
+    if (!res.ok) throw new Error(res.reason);
+    const nextOwners = res.entity.owners;
+    if (nextOwners.length === 1 && nextOwners[0].isSelf) {
+      delete h.owners;
+      h.fundSource = 'sendiri';
+      h.titipanOwner = '';
+    } else {
+      h.owners = nextOwners;
+      h.fundSource = nextOwners.some((o) => !o.isSelf) ? 'titipan' : 'sendiri';
+    }
+    Investment._syncTitipanDebt(h);
+    _invSave();
+    return h;
+  },
+
   // _syncTitipanDebt() — satu titik akses yang menjaga entry Buku Utang (D.debts) tetap sinkron
   // dgn holding 'titipan': nilai utang = holdingCost(h) (cost basis holding ini, angka yang SUDAH
   // ADA lewat holdingCost() di bawah — 0 rumus baru). Dipanggil tiap kali holding dibuat/diedit
   // ATAU cost basis-nya berubah lewat recomputeHolding() (buy/sell tx baru). fundSource='sendiri'
   // (atau balik dari 'titipan') otomatis menghapus entry utang yang tertaut, tidak menyisakan sampah.
+  // `linkedInvestmentId` (Sesi 460): TAG di object utang itu sendiri (bukan cuma h.debtLinkId yang
+  // nunjuk SATU ARAH dari holding ke utang) — pola SAMA PERSIS `linkedAssetId` di aset.js
+  // (Aset._syncOwnerDebts()). Sebelum sesi ini, utang hasil titipan investasi TIDAK PUNYA penanda
+  // apa pun di object-nya sendiri, jadi piutang-utang.js (badge "🔒 Titipan" & exclude dari
+  // DebtStrategy) TIDAK BISA mengenalinya — cuma entri titipan ASET yang dikenali (S455).
+  //
+  // AUD-008 (Sesi 462): direvisi jadi 1 entry utang PER OWNER non-SELF dari
+  // Investment.getOwners(h) — bukan cuma 1 entry per holding — pola SAMA PERSIS
+  // Aset._syncOwnerDebts() (`linkedOwnerId` per baris). Holding single-owner lama
+  // (fundSource='titipan', belum pernah pakai setOwners()) TETAP menghasilkan
+  // TEPAT 1 entry (getOwners() sintesis 1 baris porsi 100%) dgn nilai yang SAMA
+  // PERSIS seperti sebelumnya (holdingCost(h) * 100/100 = holdingCost(h)) — 0
+  // regresi. h.debtLinkId (pointer lama, dipakai deleteHolding()/kode lama) tetap
+  // diisi id-nya KALAU cuma ada 1 entry, supaya 100% backward compatible dgn
+  // pemanggil yang masih baca field itu.
   _syncTitipanDebt(h) {
     if (!h || typeof D === 'undefined' || !D.debts) return;
-    if (h.fundSource === 'titipan') {
-      const amount = Investment.holdingCost(h);
-      const owner = (h.titipanOwner && String(h.titipanOwner).trim()) || 'Pemilik dana titipan';
-      const catatan = `Dana titipan investasi: ${h.name}`;
-      let debt = h.debtLinkId ? D.debts.find((d) => String(d.id) === String(h.debtLinkId)) : null;
+    const owners = Investment.getOwners(h).filter((o) => !o.isSelf && o.porsi > 0);
+    const cost = Investment.holdingCost(h);
+    const catatan = `Dana titipan investasi: ${h.name}`;
+    const existingLinked = D.debts.filter((d) => d.linkedInvestmentId === h.id);
+    const keepIds = new Set();
+    owners.forEach((o) => {
+      const ownerId = o.ownerId || 'titipan_investor';
+      const amount = cost * (o.porsi / 100);
+      let debt = existingLinked.find((d) => (d.linkedOwnerId || 'titipan_investor') === ownerId);
       if (debt) {
-        Object.assign(debt, { name: owner, nilai: amount, catatan, lunas: amount <= 0 });
+        Object.assign(debt, { name: o.ownerName, nilai: amount, catatan, lunas: amount <= 0, linkedInvestmentId: h.id, linkedOwnerId: ownerId });
       } else {
-        debt = { id: _invUid(), name: owner, nilai: amount, bunga: 0, cicilanBulanan: 0, tanggal: _invToday(), jatuhTempo: '', catatan, lunas: amount <= 0 };
+        debt = { id: _invUid(), name: o.ownerName, nilai: amount, bunga: 0, cicilanBulanan: 0, tanggal: _invToday(), jatuhTempo: '', catatan, lunas: amount <= 0, linkedInvestmentId: h.id, linkedOwnerId: ownerId };
         D.debts.push(debt);
-        h.debtLinkId = debt.id;
       }
-    } else if (h.debtLinkId) {
-      D.debts = D.debts.filter((d) => String(d.id) !== String(h.debtLinkId));
-      h.debtLinkId = null;
-    }
+      keepIds.add(ownerId);
+    });
+    D.debts = D.debts.filter((d) => !(d.linkedInvestmentId === h.id && !keepIds.has(d.linkedOwnerId || 'titipan_investor')));
+    const linkedNow = D.debts.filter((d) => d.linkedInvestmentId === h.id);
+    h.debtLinkId = linkedNow.length === 1 ? linkedNow[0].id : null;
   },
 
   // Hitung ulang unit & avgPrice sebuah holding murni dari riwayat transaksi
@@ -265,6 +373,23 @@ const Investment = {
     return cost > 0 ? (Investment.holdingGainLoss(h) / cost) * 100 : 0;
   },
 
+  // holdingYieldPct(h) — s476a2: CAGR tahunan per-holding, REPLIKASI PERSIS formula lama
+  // (Aset.investmentPerformance(), aset.js: ((nilai/buku)^(365/hari)-1)*100), cuma ganti
+  // sumber nilai/buku ke holdingValue()/holdingCost() (SUDAH ADA, 0 rumus baru) & sumber
+  // tanggal ke h.purchaseDate. null kalau purchaseDate belum diisi / cost<=0 / durasi <1
+  // hari / hasil non-finite (pola guard SAMA PERSIS versi lama).
+  holdingYieldPct(h) {
+    if (!h || !h.purchaseDate) return null;
+    const cost = Investment.holdingCost(h);
+    if (!(cost > 0)) return null;
+    const value = Investment.holdingValue(h);
+    const days = (new Date(todayStr()).getTime() - new Date(h.purchaseDate).getTime()) / 86400000;
+    if (!(days >= 1)) return null;
+    const years = days / 365;
+    const cagr = (Math.pow(value / cost, 1 / years) - 1) * 100;
+    return isFinite(cagr) ? cagr : null;
+  },
+
   // Total capital gain/loss yang SUDAH direalisasikan lewat transaksi 'jual'
   // (opsional difilter per holding).
   realizedGainLoss(investmentId) {
@@ -296,12 +421,29 @@ const Investment = {
     const roiPct = totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0;
     const totalDividend = holdings.reduce((s, h) => s + Investment.dividendTotal(h.id), 0);
     const totalRealizedGain = holdings.reduce((s, h) => s + Investment.realizedGainLoss(h.id), 0);
+    // yieldPct (s476a2) — rata-rata tertimbang (bobot=holdingCost) dari holdingYieldPct()
+    // tiap holding, REPLIKASI PERSIS pola agregasi lama (aset.js investmentPerformance():
+    // cagrSum+=cagr*buku; cagrWeight+=buku; yieldPct=cagrSum/cagrWeight). null kalau tidak
+    // ada holding dgn purchaseDate valid (sama seperti lama: yieldPct null kalau
+    // cagrWeight=0).
+    let cagrSum = 0;
+    let cagrWeight = 0;
+    holdings.forEach((h) => {
+      const y = Investment.holdingYieldPct(h);
+      if (y != null) {
+        const cost = Investment.holdingCost(h);
+        cagrSum += y * cost;
+        cagrWeight += cost;
+      }
+    });
+    const yieldPct = cagrWeight ? (cagrSum / cagrWeight) : null;
     return {
       holdingsCount: holdings.length,
       totalValue,
       totalCost,
       totalGainLoss,
       roiPct,
+      yieldPct,
       totalDividend,
       totalRealizedGain,
     };
@@ -320,6 +462,38 @@ const Investment = {
     return Array.from(byType.entries())
       .map(([type, value]) => ({ type, value, pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
       .sort((a, b) => b.value - a.value);
+  },
+
+  // zakatableValue() — s476a (Blocker B): total nilai holding investasi yang
+  // `zakatable===true`, difilter isHoldingOwnershipSelf() dulu (pola sama
+  // portfolioSummary()) & diskalakan per porsi SELF lewat
+  // MultiOwnerEngine.selfOwnedValue() (pola SAMA PERSIS
+  // Aset.totalValue()/Zakat.hitungMaal() di aset.js/pajak-pbb-zakat.js —
+  // 0 rumus baru, cuma reuse). Dipakai Zakat.hitungMaal() &
+  // FI.investmentAssetValue() (scope 'zakatable') supaya holding hasil
+  // migrasi tetap ikut dihitung persis seperti waktu masih di Buku Aset.
+  zakatableValue() {
+    return Investment.getHoldings()
+      .filter(isHoldingOwnershipSelf)
+      .filter((h) => h.zakatable)
+      .reduce((s, h) => s + (typeof MultiOwnerEngine !== 'undefined'
+        ? MultiOwnerEngine.selfOwnedValue(h, Investment.holdingValue(h))
+        : Investment.holdingValue(h)), 0);
+  },
+
+  // selfOwnedTotalValue() — s476a (Blocker A): total nilai SEMUA holding
+  // (bukan cuma zakatable) yang ownership efektifnya SELF, diskalakan per
+  // porsi SELF (pola sama zakatableValue() di atas). Dipakai
+  // Aset.totalValue() supaya Kekayaan Bersih ikut menjumlah holding hasil
+  // migrasi (sebelumnya Investment.portfolioSummary() tidak pernah masuk
+  // formula Net Worth manapun — lihat Blocker A di
+  // docs/s476-PLAN-migrate-investasi-to-holdings.md).
+  selfOwnedTotalValue() {
+    return Investment.getHoldings()
+      .filter(isHoldingOwnershipSelf)
+      .reduce((s, h) => s + (typeof MultiOwnerEngine !== 'undefined'
+        ? MultiOwnerEngine.selfOwnedValue(h, Investment.holdingValue(h))
+        : Investment.holdingValue(h)), 0);
   },
 
   // ---------- Watchlist ----------

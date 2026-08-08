@@ -116,6 +116,66 @@ function isAssetOwnershipSelf(a){
 if(typeof OwnershipEngine==='undefined')return true;
 return OwnershipEngine.resolve(a).type==='SELF';
 }
+// s476a — Migrasi Investasi: D.assets -> D.investments (SSOT baru, lihat
+// docs/s476-PLAN-migrate-investasi-to-holdings.md). Tabel padanan kategori
+// Buku Aset (a.jenis, kosakata bebas/ICON) ke INVESTMENT_TYPES (kosakata
+// tetap di investasi.js) -- TIDAK 1:1, sisanya fallback 'Lainnya'.
+const ASSET_JENIS_TO_INVESTMENT_TYPE={
+'Kripto':'Kripto',
+'Reksadana':'Reksa Dana',
+'Saham':'Saham',
+'Deposito/Investasi':'Deposito',
+'Emas/Logam Mulia':'Emas',
+};
+function mapAssetJenisToInvestmentType(jenis){
+return ASSET_JENIS_TO_INVESTMENT_TYPE[jenis]||'Lainnya';
+}
+// migrateAssetInvestmentsToHoldings() — s476a: migrasi 1x-jalan tapi
+// IDEMPOTENT (aman dipanggil berulang, mis. tiap Aset.renderList()) dari
+// entri investasi lama di Buku Aset ke Holding (D.investments) via
+// Investment.addHolding() (reuse, 0 validasi baru). Filter sumber SAMA
+// PERSIS Aset.investmentPerformance() (isAssetOwnershipSelf(a) DAN
+// (a.modalInvestasi!=null ATAU (a.hargaBeli!=null DAN a.jumlahUnit!=null))
+// DAN buku>0), MINUS aset yang sudah ditandai `_migratedToInvestmentId`
+// (idempotency: flag ADITIF di aset asal, aset itu sendiri TIDAK dihapus/
+// diubah nilainya -- reversible, cuma disembunyikan di renderList()).
+// owners[]/zakatable dibawa apa adanya (lihat tabel mapping di rencana
+// sesi). Return {migrated,skipped} buat dipakai test/regresi.
+function migrateAssetInvestmentsToHoldings(){
+if(typeof Investment==='undefined'||typeof D==='undefined'||!D.assets)return{migrated:0,skipped:0};
+const candidates=D.assets.filter(isAssetOwnershipSelf).filter(a=>!a._migratedToInvestmentId).map(a=>{
+const buku=a.modalInvestasi!=null?a.modalInvestasi:(a.hargaBeli!=null&&a.jumlahUnit!=null?a.hargaBeli*a.jumlahUnit:null);
+return{a,buku};
+}).filter(x=>x.buku!=null&&x.buku>0);
+let migrated=0;
+candidates.forEach(({a,buku})=>{
+const hasUnit=a.modalInvestasi==null&&a.hargaBeli!=null&&a.jumlahUnit!=null&&a.jumlahUnit>0;
+const unit=hasUnit?a.jumlahUnit:1;
+const avgPrice=hasUnit?a.hargaBeli:buku;
+const currentPrice=hasUnit?(a.nilai||0)/a.jumlahUnit:(a.nilai||0);
+const holding=Investment.addHolding({
+name:a.name,
+type:mapAssetJenisToInvestmentType(a.jenis),
+unit,
+avgPrice,
+currentPrice,
+notes:a.notes||a.catatan||'',
+zakatable:!!a.zakatable,
+// purchaseDate (s476a2 — lihat AUDIT ROI/CAGR di docs/s476-PLAN-migrate-investasi-to-holdings.md):
+// bawa a.tanggal apa adanya supaya Investment.holdingYieldPct()/portfolioSummary().yieldPct
+// bisa menghitung CAGR holding hasil migrasi -- SEBELUM fix ini a.tanggal tidak pernah
+// dibawa sama sekali (dikonfirmasi lewat audit), sehingga CAGR hilang total pasca-migrasi.
+purchaseDate:a.tanggal||null,
+});
+if(Array.isArray(a.owners)&&a.owners.length&&typeof MultiOwnerEngine!=='undefined'){
+try{Investment.setOwners(holding.id,a.owners);}catch(e){/* owners aset tidak valid utk holding -- biarkan default SELF 100%, tidak fatal */}
+}
+a._migratedToInvestmentId=holding.id;
+migrated++;
+});
+if(migrated>0&&typeof save==='function')save();
+return{migrated,skipped:candidates.length-migrated};
+}
 // syncLinkedAssetNilaiFromAkun() -- Sesi 422f: lengkapi arah sync yang selama
 // ini BELUM ADA (dicatat sejak Sesi C: "arah sync SATU ARAH dari Aset->Akun,
 // bukan sebaliknya"). Transaksi (bayar/terima/transfer) yang terjadi LANGSUNG
@@ -642,7 +702,38 @@ if(nomEl&&typeof o.porsi==='number'&&isFinite(o.porsi))nomEl.value=Math.round(ni
 Aset.updateOwnersTotal();
 return;
 }
-const porsi=Math.round((nominal/nilai*100)*100)/100;
+// FIX S457 (bug: "Nominal manual berubah setelah Simpan Porsi", audit
+// Agustus 2026): SEBELUMNYA porsi hasil konversi Rp->% dibulatkan ke 2
+// desimal (Math.round(...*100)/100). Untuk nilai aset besar, resolusi 2
+// desimal (0,01% dari nilai aset) bisa LEBIH KASAR dari selisih 2 nominal
+// Rp yang beda tapi user maksud beda -- contoh nilai aset ~Rp11,7jt:
+// 0,01% = Rp1.170, padahal selisih Rp1.699.786 vs Rp1.700.000 cuma
+// Rp214 -- keduanya kebulat ke porsi PERSIS SAMA (15,12%). Akibatnya
+// _renderOwnersList() (yang derive Nominal tampilan dari porsi tersimpan,
+// Math.round(nilai*porsi/100)) balik menampilkan nominal LAMA (1.699.786)
+// stlh "Simpan Porsi", bukan yang baru diketik user (1.700.000) -- user
+// kira ketikannya "tidak kesimpan" padahal porsi-nya sendiri sudah benar,
+// cuma re-derive Rp-nya yang lossy.
+// FIX: naikkan presisi pembulatan porsi hasil konversi dari 2 ke 4 desimal
+// (Math.round(...*10000)/10000) -- resolusi jadi 0,0001% dari nilai aset
+// (utk nilai ~Rp11,7jt = ~Rp11,7, jauh lebih halus dari selisih rupiah
+// realistis apa pun yang biasa diketik user), sehingga round-trip
+// Rp->porsi%->Rp praktis lossless. SENGAJA TIDAK pakai anchor/state
+// terpisah utk "mengingat" Rp asli yang diketik user (didiskusikan &
+// ditolak, lihat FIX-v1177-to-v1178-s457-nominal-precision.md) -- anchor
+// terpisah berarti 2 sumber-kebenaran (draft.porsi vs draft anchor Rp)
+// yang harus disinkronkan manual di banyak tempat (tiap edit Porsi (%),
+// tiap auto-bagi baris lain, tiap buka/reset modal) & rawan lupa 1 jalur
+// invalidasi -- lihat _resyncOwnersFromDOM() yang SUDAH independen
+// re-derive porsi dari DOM saat saveOwners(); 2 mekanisme sumber-kebenaran
+// yang jalan sendiri2 itulah yang jadi kandidat kuat penyebab bug KEDUA
+// ("porsi harus lebih dari 0" palsu) yang ditemukan saat coba pasang
+// anchor. Presisi lebih tinggi menyelesaikan akar masalah (rounding lossy)
+// tanpa nambah state/mekanisme baru -- 0 field baru, 1 sumber kebenaran
+// tetap (Aset._ownersDraft[i].porsi), pola pembulatan yang sama dipakai
+// konsisten di _autoDistributeRemaining()/_resyncOwnersFromDOM() (lihat
+// komentar masing2 di bawah).
+const porsi=Math.round((nominal/nilai*100)*10000)/10000;
 Aset._ownersDraft[i].porsi=porsi;
 const porsiEl=document.getElementById('ownerPorsi'+i);
 if(porsiEl)porsiEl.value=porsi;
@@ -716,16 +807,23 @@ const p=typeof draft[k].porsi==='number'&&isFinite(draft[k].porsi)?Math.max(0,dr
 oldPorsi[k]=p;
 totalOldPorsi+=p;
 });
+// FIX S457: presisi share dinaikkan dari 2 ke 4 desimal, SAMA PERSIS
+// alasan & pola di onOwnerNominalInput() (lihat komentar panjang di
+// sana) -- baris ini pun jadi input konversi Rp<->% yang ditampilkan di
+// Nominal (Rp) baris lain (baris di bawah, nomEl.value=Math.round(nilai*
+// draft[k].porsi/100)), jadi kalau presisinya tetap 2 desimal di sini,
+// bug rounding-collision yang sama bisa muncul dari jalur auto-bagi ini
+// juga (bukan cuma dari baris yang user ketik manual).
 let usedPorsi=0;
 otherIdx.forEach((k)=>{
 if(k===lastIdx)return;
 const share=totalOldPorsi>0
-?Math.round((sisaPorsi*(oldPorsi[k]/totalOldPorsi))*100)/100
-:Math.round((sisaPorsi/otherIdx.length)*100)/100;
+?Math.round((sisaPorsi*(oldPorsi[k]/totalOldPorsi))*10000)/10000
+:Math.round((sisaPorsi/otherIdx.length)*10000)/10000;
 draft[k].porsi=share;
 usedPorsi+=share;
 });
-draft[lastIdx].porsi=Math.round((sisaPorsi-usedPorsi)*100)/100;
+draft[lastIdx].porsi=Math.round((sisaPorsi-usedPorsi)*10000)/10000;
 otherIdx.forEach((k)=>{
 const porsiEl=document.getElementById('ownerPorsi'+k);
 if(porsiEl)porsiEl.value=draft[k].porsi;
@@ -743,6 +841,92 @@ onOwnerIsSelfToggle(i,checked){
 if(!Array.isArray(Aset._ownersDraft)||!Aset._ownersDraft[i])return;
 Aset._ownersDraft[i].isSelf=!!checked;
 },
+// _resyncOwnersFromDOM() -- SESI 453 FIX (laporan user: field Nominal (Rp)
+// kadang "tidak kepanggil" -- di video kelihatan toolbar quick-action browser
+// (mis. Brave, salah deteksi field Nominal sbg form checkout/belanja) muncul
+// di atas keyboard tepat saat user mengetik, mengganggu event `oninput`
+// ketikan TERAKHIR sebelum tap Simpan). Akibatnya Aset._ownersDraft[i].porsi
+// bisa ketinggalan satu ketikan dari apa yang SUNGGUH tertulis di layar
+// (`#ownerNominal{i}`.value di DOM) -- draft di memori jadi tidak sinkron dgn
+// tampilan, walau user sudah lihat angka yang benar sebelum tap Simpan.
+// Dipanggil saveOwners() PALING AWAL (sebelum validasi nama/porsi & sebelum
+// MultiOwnerEngine.setOwners()) -- baca ulang value ASLI tiap
+// `#ownerNominal{i}` langsung dari DOM (sumber kebenaran akhir, bukan
+// bergantung pada apakah `oninput` sempat ke-fire), bandingkan dgn nominal
+// yang TERSIRAT dari draft[i].porsi saat ini (nilai*porsi/100, dibulatkan --
+// pola pembulatan SAMA PERSIS onOwnerPorsiInput()/_autoDistributeRemaining()
+// waktu nulis value ke DOM, supaya baris yang MEMANG tidak diketik ulang
+// tidak keliru dianggap "beda"). Kalau beda -> berarti ada ketikan yang
+// belum ke-commit ke draft -- recompute porsi dari nominal DOM tsb, rumus
+// PERSIS cabang normal onOwnerNominalInput() (nilai>0): porsi =
+// ROUND((nominal/nilai*100)*100)/100. Baris LAIN & _autoDistributeRemaining()
+// SENGAJA tidak ikut dipanggil di sini (beda dari onOwnerNominalInput()) --
+// method ini murni "commit ketikan yang lewat", bukan re-trigger efek
+// samping auto-bagi; kalau hasilnya bikin total !=100%, validateOwners()
+// (dipanggil MultiOwnerEngine.setOwners() di bawah, TIDAK diubah) yang akan
+// menolak & munculkan toast, sama seperti skenario oninput normal yang
+// sempat ke-trigger tapi user belum sempat perbaiki baris lain -- 0 perilaku
+// baru di luar guard "event ketinggalan" ini. Guard `nilai<=0`: cabang
+// nilai-tersirat (S451, field Nominal jadi sumber a.nilai) TIDAK disentuh
+// method ini -- draft[i].porsi di kondisi itu memang belum bisa dihitung
+// balik dari nominal/nilai (nilai-nya sendiri yang belum ada), jadi 0 risiko
+// menimpa alur itu dgn angka salah.
+_resyncOwnersFromDOM(){
+// Guard `document` tidak ada/bukan DOM asli (mis. test/harness yang
+// men-drive saveOwners() langsung dari draft tanpa DOM sama sekali) --
+// tidak ada apa pun utk dibaca ulang, biarkan draft di memori apa adanya
+// (perilaku SEBELUM sesi 453, 0 regresi utk pemanggilan non-UI).
+if(typeof document==='undefined'||!document||typeof document.getElementById!=='function')return;
+const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
+if(!draft.length)return;
+const nilai=Aset._ownersAssetNilai();
+if(!(nilai>0))return;
+draft.forEach((o,i)=>{
+const nomEl=document.getElementById('ownerNominal'+i);
+// `typeof nomEl.value!=='string'` -- guard tambahan (BUKAN cuma
+// `!nomEl`): elemen DOM (asli maupun tiruan stateful di test) SELALU
+// punya `.value` bertipe string (default '' kalau kosong). Ini dipakai
+// utk membedakan elemen sungguhan dari stub permisif harness test murni
+// (loadSource.js, lihat komentarnya: "Jangan pakai harness ini buat
+// nge-test fungsi yang baca/tulis DOM") yang balas APA SAJA property
+// dgn objek proxy lain (bukan string) -- tanpa guard ini, baris yang
+// tidak pernah dirender ke DOM sungguhan bisa salah kebaca sbg "Nominal
+// kosong" & menimpa porsi draft yang sudah benar jadi 0%.
+if(!nomEl||typeof nomEl.value!=='string')return;
+// FIX S457 (bug KEDUA yang ditemukan saat audit "Nominal berubah stlh
+// Simpan Porsi": saveOwners() menolak dgn "Pemilik ke-1: porsi harus
+// lebih dari 0..." padahal porsi baris itu SUDAH valid, mis. 15,12%):
+// SEBELUMNYA field DOM yang value-nya '' (kosong -- BUKAN "0" yang
+// diketik eksplisit) diparse `parseFloat('')` = NaN -> jatuh ke fallback
+// `isFinite(n)?n:0` = 0. Nilai 0 itu lalu dibandingkan ke
+// `nominalTersirat` (hasil derive dari porsi valid, pasti !=0 kalau
+// porsinya >0) -- BEDA, jadi dianggap "ada ketikan baru yang belum
+// ke-commit" & porsi baris itu DITIMPA jadi 0 (round(0/nilai*100...)=0),
+// PADAHAL field itu memang belum pernah ditulisi APA PUN (kosong bukan
+// berarti user mengetik "0") -- kondisi ini bisa terjadi mis. baris yang
+// porsinya diisi lewat _autoDistributeRemaining()/onOwnerPorsiInput
+// (bukan diketik langsung ke Nominal) di render/test-harness tertentu di
+// mana elemen DOM-nya sendiri belum sempat ditulis nilai awal. Fix: field
+// KOSONG (setelah di-trim) di-skip total, TIDAK ditafsirkan sbg "0 Rp
+// eksplisit" -- konsisten dgn cara onOwnerNominalInput() sendiri
+// memperlakukan input kosong (parseFloat('')=NaN, TIDAK auto-jadi-0 utk
+// alur derive; guard eksplisit di sana beda konteks). Kalau user memang
+// mau set 0% lewat Nominal, tetap bisa lewat ketik "0" beneran (value
+// jadi string "0", bukan '', lolos guard ini & tetap diproses normal).
+if(nomEl.value.trim()==='')return;
+const n=parseFloat(String(nomEl.value).replace(/[^0-9.-]/g,''));
+if(!isFinite(n))return;
+const domNominal=n;
+const porsiSaatIni=typeof o.porsi==='number'&&isFinite(o.porsi)?o.porsi:0;
+const nominalTersirat=Math.round(nilai*porsiSaatIni/100);
+if(domNominal===nominalTersirat)return;
+// FIX S457: presisi 4 desimal, sama alasan & pola dgn
+// onOwnerNominalInput()/_autoDistributeRemaining() -- lihat komentar
+// panjang di onOwnerNominalInput().
+const porsiBaru=Math.round((domNominal/nilai*100)*10000)/10000;
+o.porsi=porsiBaru;
+});
+},
 // saveOwners() -- SESI 392d: tulis Aset._ownersDraft ke D.assets[].owners (baru
 // benar-benar tersimpan, sebelumnya cuma draft di memori sejak 392a-392c). Validasi
 // & normalisasi 100% reuse MultiOwnerEngine.setOwners() (S390, yang di dalamnya
@@ -751,6 +935,11 @@ Aset._ownersDraft[i].isSelf=!!checked;
 // pernah tersimpan) diberi id via uid() (helper global, sudah dipakai di seluruh
 // aset.js) sebelum divalidasi -- ownerId dari data lama (hasil MultiOwnerEngine.
 // getOwners() di openOwnersModal) tetap dipakai apa adanya.
+// SESI 453: _resyncOwnersFromDOM() dipanggil PALING AWAL (lihat komentar
+// method itu) -- baca ulang value asli tiap field Nominal dari DOM sebelum
+// validasi/simpan, supaya walau `oninput` ketikan terakhir sempat kelewat
+// (mis. diganggu toolbar quick-action browser), nilai yang BENAR-BENAR ada
+// di layar tetap yang disimpan.
 saveOwners(){
 if(!Aset._ownersModalAsset){toast('⚠️ Simpan aset ini dulu sebelum mengatur porsi kepemilikan');return;}
 if(typeof MultiOwnerEngine==='undefined'){toast('⚠️ Fitur porsi kepemilikan belum siap dimuat');return;}
@@ -758,6 +947,7 @@ const a=D.assets.find(x=>sameId(x.id,Aset._ownersModalAsset.id));
 if(!a){toast('⚠️ Aset tidak ditemukan, coba tutup dan buka lagi');return;}
 const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
 if(!draft.length){toast('⚠️ Tambahkan minimal 1 pemilik sebelum menyimpan');return;}
+Aset._resyncOwnersFromDOM();
 for(let i=0;i<draft.length;i++){
 if(!draft[i].ownerName||!draft[i].ownerName.trim()){toast('⚠️ Nama pemilik baris ke-'+(i+1)+' wajib diisi');return;}
 }
@@ -1085,6 +1275,10 @@ if(hadTitipanDebt&&typeof renderDebtList==='function')renderDebtList();
 renderList(){
 const el=document.getElementById('assetList');
 if(!el)return;
+// s476a: migrasi idempotent dijalankan tiap renderList() -- murah (early-exit
+// begitu semua kandidat sudah bertanda `_migratedToInvestmentId`), memastikan
+// entri investasi lama otomatis pindah ke Holding tanpa perlu tombol manual.
+migrateAssetInvestmentsToHoldings();
 // Ownership Filter UI (S235) — reuse OwnershipEngine.filterByType() apa adanya, TIDAK ada
 // filter/logic baru. HANYA memfilter daftar yang DIRENDER di sini; totalValue()/
 // renderDashboard()/dst di bawah TETAP dihitung dari D.assets penuh lewat pemanggilan
@@ -1098,8 +1292,14 @@ if(assetOwnFilterVal&&assetOwnFilterVal!=='ALL'&&typeof OwnershipEngine!=='undef
 const assetOwnFiltered=OwnershipEngine.filterByType(list,assetOwnFilterVal);
 if(assetOwnFiltered.ok)list=assetOwnFiltered.items;
 }
-if(!list.length){el.innerHTML='<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Belum ada aset tercatat</div></div>';Aset.renderDashboard();Aset.renderInvestasi();Penyusutan.renderList();PajakAset.renderList();LaporanAset.renderList();AssetInsight.render();return;}
-el.innerHTML=list.map(a=>{
+// s476a: entri yang sudah termigrasi ke Holding (D.investments) DISEMBUNYIKAN
+// dari daftar editable biasa (tetap ADA di D.assets, bukan dihapus -- lihat
+// migrateAssetInvestmentsToHoldings()), diganti 1 baris ringkasan di bawah.
+const migratedCount=list.filter(a=>a._migratedToInvestmentId).length;
+list=list.filter(a=>!a._migratedToInvestmentId);
+const migratedBanner=migratedCount?`<div class="tx-item u-pointer" data-action="dashHubNavigateToFeature" data-args='${escapeHtml(JSON.stringify([{page:'aset',tab:'investasi'}]))}'><div class="tx-icon u-bgaccsoft">💹</div><div class="tx-info"><div class="tx-name">Investasi kamu sekarang dikelola di tab Investasi</div><div class="tx-meta">${migratedCount} item dipindah dari Buku Aset</div></div><div class="tx-amount">→</div></div>`:'';
+if(!list.length){el.innerHTML=migratedBanner||'<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Belum ada aset tercatat</div></div>';Aset.renderDashboard();Aset.renderInvestasi();Penyusutan.renderList();PajakAset.renderList();LaporanAset.renderList();AssetInsight.render();return;}
+el.innerHTML=migratedBanner+list.map(a=>{
 // S306 UI polish: baris tx-meta sebelumnya menggabung jenis · label/extraLabel · lokasi ·
 // akun tertaut · kepemilikan · dana titipan · %untung jadi 1 kalimat panjang tanpa jarak
 // visual (lebih padat drpd kasus chip Tagihan S299/S304). Sekarang HANYA 2 chip prioritas
@@ -1142,13 +1342,21 @@ const linkedAcc=a.accountId?D.accounts.find(x=>sameId(x.id,a.accountId)):null;
 // Kekayaan Bersih tetap dicegah oleh totalSaldoAkun() (linkedAssetAccountIds()),
 // independen dari saldo tampilan ini.
 const linkMeta=linkedAcc?('🔗 Akun tertaut: '+escapeHtml(linkedAcc.name)+' (saldo '+fmt(recalcAccBalance(linkedAcc.id))+')'):(a.accountId?'🔗 Akun tertaut: (akun terhapus)':'');
+// linkMultiOwnerWarn -- SESI 454 (lanjutan diskusi BUG-OWN-002/S449): akun tertaut SELALU
+// disinkron ke NILAI PENUH instrumen (bukan porsi tertentu), tapi ini bisa bikin user
+// multi-pemilik salah kira akun tertaut = porsi mereka saja. 0 perubahan ke logic
+// saldo/utang (lihat linkedAccNilai di Aset.save()/saveOwners()) -- murni badge
+// informational, reuse MultiOwnerEngine.getOwners() (sama pola _renderTitipanSummary()).
+// Porsi non-SELF tetap tercatat otomatis sbg Utang Titipan lewat _syncOwnerDebts().
+const isMultiOwner=(typeof MultiOwnerEngine!=='undefined')&&(()=>{const res=MultiOwnerEngine.getOwners(a);return!!(res&&res.ok&&res.isMultiOwner);})();
+const linkMultiOwnerWarn=(linkedAcc&&isMultiOwner)?'⚠️ Akun tertaut merepresentasikan 100% nilai aset (bukan cuma porsi Anda) — porsi pemilik lain tercatat sbg Utang Titipan':'';
 const ownResolved=(typeof OwnershipEngine!=='undefined')?OwnershipEngine.resolve(a):null;
 const ownMeta=ownResolved?('👤 Kepemilikan: '+escapeHtml(OwnershipEngine.label(ownResolved.type))):'';
 const titipanLabel=a.titipanOwnerType==='keluarga'?'Keluarga':(a.titipanOwnerType==='lainnya'?'Pihak Lain':'Investor');
 const titipanMeta=a.titipanAmount>0?('💰 Titipan '+escapeHtml(titipanLabel)+': '+fmt(a.titipanAmount)):'';
 const extraMeta=Aset.extraLabel(a)?escapeHtml(Aset.extraLabel(a)):'';
 const pctMeta=(a.keuntunganPct!=null&&isFinite(a.keuntunganPct))?(`${a.keuntunganPct>=0?'▲':'▼'} ${a.keuntunganPct>=0?'+':''}${a.keuntunganPct.toFixed(2)}%`):'';
-const metaRows=[extraMeta,linkMeta,ownMeta,titipanMeta,pctMeta].filter(Boolean);
+const metaRows=[extraMeta,linkMeta,linkMultiOwnerWarn,ownMeta,titipanMeta,pctMeta].filter(Boolean);
 // Div meta TETAP ada di HTML (bukan dibuat/dihapus dinamis) supaya elemennya selalu bisa
 // diambil lewat getElementById; kalau kebetulan kosong (mis. OwnershipEngine belum kemuat),
 // disembunyikan lewat display:none — bukan cuma innerHTML='' — supaya padding bawaannya
@@ -1179,7 +1387,21 @@ openQS('qsAssetActions');
 // pajak-pbb-zakat.js) per aset, bukan `a.nilai` mentah. Aset single-owner
 // (mayoritas/legacy) TIDAK berubah -- selfOwnedValue() balik nilai penuh kalau
 // selfPorsi 100%, 0 regresi.
-totalValue(){return(D.assets||[]).filter(isAssetOwnershipSelf).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);},
+// s476a (docs/s476-PLAN-migrate-investasi-to-holdings.md): TAMBAH filter
+// `!a._migratedToInvestmentId` -- aset yang sudah dimigrasi ke Holding
+// (D.investments) dikecualikan dari total di SINI (masih ADA di D.assets,
+// cuma tidak ikut dijumlah lagi -- nilainya sekarang "milik" sisi Investasi).
+// SENGAJA TIDAK menambahkan Investment.*TotalValue() langsung di titik ini --
+// `Aset.totalValue()` dipakai juga oleh AssetPortfolioAPI (asset-portfolio-
+// api.js) sbg `assetValue` yang DIJUMLAH TERPISAH dgn `investmentValue`
+// (Investment.portfolioSummary().totalValue) di portfolioComposition(); kalau
+// holding ikut ditambahkan di sini juga, jadi DOBEL-HITUNG di kartu Portfolio
+// itu. Penjumlahan Net Worth (Kekayaan.currentNetWorth()/renderBersih(), lihat
+// Blocker A rencana sesi) dilakukan 1 titik terpisah di modules-calc.js lewat
+// `Investment.selfOwnedTotalValue()` (versi TERSKALA porsi SELF, beda dari
+// portfolioSummary().totalValue yg dipakai AssetPortfolioAPI -- lihat catatan
+// di investasi.js).
+totalValue(){return(D.assets||[]).filter(isAssetOwnershipSelf).filter(a=>!a._migratedToInvestmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);},
 // FITUR BARU: Dashboard Aset — ringkasan Total Aset / Nilai Buku / Nilai Pasar +
 // breakdown per kategori (jenis). Nilai Pasar = total a.nilai (estimasi nilai saat
 // ini, sesuai yang diisi user di modal Aset). Nilai Buku = total modal/harga
@@ -2199,7 +2421,7 @@ applyOneCardCollapsePref('timelineWCard');
 // renderPageContent('aset') di modules-render.js) TERLEPAS dari tab mana yang
 // lagi aktif -- sama seperti pola kartu ber-collapse yg sudah ada di app ini,
 // cuma sekarang levelnya per-tab, bukan per-kartu.
-const ASET_TAB_ORDER=['ringkasan','buku','analisis','manajemen'];
+const ASET_TAB_ORDER=['ringkasan','buku','analisis','manajemen','investasi'];
 function setAsetTab(t,el){
 const asetTabBtns=document.querySelectorAll('#page-aset .cn-tab');
 asetTabBtns.forEach(b=>b.classList.remove('active'));
@@ -2214,6 +2436,19 @@ document.getElementById('asetTab-analisis').style.display='';
 // Manajemen (dipindah dari Dashboard Hub) — pola sama 3 tab di atas.
 document.getElementById('asetTab-manajemen').classList.toggle('u-dnone', t!=='manajemen');
 document.getElementById('asetTab-manajemen').style.display='';
+// Investasi (Fase 1, BUG-INV-001 Opsi 3 — lihat AUDIT-BUILD-UI-INVESTASI-OPSI3.md) — pola
+// sama 4 tab di atas, PLUS render on-demand (InvestmentListUI.render(), bukan cuma toggle
+// class) tepat saat tab ini yang jadi aktif -- kartu ringkasan/list holding di dalamnya
+// SENGAJA tidak ikut dipanggil dari renderPageContent('aset') tiap buka #page-aset (beda
+// dgn renderAssetList() dkk yg SELALU jalan) supaya tidak kerja 2x kalau tab ini tidak
+// sedang dilihat user; renderPageContent('aset') tetap memanggilnya sekali di awal (lihat
+// modules-render.js) utk kasus reload langsung ke tab ini / restore state.
+const investTab=document.getElementById('asetTab-investasi');
+if(investTab){
+investTab.classList.toggle('u-dnone', t!=='investasi');
+investTab.style.display='';
+if(t==='investasi'&&typeof InvestmentListUI!=='undefined')InvestmentListUI.render();
+}
 }
 
 // (bukan module). Dispatcher data-action (mis. data-action="Aset.exportXLSX",
