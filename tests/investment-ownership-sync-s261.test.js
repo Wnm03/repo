@@ -6,12 +6,16 @@
 // SUDAH SELF-only sejak S193 — lihat tests/ownership-sync-investasi.test.js):
 //
 //   1. Aset.investmentPerformance() (modules/asset/aset.js) — SEBELUM sesi
-//      ini membaca D.assets MENTAH tanpa filter ownership, padahal fungsi
-//      ini adalah SATU-SATUNYA sumber data InvestmentPlannerAPI
-//      (modules/finance/investment-planner-api.js, Sesi 161) — jadi
+//      ini membaca D.assets MENTAH tanpa filter ownership. Waktu itu
+//      (Sesi 161-s476a) fungsi ini adalah SATU-SATUNYA sumber data
+//      InvestmentPlannerAPI, jadi bug ini ikut menembus ke
 //      portfolioOverview()/assetAllocation()/investmentRecommendation()
-//      Investment Planner ikut menghitung aset ber-ownership
-//      INVESTOR/CUSTOMER/THIRD_PARTY/FAMILY sebagai milik sendiri.
+//      Investment Planner. SEJAK s476b, InvestmentPlannerAPI sudah
+//      direwire baca `Investment.*` (lihat bagian "(2)" di bawah,
+//      diupdate mengikuti rewire itu) — tapi fix filter ownership di
+//      Aset.investmentPerformance() ITU SENDIRI tetap relevan & tetap
+//      dites di sini (fungsi ini masih dipakai kartu "Performa
+//      Investasi" di dashboard Buku Aset lama).
 //   2. InvestAI._investmentAssets()/_checkPortofolio() (modules/asset/
 //      invest-ai-widget.js, widget "🤖 Rekomendasi AI" di kartu Alokasi
 //      Aset) — _investmentAssets() membaca D.assets.filter(zakatable) tanpa
@@ -118,32 +122,61 @@ test('S261: Aset.investmentPerformance() — OwnershipEngine tidak dimuat -> fal
 });
 
 // --- (2) InvestmentPlannerAPI cascade (bukti fix di atas benar-benar naik) -
+//
+// s476b: InvestmentPlannerAPI direwire dari `Aset.investmentPerformance()`
+// ke `Investment.portfolioSummary()`/`Investment.assetAllocation()`
+// (docs/s476-PLAN-migrate-investasi-to-holdings.md) — cascade S261 di
+// bawah diupdate MENGIKUTI rewire itu, sekarang membangun `D.investments`
+// (holding) langsung, BUKAN lagi `D.assets`. Filter ownership sendiri
+// (isHoldingOwnershipSelf()) TIDAK berubah — SUDAH ada di
+// Investment.portfolioSummary()/assetAllocation() sejak S193 (lihat
+// tests/ownership-sync-investasi.test.js), test di bawah cuma
+// membuktikan filter itu tetap naik/tercermin lewat InvestmentPlannerAPI
+// pasca-rewire.
+
+function holdingsMix() {
+  return [
+    // SELF (default, tanpa field ownership): cost 1jt, value 1.5jt
+    { id: 'h1', name: 'Emas Sendiri', type: 'Emas', unit: 1, avgPrice: 1000000, currentPrice: 1500000 },
+    // SELF eksplisit: cost 900rb, value 1jt
+    { id: 'h2', name: 'Reksadana Sendiri', type: 'Reksa Dana', unit: 100, avgPrice: 9000, currentPrice: 10000, ownership: 'SELF' },
+    // INVESTOR — harus dikecualikan
+    { id: 'h3', name: 'Saham Modal Investor', type: 'Saham', unit: 1, avgPrice: 5000000, currentPrice: 8000000, ownership: 'INVESTOR' },
+    // CUSTOMER (lowercase) — harus dikecualikan
+    { id: 'h4', name: 'Emas Titipan Customer', type: 'Emas', unit: 1, avgPrice: 1800000, currentPrice: 2000000, ownership: 'customer' },
+  ];
+}
 
 function makePlannerCtx(D) {
-  const asetCtx = makeAsetCtx(D);
-  const plannerCtx = loadSource(['modules/finance/investment-planner-api.js'], { Aset: asetCtx.Aset }, ['InvestmentPlannerAPI']);
+  const invCtx = loadSource(
+    ['modules/shared/ownership-engine.js', 'modules/shared/multi-owner-engine.js', 'modules/asset/investasi.js'],
+    { D, uid: () => 'uid_' + Math.random().toString(36).slice(2), save: () => {} },
+    ['Investment'],
+  );
+  const plannerCtx = loadSource(['modules/finance/investment-planner-api.js'], { Investment: invCtx.Investment }, ['InvestmentPlannerAPI']);
   return plannerCtx.InvestmentPlannerAPI;
 }
 
-test('S261: InvestmentPlannerAPI.portfolioOverview() — cascade, aset non-SELF (INVESTOR/CUSTOMER) TIDAK ikut ke totalValue/totalCost', () => {
-  const D = { assets: assetsMix() };
+test('S261/s476b: InvestmentPlannerAPI.portfolioOverview() — cascade, holding non-SELF (INVESTOR/CUSTOMER) TIDAK ikut ke totalValue/totalCost', () => {
+  const D = { investments: holdingsMix() };
   const api = makePlannerCtx(D);
   const p = api.portfolioOverview();
   assert.equal(p.ok, true);
+  // h1: cost 1jt, value 1.5jt | h2: cost 900rb, value 1jt. h3/h4 (non-SELF) dikecualikan.
   assert.equal(p.holdingsCount, 2);
   assert.equal(p.totalValue, 2500000);
   assert.equal(p.totalCost, 1900000);
 });
 
-test('S261: InvestmentPlannerAPI.assetAllocation() — cascade, breakdown per jenis hanya dari aset SELF', () => {
-  const D = { assets: assetsMix() };
+test('S261/s476b: InvestmentPlannerAPI.assetAllocation() — cascade, breakdown per tipe hanya dari holding SELF', () => {
+  const D = { investments: holdingsMix() };
   const api = makePlannerCtx(D);
   const a = api.assetAllocation();
   assert.equal(a.ok, true);
   const types = a.allocation.map((r) => r.type).sort();
-  assert.deepEqual(types, ['Emas', 'Reksadana']);
+  assert.deepEqual(types, ['Emas', 'Reksa Dana']);
   const emas = a.allocation.find((r) => r.type === 'Emas');
-  assert.equal(emas.value, 1500000, 'Emas SELF cuma a1 (1.5jt), a4 (CUSTOMER, 2jt) dikecualikan');
+  assert.equal(emas.value, 1500000, 'Emas SELF cuma h1 (1.5jt), h4 (CUSTOMER, 2jt) dikecualikan');
 });
 
 // --- (3) InvestAI (widget Rekomendasi AI di kartu Alokasi Aset) -----------

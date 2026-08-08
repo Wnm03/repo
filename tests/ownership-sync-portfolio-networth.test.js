@@ -72,9 +72,14 @@ test('cascade — totalSaldoAkun()/totalAssetValue() sudah exclude non-SELF (reg
 test('cascade — Kekayaan.currentNetWorth() (Net Worth) otomatis exclude non-SELF TANPA perubahan tambahan di modules-calc.js', () => {
   const D = makeD();
   const ctx = makeCtx(D);
-  // netWorth = saldoAkun(500000, SELF) + totalAset(1000000, SELF) + inventori(0) + piutang(0) - utang(0)
-  //          = 1500000 (akun INVESTOR 300000 & aset CUSTOMER 400000 TIDAK ikut)
-  assert.equal(ctx.Kekayaan.currentNetWorth(), 1500000);
+  // s476a (Blocker A): currentNetWorth() SEKARANG ikut menjumlah
+  // Investment.selfOwnedTotalValue() (holding SELF h1=120000; h2 FAMILY
+  // dikecualikan) -- sebelumnya TIDAK PERNAH masuk formula Net Worth.
+  // netWorth = saldoAkun(500000, SELF) + totalAset(1000000, SELF)
+  //          + investasi(120000, SELF) + inventori(0) + piutang(0) - utang(0)
+  //          = 1620000 (akun INVESTOR 300000, aset CUSTOMER 400000, holding
+  //          FAMILY 600000 TIDAK ikut)
+  assert.equal(ctx.Kekayaan.currentNetWorth(), 1620000);
 });
 
 test('cascade — AssetPortfolioAPI.portfolioComposition() (Portfolio) otomatis exclude non-SELF di cash/asset/investment', () => {
@@ -95,7 +100,11 @@ test('cascade — AssetPortfolioAPI.netWorthSnapshot() gabungkan netWorth & port
   const ctx = makeCtx(D);
   const snap = ctx.AssetPortfolioAPI.netWorthSnapshot();
   assert.equal(snap.ok, true);
-  assert.equal(snap.netWorth, 1500000);
+  // s476a (Blocker A): netWorth (Kekayaan.currentNetWorth()) sekarang ikut
+  // holding SELF (120000) -- lihat test "cascade — Kekayaan.currentNetWorth()"
+  // di atas. portfolioValue (dari portfolioComposition(), TIDAK diubah sesi
+  // ini) tetap seperti semula.
+  assert.equal(snap.netWorth, 1620000);
   assert.equal(snap.portfolioValue, 500000 + 1000000 + 120000);
 });
 

@@ -122,9 +122,15 @@ test('onOwnerNominalInput(): field porsi hasil sync tetap dipakai saveOwners() (
   ctx.Aset.editId = 'a1';
   ctx.Aset.openOwnersModal();
   ctx.Aset.onOwnerNameInput(0, 'Saya Sendiri');
+  // SESI 453: set .value DOM langsung sebelum panggil handler, mensimulasikan
+  // typing sungguhan (lihat komentar sama di
+  // asset-owners-nominal-autodistribute-s431.test.js) -- saveOwners() sekarang
+  // membaca ulang value ini via Aset._resyncOwnersFromDOM().
+  dom.getElementById('ownerNominal0').value = '60000000';
   ctx.Aset.onOwnerNominalInput(0, '60000000'); // 60% dari 100jt
   ctx.Aset.addOwnerRow();
   ctx.Aset.onOwnerNameInput(1, 'Investor B');
+  dom.getElementById('ownerNominal1').value = '40000000';
   ctx.Aset.onOwnerNominalInput(1, '40000000'); // 40%
   ctx.Aset.saveOwners();
   // loadSource() jalan di vm.createContext terpisah -- array/object yang
@@ -201,6 +207,9 @@ test('saveOwners(): nilai dasar tersirat dari Nominal (Rp) ikut tersimpan ke a.n
   const ctx = makeCtx(D, dom);
   ctx.Aset.editId = 'a1';
   ctx.Aset.openOwnersModal();
+  // SESI 453: lihat komentar sama di test lain -- set .value DOM langsung
+  // sebelum panggil handler, mensimulasikan typing sungguhan.
+  dom.getElementById('ownerNominal1').value = '10000000';
   ctx.Aset.onOwnerNominalInput(1, '10000000');
   ctx.Aset.saveOwners();
   assert.equal(D.assets[0].nilai, 11785504, 'a.nilai (Estimasi Nilai Saat Ini) harus ikut terisi otomatis dari nilai tersirat, TIDAK perlu user isi manual di form Aset lagi');

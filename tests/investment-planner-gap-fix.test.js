@@ -1,88 +1,56 @@
 'use strict';
-// tests/investment-planner-gap-fix.test.js — Sesi 161, gap fix Investment
-// Planner. Sebelum sesi ini, InvestmentPlannerAPI membaca `Investment`/
-// `D.investments` (modules/asset/investasi.js) yang TIDAK PERNAH punya UI
-// penulis data (Investment.addHolding() tidak pernah dipanggil dari mana
-// pun) -- jadi Investment Planner selalu kosong berapa pun data yang user
-// isi di 📋 Buku Aset. Sesi ini merewire InvestmentPlannerAPI supaya baca
-// `Aset.investmentPerformance()` (modules/asset/aset.js, diekstrak dari
-// Aset.renderInvestasi() -- 0 rumus baru) -- sumber data yang benar-benar
-// terisi lewat UI Buku Aset yang sudah ada.
+// tests/investment-planner-gap-fix.test.js — awalnya Sesi 161 (gap fix:
+// InvestmentPlannerAPI direwire dari `Investment`/`D.investments` yang
+// waktu itu SELALU kosong, ke `Aset.investmentPerformance()`/D.assets,
+// sumber data yang waktu itu benar-benar terisi lewat UI Buku Aset).
+//
+// SESI s476b — REWIRE KEMBALI (docs/s476-PLAN-migrate-investasi-to-
+// holdings.md, bagian "s476b — Investment Planner"): premis Sesi 161
+// ("Investment.addHolding() tidak pernah dipanggil dari UI mana pun")
+// SUDAH TIDAK BERLAKU sejak s476a — `D.investments` sekarang jadi SSOT
+// (migrasi 1x-jalan dari D.assets + tab "💹 Investasi" adalah UI penulis
+// data yang nyata). File test ini di-update MENGIKUTI rewire itu — SEKARANG
+// menguji bahwa InvestmentPlannerAPI membaca `Investment.*`
+// (modules/asset/investasi.js), BUKAN lagi `Aset.investmentPerformance()`.
 //
 // Cakupan test:
-//   1. Aset.investmentPerformance() -- ekstraksi murni dari renderInvestasi(),
-//      hasil harus identik dgn formula lama (ROI/gain/yield/best/worst).
-//   2. InvestmentPlannerAPI -- portfolioOverview()/assetAllocation()/
+//   1. InvestmentPlannerAPI.portfolioOverview()/assetAllocation()/
 //      watchlistAlerts()/investmentRecommendation()/summary() membaca dari
-//      Aset (via stub), BUKAN dari Investment/D.investments lagi.
+//      `Investment` (via stub/instance asli), BUKAN dari `Aset` lagi.
+//   2. watchlistAlerts() sekarang benar-benar meneruskan
+//      `Investment.watchlistAlerts()` (bukan lagi selalu count:0).
+//   3. Guard: `Investment` belum dimuat -> ok:false (tidak diam-diam
+//      pura-pura kosong).
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadSource } = require('./helpers/loadSource');
 
-function makeAset(D) {
-  const ctx = loadSource(['modules/asset/aset.js'], {
-    D,
-    todayStr: () => '2026-07-23',
-    fmtFull: (n) => 'Rp' + Math.round(n || 0),
-    fmtFullSigned: (n) => (n >= 0 ? '+' : '') + 'Rp' + Math.round(n || 0),
-    escapeHtml: (s) => s,
-    uid: () => Math.random(),
-    save: () => {},
-    sameId: (a, b) => String(a) === String(b),
-    parsePzNum: (s) => Number(s),
-    parseDecStr: (s) => Number(s),
-    toast: () => {},
-  }, ['Aset']);
-  return ctx.Aset;
+function makeInvestment(D, extra = {}) {
+  const ctx = loadSource(
+    ['modules/shared/ownership-engine.js', 'modules/shared/multi-owner-engine.js', 'modules/asset/investasi.js'],
+    { D, uid: () => 'uid_' + Math.random().toString(36).slice(2), save: () => {}, ...extra },
+    ['Investment'],
+  );
+  return ctx.Investment;
 }
 
-function makePlannerAPI(Aset, extra = {}) {
+function makePlannerAPI(Investment, extra = {}) {
   const ctx = loadSource(['modules/finance/investment-planner-api.js'], {
-    Aset,
+    Investment,
     ...extra,
   }, ['InvestmentPlannerAPI']);
   return ctx.InvestmentPlannerAPI;
 }
 
-test('Aset.investmentPerformance() kosong kalau tidak ada aset dengan data modal', () => {
-  const Aset = makeAset({ assets: [{ id: 1, name: 'Tanah', jenis: 'Tanah', nilai: 5000000 }] });
-  const p = Aset.investmentPerformance();
-  assert.equal(p.holdingsCount, 0);
-  assert.equal(p.totalModal, 0);
-  assert.equal(p.tracked.length, 0);
-});
-
-test('Aset.investmentPerformance() menghitung ROI/gain dari modalInvestasi & hargaBeli×jumlahUnit', () => {
-  const D = {
-    assets: [
-      { id: 1, name: 'Emas ANTAM', jenis: 'Emas/Logam Mulia', nilai: 1200000, modalInvestasi: 1000000, tanggal: '2025-07-23' },
-      { id: 2, name: 'Reksadana X', jenis: 'Reksadana', nilai: 900000, hargaBeli: 10000, jumlahUnit: 100, tanggal: '2026-01-01' },
-      { id: 3, name: 'Tanah tanpa modal', jenis: 'Tanah', nilai: 5000000 },
-    ],
-  };
-  const Aset = makeAset(D);
-  const p = Aset.investmentPerformance();
-  assert.equal(p.holdingsCount, 2);
-  assert.equal(p.totalModal, 2000000);
-  assert.equal(p.totalNilai, 2100000);
-  assert.equal(p.gain, 100000);
-  assert.equal(p.roiPct, 5);
-  assert.equal(p.best.name, 'Emas ANTAM');
-  assert.equal(p.worst.name, 'Reksadana X');
-});
-
-test('InvestmentPlannerAPI.portfolioOverview() sekarang membaca Aset.investmentPerformance(), bukan Investment', () => {
-  const D = {
-    assets: [
-      { id: 1, name: 'Emas ANTAM', jenis: 'Emas/Logam Mulia', nilai: 1200000, modalInvestasi: 1000000, tanggal: '2025-07-23' },
-    ],
-  };
-  const Aset = makeAset(D);
-  // `Investment` SENGAJA TIDAK di-inject sama sekali -- kalau API ini masih
-  // mencoba membaca `Investment` di suatu tempat, ini akan meledak /
-  // mengembalikan hasil kosong (membuktikan gap sudah tertutup).
-  const api = makePlannerAPI(Aset);
+test('InvestmentPlannerAPI.portfolioOverview() membaca Investment.portfolioSummary(), bukan Aset lagi', () => {
+  const D = { investments: [] };
+  const Investment = makeInvestment(D);
+  Investment.addHolding({ name: 'Emas ANTAM', type: 'Emas', unit: 1, avgPrice: 1000000, currentPrice: 1200000 });
+  // `Aset` SENGAJA TIDAK di-inject sama sekali -- kalau API ini masih
+  // mencoba membaca `Aset` di suatu tempat, ini akan meledak /
+  // mengembalikan hasil kosong (membuktikan rewire s476b sudah tuntas).
+  const api = makePlannerAPI(Investment);
   const p = api.portfolioOverview();
   assert.equal(p.ok, true);
   assert.equal(p.holdingsCount, 1);
@@ -91,47 +59,62 @@ test('InvestmentPlannerAPI.portfolioOverview() sekarang membaca Aset.investmentP
   assert.equal(p.totalGainLoss, 200000);
 });
 
-test('InvestmentPlannerAPI.assetAllocation() mengelompokkan by jenis aset (field Buku Aset)', () => {
-  const D = {
-    assets: [
-      { id: 1, name: 'Emas ANTAM', jenis: 'Emas/Logam Mulia', nilai: 1200000, modalInvestasi: 1000000 },
-      { id: 2, name: 'Reksadana X', jenis: 'Reksadana', nilai: 900000, modalInvestasi: 1000000 },
-    ],
-  };
-  const Aset = makeAset(D);
-  const api = makePlannerAPI(Aset);
+test('InvestmentPlannerAPI.assetAllocation() mengelompokkan by h.type (Investment.assetAllocation() apa adanya)', () => {
+  const D = { investments: [] };
+  const Investment = makeInvestment(D);
+  Investment.addHolding({ name: 'Emas ANTAM', type: 'Emas', unit: 1, avgPrice: 1000000, currentPrice: 1200000 });
+  Investment.addHolding({ name: 'Reksadana X', type: 'Reksa Dana', unit: 1, avgPrice: 1000000, currentPrice: 900000 });
+  const api = makePlannerAPI(Investment);
   const a = api.assetAllocation();
   assert.equal(a.ok, true);
   assert.equal(a.allocation.length, 2);
-  assert.equal(a.topAllocation.type, 'Emas/Logam Mulia');
+  assert.equal(a.topAllocation.type, 'Emas');
 });
 
-test('InvestmentPlannerAPI.watchlistAlerts() selalu ok:true count:0 (Buku Aset tidak punya watchlist)', () => {
-  const Aset = makeAset({ assets: [] });
-  const api = makePlannerAPI(Aset);
+test('InvestmentPlannerAPI.watchlistAlerts() sekarang meneruskan Investment.watchlistAlerts() apa adanya (bukan lagi selalu count:0)', () => {
+  const D = { investments: [], investmentWatchlist: [] };
+  const Investment = makeInvestment(D);
+  Investment.addWatch({ name: 'BBRI', type: 'Saham', lastPrice: 4500, targetPrice: 5000 });
+  Investment.addWatch({ name: 'TLKM', type: 'Saham', lastPrice: 3800, targetPrice: 3500 }); // belum nyentuh target
+  const api = makePlannerAPI(Investment);
+  const w = api.watchlistAlerts();
+  assert.equal(w.ok, true);
+  assert.equal(w.count, 1);
+  assert.equal(w.alerts[0].name, 'BBRI');
+});
+
+test('InvestmentPlannerAPI.watchlistAlerts() ok:true count:0 kalau watchlist kosong', () => {
+  const Investment = makeInvestment({ investments: [], investmentWatchlist: [] });
+  const api = makePlannerAPI(Investment);
   const w = api.watchlistAlerts();
   assert.equal(w.ok, true);
   assert.equal(w.count, 0);
   assert.equal(w.alerts.length, 0);
 });
 
-test('InvestmentPlannerAPI.portfolioOverview() ok:false kalau Aset belum dimuat (tidak diam-diam pura-pura kosong)', () => {
+test('InvestmentPlannerAPI.portfolioOverview() ok:false kalau Investment belum dimuat (tidak diam-diam pura-pura kosong)', () => {
   const api = makePlannerAPI(undefined);
   const p = api.portfolioOverview();
   assert.equal(p.ok, false);
 });
 
-test('InvestmentPlannerAPI.summary() end-to-end: data yang diisi di Buku Aset sekarang benar-benar muncul', () => {
-  const D = {
-    assets: [
-      { id: 1, name: 'Emas ANTAM', jenis: 'Emas/Logam Mulia', nilai: 1200000, modalInvestasi: 1000000, tanggal: '2025-07-23' },
-      { id: 2, name: 'Reksadana X', jenis: 'Reksadana', nilai: 900000, hargaBeli: 10000, jumlahUnit: 100, tanggal: '2026-01-01' },
-    ],
-  };
-  const Aset = makeAset(D);
-  const api = makePlannerAPI(Aset);
+test('InvestmentPlannerAPI.summary() end-to-end: holding yang ditambah lewat Investment.addHolding() (tab Investasi) benar-benar muncul', () => {
+  const D = { investments: [] };
+  const Investment = makeInvestment(D);
+  Investment.addHolding({ name: 'Emas ANTAM', type: 'Emas', unit: 1, avgPrice: 1000000, currentPrice: 1200000 });
+  Investment.addHolding({ name: 'Reksadana X', type: 'Reksa Dana', unit: 100, avgPrice: 10000, currentPrice: 9000 });
+  const api = makePlannerAPI(Investment);
   const s = api.summary();
   assert.equal(s.ok, true);
   assert.equal(s.portfolioOverview.holdingsCount, 2);
   assert.equal(s.assetAllocation.allocation.length, 2);
+});
+
+test('InvestmentPlannerAPI.investmentRecommendation() holdingsCount:0 mengarahkan ke tab 💹 Investasi (bukan lagi Buku Aset)', () => {
+  const Investment = makeInvestment({ investments: [] });
+  const api = makePlannerAPI(Investment);
+  const rec = api.investmentRecommendation();
+  const r = rec.find((x) => x.code === 'invest_no_holdings');
+  assert.ok(r, 'harus ada rekomendasi invest_no_holdings');
+  assert.match(r.message, /💹 Investasi/);
 });

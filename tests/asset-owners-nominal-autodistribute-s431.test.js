@@ -122,6 +122,15 @@ test('onOwnerNominalInput(): hasil auto-bagi tetap tersimpan benar via saveOwner
   ctx.Aset.onOwnerNameInput(0, 'Saya');
   ctx.Aset.addOwnerRow();
   ctx.Aset.onOwnerNameInput(1, 'Investor B');
+  // SESI 453: DOM #ownerNominal0 diset LANGSUNG di sini (bukan cuma lewat
+  // parameter `val` ke handler) supaya konsisten dgn typing sungguhan di
+  // browser nyata -- input yang sedang diketik user SELALU sudah py .value
+  // ter-update di DOM sebelum event `oninput` sempat dipanggil (browser
+  // yang melakukannya, bukan JS). saveOwners() sekarang membaca ulang DOM
+  // ini (lihat Aset._resyncOwnersFromDOM(), SESI 453) sbg sumber kebenaran
+  // akhir -- tanpa baris ini, mock DOM statis tidak merefleksikan ketikan
+  // yang baru saja "terjadi" lewat pemanggilan method langsung ini.
+  dom.getElementById('ownerNominal0').value = '70000000';
   ctx.Aset.onOwnerNominalInput(0, '70000000'); // 70% -> sisa 30% otomatis ke baris 1
   ctx.Aset.saveOwners();
   assert.deepEqual(

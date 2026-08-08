@@ -142,6 +142,38 @@ test('DanaKelolaan.summary() — titipanAmount di aset NON-SELF tidak dijumlah d
   assert.equal(s.titipan, 300000 + 900000);
 });
 
+test('DanaKelolaan.summary() — titipanInvestasi (BUGFIX Sesi 458): jumlah holdingCost() holding fundSource=titipan (ownership SELF), TERPISAH dari titipan (THIRD_PARTY whole-holding), tetap masuk total', () => {
+  const D = makeD();
+  // holding SELF (default ownership) tapi fundSource='titipan' -- cost basis
+  // (unit*avgPrice) = 20*50000 = 1000000, pola SAMA PERSIS
+  // Investment._syncTitipanDebt() (investasi.js) yang catat angka ini ke
+  // Buku Utang. SEBELUM Sesi 458 ini SAMA SEKALI TIDAK terhitung di
+  // Dana Kelolaan.
+  D.investments.push({ id: 'i3', unit: 20, avgPrice: 50000, currentPrice: 60000, fundSource: 'titipan', titipanOwner: 'Budi' });
+  const ctx = makeCtx(D);
+  const s = ctx.DanaKelolaan.summary();
+  assert.equal(s.titipanInvestasi, 1000000);
+  assert.equal(s.investor, 500000 + 10000, 'holding titipan SELF tidak tercampur ke investor');
+  assert.equal(s.total, s.investor + s.titipan + s.dpCustomer + s.keluarga + s.titipanAset + s.titipanInvestasi);
+});
+
+test('DanaKelolaan.summary() — holding fundSource=titipan tapi ownership NON-SELF tidak dijumlah dobel (sudah kehitung penuh via sumInvestasi)', () => {
+  const D = makeD();
+  D.investments.push({ id: 'i4', unit: 10, avgPrice: 30000, currentPrice: 30000, ownership: 'THIRD_PARTY', fundSource: 'titipan', titipanOwner: 'Ayah' });
+  const ctx = makeCtx(D);
+  const s = ctx.DanaKelolaan.summary();
+  assert.equal(s.titipanInvestasi, 0, 'holding non-SELF dikecualikan dari sumTitipanInvestasi(), sudah tercatat via titipan (THIRD_PARTY)');
+  assert.equal(s.titipan, 300000 + 300000);
+});
+
+test('DanaKelolaan.sumTitipanInvestasi() — holding fundSource="sendiri" (default/eksplisit) TIDAK ikut dijumlahkan', () => {
+  const D = makeD();
+  D.investments.push({ id: 'i5', unit: 10, avgPrice: 10000, currentPrice: 10000, fundSource: 'sendiri' });
+  const ctx = makeCtx(D);
+  const s = ctx.DanaKelolaan.summary();
+  assert.equal(s.titipanInvestasi, 0);
+});
+
 test('DanaKelolaan.summary() — data SELF/default TIDAK ikut dijumlahkan sama sekali', () => {
   const D = makeD();
   const ctx = makeCtx(D);
@@ -202,5 +234,11 @@ test('Regresi — totalSaldoAkun() (akun.js, S192) tetap HANYA hitung akun SELF 
 test('Regresi — Aset.totalValue() (aset.js, S193) tetap HANYA hitung aset SELF walau DanaKelolaan.js ikut dimuat', () => {
   const D = makeD();
   const ctx = makeCtx(D);
+  // s476a (docs/s476-PLAN-migrate-investasi-to-holdings.md, Blocker A):
+  // Investment holdings TIDAK lagi masuk lewat Aset.totalValue() sendiri
+  // (supaya tidak dobel-hitung dgn AssetPortfolioAPI.investmentValue) --
+  // ditambahkan 1 titik terpisah di Kekayaan.currentNetWorth()/renderBersih()
+  // (modules-calc.js) lewat Investment.selfOwnedTotalValue(). Aset.totalValue()
+  // sendiri tetap HANYA aset (s1), 0 perubahan.
   assert.equal(ctx.Aset.totalValue(), 1000000, 'HANYA aset SELF (s1) yang masuk total, s2/s3 (CUSTOMER/FAMILY) tetap dikecualikan');
 });

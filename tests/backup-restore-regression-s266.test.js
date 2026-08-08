@@ -48,6 +48,15 @@ function makeD(overrides = {}) {
     jalanLogs: [{ id: 'j1', vehicleId: 'veh_1', date: '2026-07-01', rute: 'Rumah-Pasar', jarak: 5 }],
     kmLogs: [],
     products: [{ id: 'p1', name: 'Cobek Batu', stock: 10, hargaBeli: 20000, hargaJual: 35000, ownership: 'INVESTOR' }],
+    // S480 (Koreksi Stok / Stok Opname) — log koreksi stok tanpa transaksi.
+    // Pola field baru SAMA PERSIS inventoryTransfers/purchaseOrders di bawah.
+    productStockCorrections: [{ id: 'psc1', productId: 'p1', from: 10, to: 8, delta: -2, ts: '2026-08-01T00:00:00.000Z', note: 'Koreksi stok Cobek Batu' }],
+    // S377/S378 (Inventory Movement / Purchase Order) — field D lain yang sama
+    // pola self-heal-nya (init() global, bukan applyRestoredDataMigrations()),
+    // dulu belum pernah ikut test backup — ditambah sekalian sesi ini.
+    inventoryTransfers: [{ id: 'it1', productId: 'p1', fromLoc: 'gudang', toLoc: 'etalase', qty: 3, ts: '2026-08-01T00:00:00.000Z' }],
+    productMovementOverride: { p1: { note: 'stok manual disesuaikan' } },
+    purchaseOrders: [{ id: 'po1', produsenId: 'ps1', productId: 'p1', qty: 20, hargaBeli: 18000, status: 'diterima', ts: '2026-08-01T00:00:00.000Z' }],
     produsen: [], cobekKategori: [{ id: 'ck1', name: 'Shop Kecil' }],
     cobek: [{ id: 'c1', date: '2026-07-01', items: [{ name: 'Cobek Batu', qty: 2 }], subtotal: 70000, total: 70000, profit: 30000 }],
     assets: [{ id: 'a1', name: 'Tanah Warisan', jenis: 'Tanah', nilai: 500000000, ownership: 'THIRD_PARTY' }],
@@ -410,10 +419,51 @@ test('Round-trip: buildBackupPayload() -> JSON.stringify/parse (simulasi file di
   assert.equal(finalD.vehicles[0].ownership, 'CUSTOMER');
   // Shop
   assert.equal(finalD.products[0].ownership, 'INVESTOR');
+  // Shop — S480 Koreksi Stok/Opname (log tanpa transaksi, HARUS ikut backup & restore utuh)
+  assert.equal(finalD.productStockCorrections.length, 1);
+  assert.equal(finalD.productStockCorrections[0].delta, -2);
+  // Shop — S377/378 Inventory Movement (sama pola field, dulu belum ada assertion)
+  assert.equal(finalD.inventoryTransfers.length, 1);
+  assert.equal(finalD.inventoryTransfers[0].qty, 3);
+  assert.equal(finalD.productMovementOverride.p1.note, 'stok manual disesuaikan');
+  assert.equal(finalD.purchaseOrders.length, 1);
+  assert.equal(finalD.purchaseOrders[0].status, 'diterima');
   // Family
   assert.equal(finalD.catatan.anak[0].text, 'Imunisasi');
   // apiKey yang sudah disaring saat export TIDAK BOLEH muncul lagi setelah restore
   assert.equal(finalD.profile.apiKey, undefined);
+});
+
+test('S480 Koreksi Stok/Opname — productStockCorrections ikut buildBackupPayload() (bukan cuma nebeng {...D} tanpa terverifikasi), dan backup lama tanpa field ini tidak crash saat restore', async () => {
+  const D = makeD();
+  const { ctx: exportCtx } = makeCtx(D);
+  const backupD = await exportCtx.buildBackupPayload();
+  assert.equal(backupD.productStockCorrections.length, 1);
+  assert.equal(backupD.productStockCorrections[0].productId, 'p1');
+
+  // Backup lama (pra-S478/S480) belum pernah punya field ini sama sekali —
+  // restore tidak boleh crash (defaulting field ini sendiri jadi tanggung
+  // jawab init() global, sama seperti purchaseOrders/inventoryTransfers,
+  // bukan applyRestoredDataMigrations() — lihat komentar di source).
+  const { ctx: restoreCtx } = makeCtx(makeD());
+  const oldBackup = { transactions: [], accounts: [{ id: 'acc_cash', name: 'Cash', emoji: '💵', balance: 0 }], categories: { income: [], expense: [] } };
+  delete oldBackup.productStockCorrections;
+  const ok = await restoreCtx.applyRestoredData(oldBackup);
+  assert.equal(ok, true, 'restore backup tanpa productStockCorrections tidak boleh gagal/crash');
+});
+
+test('inventoryTransfers/purchaseOrders/productMovementOverride (S377/S378) — ikut buildBackupPayload() & backup lama tanpa field ini tidak crash saat restore', async () => {
+  const D = makeD();
+  const { ctx: exportCtx } = makeCtx(D);
+  const backupD = await exportCtx.buildBackupPayload();
+  assert.equal(backupD.inventoryTransfers.length, 1);
+  assert.equal(backupD.purchaseOrders.length, 1);
+  assert.equal(backupD.productMovementOverride.p1.note, 'stok manual disesuaikan');
+
+  const { ctx: restoreCtx } = makeCtx(makeD());
+  const oldBackup = { transactions: [], accounts: [{ id: 'acc_cash', name: 'Cash', emoji: '💵', balance: 0 }], categories: { income: [], expense: [] } };
+  const ok = await restoreCtx.applyRestoredData(oldBackup);
+  assert.equal(ok, true, 'restore backup tanpa inventoryTransfers/purchaseOrders/productMovementOverride tidak boleh gagal/crash');
 });
 
 // ==================== KOMPATIBILITAS SCHEMA/MIGRASI LAMA ====================
