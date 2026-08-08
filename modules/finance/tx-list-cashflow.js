@@ -50,7 +50,16 @@ const sign=(t.type==='income'||t.type==='transfer_in')?'+':'-';
 const cls=(t.type==='income'||t.type==='transfer_in')?'green':'red';
 const acc=D.accounts.find(a=>a.id===t.accountId);
 const subText=t.subcategory?(' · '+t.subcategory):'';
-const pmIcons={cicilan:'💳',langganan:'🔁',tunai:''};
+// FIX (BUG-004, TODO.md — Bill/Piutang/Debt audit 2026-08-01): kind
+// 'tagihan'/'utang' belum terdaftar di sini (dropdown filter `#kfMethod`
+// di index.html SUDAH punya opsi 🧾 Tagihan/📕 Utang sejak sebelumnya —
+// cuma badge kartu transaksi ini yang ketinggalan), jadi badge payMethod
+// utk transaksi bayar Tagihan/Utang (dari markBillPaid(), payMethod:b.kind
+// bisa 'tagihan'/'utang' selain 'cicilan'/'langganan') tampil TANPA ikon
+// (pmIcons[t.payMethod]||'' jatuh ke string kosong). Ikon disamakan persis
+// dgn yang dipakai opsi dropdown #kfMethod (🧾/📕) supaya konsisten 1
+// sumber makna di seluruh app.
+const pmIcons={cicilan:'💳',langganan:'🔁',tagihan:'🧾',utang:'📕',tunai:''};
 const pmBadge=(t.payMethod&&t.payMethod!=='tunai')?` <span class="acc-chip">${pmIcons[t.payMethod]||''} ${t.payMethod}</span>`:'';
 // Sesi 394: badge "👥 N pemilik" di judul + rincian pembagian per pemilik di
 // tx-meta, kalau transaksi ini dikaitkan ke aset multi-owner (t.assetId,
