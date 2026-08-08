@@ -178,6 +178,13 @@ const GROUP_B = [
   // pola sama persis ownership-engine.js S191. Split keuntungan otomatis
   // & rule reko AI jadi kerjaan sesi berikutnya.
   'modules/shared/multi-owner-engine.js',
+  // Sesi 489 (langkah 1/5, PLAN-owner-registry-multi-session.md): Owner
+  // Registry — fondasi `ownerId` konsisten lintas Aset/Investasi/Titipan.
+  // Ditaruh SETELAH multi-owner-engine.js (dependency KONSEPTUAL saja, 0
+  // dependency KODE wajib — file ini pure/standalone, 0 baca
+  // MultiOwnerEngine). TANPA WIRING sesi ini (0 consumer memanggil
+  // OwnerRegistry.*), pola sama persis multi-owner-engine.js S390 sendiri.
+  'modules/shared/owner-registry.js',
   // Sesi 391: split keuntungan aset otomatis per pemilik (lanjutan S390).
   // Ditaruh SETELAH multi-owner-engine.js (dependency wajib: splitFor()/
   // summary() panggil MultiOwnerEngine.getOwners()/splitByPorsi()/
@@ -1006,6 +1013,16 @@ const GROUP_B = [
   // pola sama persis property-management-api.js -> -presenter.js.
   'modules/finance/dana-kelolaan.js',
   'modules/finance/dana-kelolaan-presenter.js',
+
+  // dana-titipan-portfolio-presenter.js (Sesi 484) — proyeksi read-only
+  // per-owner/per-holding (pokok teralokasi/nilai sekarang/P&L), 100%
+  // reuse Investment.getOwners()/holdingCost()/holdingValue()/
+  // holdingGainLoss() + MultiOwnerEngine.splitByPorsi() (SEMUA sudah
+  // dimuat di atas). Ditaruh setelah dana-kelolaan-presenter.js karena
+  // memang tidak bergantung padanya (dependency langsung ke Investment/
+  // MultiOwnerEngine saja), tapi secara konsep melengkapi kartu Dana
+  // Kelolaan yang sama.
+  'modules/finance/dana-titipan-portfolio-presenter.js',
 ];
 const ALL_SOURCE = [...GROUP_A, ...GROUP_B];
 const HTML_FILES = ['index.html', 'app_production.html'];
