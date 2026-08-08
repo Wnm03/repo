@@ -78,7 +78,14 @@ const SHOP_TAB_IDX = { kasir: 0, jual: 1, etalase: 2, produsen: 3, riwayat: 4, p
 // app_production.html/index.html).
 const CN_TAB_IDX = { insight: 0, bbm: 1, servis: 2, pajak: 3 };
 const PAJAK_TAB_IDX = { zakat: 0, pajak: 1 };
-const ASET_TAB_IDX = { ringkasan: 0, buku: 1, analisis: 2, manajemen: 3 };
+// ASET_TAB_IDX — `investasi:4` ditambah Sesi 469 (sebelumnya hilang dari
+// map ini walau tab "💹 Investasi" sudah ada sejak Sesi 466 — tanpa entry
+// ini `dashHubNavigateToFeature({page:'aset',tab:'investasi'})` tetap JALAN
+// lewat fallback `setAsetTab()` sendiri (idx dicari ulang dari
+// ASET_TAB_ORDER kalau `el` undefined), tapi map ini didaftarkan lengkap
+// supaya konsisten dgn pola KEU_TAB_IDX/SHOP_TAB_IDX dkk & tidak
+// menyesatkan pembaca kode berikutnya.
+const ASET_TAB_IDX = { ringkasan: 0, buku: 1, analisis: 2, manajemen: 3, investasi: 4 };
 // Sub-tab nested DI DALAM tab 'laporan' (page keuangan) — lihat setLaporanTab
 // di tx-list-cashflow.js & catatan split 2026-07-17 di CLAUDE.md.
 const LAPORAN_SUBTAB_IDX = { ringkasan: 0, aruskas: 1, transaksi: 2 };
