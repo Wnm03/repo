@@ -149,3 +149,8 @@
 
 - **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm registry (403), eslint tidak bisa diinstall — perubahan sesi ini terbatas pada pmIcons object literal (1 baris tambahan, 2-space indent, single-quote, semicolon) di tx-list-cashflow.js, gaya identik file sekitarnya, dicek manual
 - **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa diinstall — bundle unminified valid, lolos node --check
+
+## 2026-08-08T06:05:18.721Z — versi s488-titipan-modal-sweep-fix
+
+- **lint-unavailable**: override dipakai. Alasan: Sandbox tanpa akses jaringan/npm registry, eslint tidak bisa diinstall
+- **unminified-bundle**: override dipakai. Alasan: Sandbox tanpa akses jaringan, esbuild tidak bisa diinstall - bundle valid tapi belum diminify
