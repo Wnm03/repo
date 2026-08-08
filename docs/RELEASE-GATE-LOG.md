@@ -184,3 +184,18 @@
 
 - **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak terpasang, sama seperti S488-S493
 - **unminified-bundle**: override dipakai. Alasan: esbuild tidak terpasang di sandbox (tanpa akses jaringan), sama seperti S488-S493
+
+## 2026-08-08T22:23:51.967Z — versi s508-vehicle-asset-titipan-readonly-bridge
+
+- **lint-unavailable**: override dipakai. Alasan: Sandbox tanpa akses jaringan npm registry (403), eslint tidak bisa diinstall; verifikasi manual: perubahan S508 hanya tambahan fungsi pure baru (resolveVehicleAssetTitipan) dgn pola guard typeof konsisten file existing, 0 pelanggaran style yang biasa dicek (escapeHtml pada field user, dst).
+- **unminified-bundle**: override dipakai. Alasan: Sandbox tanpa akses jaringan, esbuild tidak bisa diinstall (sama seperti build S507 sebelumnya) — bundle valid secara sintaks (node --check pass), cuma belum diminify.
+
+## 2026-08-08T22:38:15.412Z — versi s509b-vehicle-asset-view-action
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak terpasang; perubahan hanya menambah 1 fungsi kecil + 1 line pemanggilan di vehicle-core.js mengikuti style existing (no-semicolon-free consistent, sama pola vehAssetBridgeHtml/vehicleAssetLinkOptionsHtml di file yang sama)
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak terpasang di sandbox ini (tanpa akses jaringan utk npm install); bundle unminified tapi valid secara sintaks (node --check lolos), sama kondisi seperti build v1241 sebelumnya
+
+## 2026-08-08T23:24:15.113Z — versi s509c-asset-vehicle-view-action
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak terpasang; perubahan S509c menambah 1 fungsi resolver pure baru (resolveVehicleByAssetId, pola identik resolveVehicleAssetLink existing) + 1 wrapper tipis (assetActionViewVehicle, pola identik assetActionHistory/assetActionScan) + 1 method render read-only (_renderVehicleLinkAction, pola identik _renderTitipanSummary) + 1 container div baru di assetModal HTML template, semua mengikuti style & guard-pattern existing di file yang sama
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak terpasang di sandbox ini (tanpa akses jaringan utk npm install); bundle unminified tapi valid secara sintaks (node --check lolos), sama kondisi seperti build v1241/v1242 sebelumnya

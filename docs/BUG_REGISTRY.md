@@ -1420,6 +1420,70 @@ Status: **BY DESIGN**
 
 ---
 
+# 0a-10. Open — Design Decision (Owner Registry, S489-S493 closeout)
+
+## OWNREG-GATE3-001
+
+- Severity: **INFORMATIONAL** (bukan defect — keputusan scope, dicatat
+  supaya tidak salah diklasifikasikan sebagai bug/utang teknis diam-diam)
+- Domain: Owner Registry (`modules/shared/owner-registry.js`, S489) /
+  UX kepemilikan (`assetOwnersModal`, `investmentOwnersModal`,
+  `titipanCommitmentModal`)
+- Status: **OPEN / OUT OF SCOPE (Gate #3, dikonfirmasi eksplisit)**
+- File: `modules/shared/owner-registry.js`
+- Trigger: User ingin mengganti nama (`name`) satu entri
+  `D.ownerRegistry[]` yang sudah ada, MISALNYA memperbaiki typo ("Bidi" ->
+  "Budi") atau owner ganti nama panggilan — sehingga SEMUA holding/aset/
+  komitmen titipan yang memakai `ownerId` entri itu ikut tampil nama baru
+  tanpa perlu diedit satu per satu.
+- Actual: `OwnerRegistry` (S489) TIDAK punya fungsi rename/update — hanya
+  `listAll()` (baca) dan `findOrCreate()` (cari-by-nama-atau-buat-baru).
+  Tidak ada UI di `assetOwnersModal`/`investmentOwnersModal`/
+  `titipanCommitmentModal` untuk mengedit entri registry existing.
+- Expected: TIDAK ADA — ini SENGAJA belum diimplementasikan, bukan
+  ekspektasi yang gagal dipenuhi.
+- Root cause: Bukan defect — keputusan scope eksplisit sejak awal rencana
+  (`PLAN-owner-registry-multi-session.md`, Gate #1 poin 3: "Scope rename
+  owner: **out-of-scope** di paket ini"), dikonfirmasi ulang di S493
+  (validasi silang & cleanup, sesi penutup rangkaian S489-S493) sebagai
+  bagian dari cleanup dokumentasi sesuai exit criteria plan.
+- Impact: User yang butuh mengganti nama tampilan owner HARUS mengedit
+  `ownerName`/label di tiap baris owners[] secara manual per
+  aset/holding/commitment (perilaku SAMA seperti sebelum S489 — registry
+  TIDAK membuat perilaku ini lebih buruk, hanya belum memperbaikinya).
+  `findOrCreate(name)` dgn nama BARU akan membuat entri BARU (id
+  berbeda), BUKAN mengubah entri lama — 2 nama untuk 1 orang yang sama
+  akan menghasilkan 2 `id` terpisah di registry kalau dipakai lewat jalur
+  ini (konsekuensi yang SUDAH didokumentasikan di komentar
+  `owner-registry.js` sejak S489).
+- Reproduction: N/A — bukan bug, tidak ada langkah reproduksi cacat.
+- Evidence: `modules/shared/owner-registry.js` (hanya 2 method publik,
+  tidak ada `rename()`/`update()`); `tests/s489-owner-registry.test.js`
+  test #6 mengunci eksplisit "dedup registry itu sendiri by ID, bukan by
+  name — 2 entri manual nama sama TETAP 2 baris (rename out-of-scope)".
+- Introduced by S489-S493: **N/A** — ini keputusan DESAIN sejak S489,
+  bukan regresi yang "diperkenalkan", dicatat ulang di sini sebagai
+  bagian cleanup S493 sesuai exit criteria plan ("Update BUG_REGISTRY/
+  CHANGELOG — catat rename-owner UI sebagai out-of-scope eksplisit
+  (Gate #3)").
+- Fix: **NOT APPLIED (out of scope, Gate #3)** — rename UI/fungsi
+  `OwnerRegistry.rename()` TIDAK ditulis sesi S489-S493 mana pun. Kalau
+  suatu saat dibutuhkan, perlu sesi tersendiri (Gate #3 baru) yang
+  eksplisit membahas: (a) apakah rename collapse otomatis ke entri lain
+  yang kebetulan namanya jadi sama, atau (b) tetap 2 entri terpisah.
+- Regression test: Tidak ada perubahan — `tests/s489-owner-registry.test.js`
+  s/d `tests/s493-owner-registry-cross-domain-validation.test.js` TIDAK
+  menguji rename (di luar scope, sesuai definisi bug ini).
+- Verification: `node --test tests/*.test.js` → 3219/3219 pass, 0 fail
+  (baseline S492 3212 + 7 test cross-domain baru S493, 0 regresi).
+- Status: **OPEN / OUT OF SCOPE (Gate #3)** — dicatat sebagai keputusan
+  sadar, bukan utang teknis diam-diam, sesuai instruksi eksplisit exit
+  criteria S493.
+- Audit Session: S493 — Validasi Silang & Cleanup Owner Registry
+  (penutup rangkaian S489-S493, 2026-08-08)
+
+---
+
 # 1. Known High-Risk Areas Requiring Verification
 
 | ID | Area | Reason | Status |
