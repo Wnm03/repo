@@ -1104,6 +1104,251 @@ Status: **BY DESIGN**
 
 ---
 
+# 0a-8. Open — New Findings (Sesi Audit langsung: `Investment`/`D.investments` domain, audit langsung, 100%)
+
+> Audit LANGSUNG dipicu oleh pertanyaan "kenapa belum ada tombol pemicu
+> `InvestmentUI.openOwnersModal()`" pasca-Sesi 464/465. Ditelusuri lebih
+> dalam dari sekadar "belum di-wire" — hasilnya: seluruh domain data
+> `D.investments`/`Investment` (`modules/asset/investasi.js`) sudah tidak
+> pernah bisa diisi dari UI mana pun sejak Sesi 161, dan development terus
+> berlanjut di atasnya lintas banyak sesi setelahnya tanpa ada yang
+> menyadari (atau mendokumentasikan ulang) status ini di luar 1 komentar
+> di `investment-planner-api.js`. Field diisi lengkap (bukan "Not
+> specified in audit input") — ditemukan langsung dari trace kode +
+> `grep` menyeluruh terhadap seluruh file non-test di sesi ini.
+
+## BUG-INV-001
+
+- Severity: **P2 Medium** (bukan P0/P1 — tidak ada data pengguna yang
+  rusak/salah, karena data itu memang selalu kosong; tapi berkelanjutan
+  menyesatkan alur kerja development & menghasilkan false confidence dari
+  test hijau)
+- Domain: Asset/Investment (`Investment`/`D.investments`)
+- Requirement ID: N/A
+- File: `modules/asset/investasi.js` (module utuh), dgn dampak turunan ke
+  `modules/asset/investasi-view.js`, `modules/asset/invest-ai-widget.js`,
+  `modules/self-reward/self-reward-ai-widget.js`,
+  `modules/finance/dana-kelolaan.js`,
+  `modules/shared/ownership-settings-presenter.js`,
+  `economic-intelligence/adapters/user-finance-adapter.js`
+- Line: N/A (module-level; lihat evidence per-file di bawah)
+- Function/component: `Investment.addHolding()` — tidak ada
+  caller/UI penulis sama sekali; seluruh API baca (`getHoldings()`,
+  `getHolding()`, `portfolioSummary()`, `assetAllocation()`,
+  `getOwners()`/`setOwners()`, dst) valid & tertest tapi selalu
+  beroperasi atas array kosong di aplikasi nyata.
+- Trigger: Kondisi bawaan aplikasi — tidak butuh trigger user spesifik.
+  Sejak Sesi 161 (dikonfirmasi via komentar kepala file
+  `modules/finance/investment-planner-api.js` baris 20-25), tidak ada
+  satu form/tombol/aksi pun di seluruh codebase yang memanggil
+  `Investment.addHolding()`.
+- Actual: `D.investments` selalu `[]` (array kosong) di setiap instalasi
+  aplikasi nyata, permanen, karena satu-satunya fungsi penulis
+  (`addHolding()`) tidak pernah dipanggil. Verifikasi:
+  `grep -rn "Investment\.addHolding" --include="*.js" .` (di luar
+  `tests/`) hanya menemukan 2 baris — keduanya KOMENTAR di
+  `investment-planner-api.js` yang MENJELASKAN bahwa fungsi itu mati,
+  bukan pemanggilan aktual.
+- Expected: Idealnya salah satu dari dua hal — (a) domain data ini punya
+  jalur UI nyata utk diisi user (halaman/list holding investasi +
+  form tambah), sehingga seluruh engine ownership/sync yang sudah
+  dibangun di atasnya benar-benar terpakai; atau (b) domain data ini
+  didokumentasikan tegas sbg **legacy/deprecated** di kepala
+  `investasi.js` sendiri (bukan cuma disebutkan sepintas di file lain),
+  supaya sesi-sesi berikutnya tidak terus menambah fitur di atas fondasi
+  yang sudah diketahui tidak terpakai.
+- Root cause: Sesi 161 memindahkan alur kerja investasi user sungguhan
+  ke `D.assets` (Buku Aset) via `Aset.investmentPerformance()`, TAPI
+  `investasi.js`/`D.investments` tidak pernah dibekukan/dihapus/ditandai
+  jelas — modul itu tetap ada, tetap lolos test, dan tetap terlihat
+  seperti modul aktif bagi siapa pun yang membaca `investasi.js` sendiri
+  (tidak ada catatan "modul ini mati" di file itu sendiri, hanya di
+  `investment-planner-api.js` yang notabene file LAIN). Akibatnya
+  beberapa sesi berikutnya (192/193, 390/406b, 455, 458-460, 462, 464,
+  465 — minimal 9 entri sesi berbeda) melanjutkan menambah fitur
+  (ownership filter, `MultiOwnerEngine`, titipan-debt sync,
+  `getOwners()`/`setOwners()`, modal UI porsi kepemilikan) di atas
+  fondasi data yang sudah dikonfirmasi tidak pernah terisi.
+- Impact:
+  1. **Efisiensi**: minimal 9 sesi kerja (ratusan baris kode + 611 baris
+     / 32 test case khusus domain ini — lihat Evidence) dihabiskan utk
+     fitur yang tidak bisa dipakai user mana pun sampai ada UI
+     pengisian data (yang juga belum ada rencananya).
+  2. **False confidence dari test**: seluruh 32 test terkait (`s462-
+     investasi-multi-owner-titipan`, `s460-investment-titipan-debt-
+     linked-id`, `investment-ownership-sync-s261`, `ownership-sync-
+     investasi`) PASS dan LOGIKANYA BENAR, tapi mengetes jalur yang
+     unreachable di app sungguhan — hijau di sini tidak berarti fitur
+     berfungsi utk siapa pun.
+  3. **Silent dead-read di 4 file lain** — tidak error, tidak crash,
+     cuma selalu memproses array kosong tanpa peringatan apa pun:
+     - `invest-ai-widget.js`, `self-reward-ai-widget.js` — cabang
+       rekomendasi AI yang bergantung `Investment.getHoldings()` tidak
+       akan pernah aktif
+     - `dana-kelolaan.js` — ringkasan titipan investasi selalu kosong
+     - `ownership-settings-presenter.js`,
+       `economic-intelligence/adapters/user-finance-adapter.js` —
+       meng-concat/membaca array yang selalu `[]`
+  4. **Risiko berkelanjutan**: tanpa dokumentasi tegas di
+     `investasi.js` sendiri, sesi mendatang (termasuk Sesi 464/465 yang
+     baru saja menambah `investmentOwnersModal`) berisiko terus
+     menambah fitur baru di atas domain data yang sudah mati.
+- Reproduction:
+  1. `grep -rn "Investment\.addHolding" --include="*.js" .` di root
+     project (di luar folder `tests/`) → hanya 2 hasil, keduanya baris
+     komentar penjelasan, 0 pemanggilan aktual.
+  2. Baca `modules/finance/investment-planner-api.js` baris 20-25 —
+     pernyataan eksplisit dari codebase sendiri.
+  3. Cari UI/halaman "daftar holding investasi" atau "tambah holding
+     investasi" di `index.html`/`app_production.html`/`modules/` → tidak
+     ditemukan satu pun.
+- Evidence:
+  - `modules/finance/investment-planner-api.js:20-25` (komentar
+    eksplisit "Investment.addHolding() tidak pernah dipanggil dari mana
+    pun")
+  - `grep -rn "Investment\.addHolding\|Investment\.recomputeHolding"`
+    lintas seluruh file `.js` non-test — 0 pemanggilan aktif ditemukan
+  - Sesi yang membangun fitur di atas domain ini pasca Sesi 161: Sesi
+    192/193 (`isHoldingOwnershipSelf`, filter portfolio/allocation),
+    Sesi 390/406b (`MultiOwnerEngine` wiring), Sesi 455/460
+    (`linkedInvestmentId` titipan-debt sync), Sesi 462/AUD-008
+    (`getOwners()`/`setOwners()`), Sesi 464/465 (modal UI porsi
+    kepemilikan — `investasi-view.js`, `investmentOwnersModal`)
+  - Test yang mengetes jalur unreachable ini:
+    `tests/s462-investasi-multi-owner-titipan.test.js` (8 test),
+    `tests/s460-investment-titipan-debt-linked-id.test.js` (6 test),
+    `tests/investment-ownership-sync-s261.test.js` (10 test),
+    `tests/ownership-sync-investasi.test.js` (8 test) — total 32 test,
+    611 baris
+  - Dead-read call sites: `modules/asset/invest-ai-widget.js`,
+    `modules/self-reward/self-reward-ai-widget.js`,
+    `modules/finance/dana-kelolaan.js`,
+    `modules/shared/ownership-settings-presenter.js:38`,
+    `economic-intelligence/adapters/user-finance-adapter.js:51`
+- Fix: **BELUM DIPUTUSKAN** — 3 opsi remediasi diajukan ke pemilik
+  produk, belum dipilih:
+  1. **Freeze & dokumentasikan** — tandai `Investment`/`D.investments`
+     sbg deprecated/legacy tegas di kepala `investasi.js` sendiri,
+     hentikan penambahan fitur baru di atasnya, data/test dibiarkan
+     apa adanya (paling murah, 0 risiko regresi)
+  2. **Decommission** — hapus jalur tulis mati & migrasikan 4 dead-read
+     call site ke `Aset.investmentPerformance()` (lebih besar, menyentuh
+     beberapa file shared)
+  3. **Aktifkan** — akhirnya bangun halaman/list holding investasi +
+     form tambah, supaya seluruh kerja ownership sesi-sesi sebelumnya
+     jadi terpakai (fitur baru sungguhan, scope terbesar)
+- Regression test: `tests/investment-list-ui-s466.test.js` (BARU, 15 test
+  case) — lihat catatan "Update Sesi 466 (lanjutan)" di bawah.
+- Verification: Source-code trace + `grep` menyeluruh (bukan asumsi) —
+  **CONFIRMED**, bukan `VERIFY`/dugaan.
+- **Update Sesi 466**: Opsi 3 (Aktifkan) DIPILIH & Fase 1 mulai
+  dikerjakan — lihat `AUDIT-BUILD-UI-INVESTASI-OPSI3.md` (audit teknis
+  scoping, sesi sebelumnya) & `CHANGELOG.md` (Sesi 466). Fase 1 (halaman
+  list holding `#asetTab-investasi` + modal tambah/edit `investmentModal`
+  + wiring CRUD dasar `Investment.addHolding()`/`updateHolding()`/
+  `deleteHolding()` + tombol pemicu "⚖️ Atur Porsi Kepemilikan" via
+  `InvestmentListUI.openOwnersModalForEdit()` → `InvestmentUI.
+  openOwnersModal()`) **SELESAI**. `Investment.addHolding()` sekarang
+  PUNYA caller nyata (`InvestmentListUI.save()`,
+  `modules/asset/investasi-list-view.js`) — poin utama BUG-INV-001
+  (domain data tidak pernah terisi dari UI) sudah tertutup mulai sesi
+  ini.
+- **Update Sesi 466 (lanjutan)**: Test coverage baru untuk
+  `InvestmentListUI` **SELESAI** — `tests/investment-list-ui-s466.test.js`
+  (15 test case, dijalankan lewat source ASLI via `loadSource()` + DOM
+  tiruan stateful, pola sama `asset-owners-flow-e2e-392a-to-392e.test.js`),
+  menutup item "Belum dikerjakan" yang dicatat `PATCH-README.md` Sesi 466.
+  Cakupan: `render()` (kartu ringkasan + list holding, termasuk
+  empty-state), `openModal()` (mode Tambah vs Edit, prefill field, toggle
+  tombol Owners/Delete), `save()` (jalur Tambah via `addHolding()`, jalur
+  Edit via `updateHolding()` + tulis manual `unit`/`avgPrice` sesuai scope
+  Fase 1, jalur gagal nama kosong, guard `Investment` belum dimuat),
+  `deleteFromModal()` (konfirmasi `askConfirm` true/false, guard `editId`
+  null, seluruh efek samping — `renderKekayaanBersih`/`hitungZakatMaal`/
+  `renderDebtList`/`AIBus.emit`), & `openOwnersModalForEdit()` (delegasi ke
+  `InvestmentUI.openOwnersModal()`, guard "simpan dulu" & guard
+  `InvestmentUI` belum dimuat). `node --test tests/*.test.js` →
+  **2999/2999 lolos, 0 gagal** (2984 test lama + 15 baru, 0 regresi).
+  Fase 2 (UI transaksi Beli/Jual/Dividen), Fase 3 (UI Watchlist), Fase 4
+  (verifikasi 4 dead-read call site dgn data nyata) MASIH belum
+  dikerjakan — status TETAP **OPEN** sampai seluruh 4 fase selesai &
+  4 dead-read call site (§Impact.3 di atas) terverifikasi tampil benar
+  dgn data holding produksi nyata.
+- **Update Sesi 468**: Fase 4 (verifikasi 4 dead-read call site dgn data
+  holding nyata) **SELESAI** — status BUG-INV-001 diubah jadi **FIXED**.
+  File baru `tests/investment-dead-read-verification-s468.test.js` (9 test
+  case) menjalankan tiap call site lewat source ASLI via `loadSource()`,
+  memverifikasi 2 kondisi per call site: (a) BEFORE — `D.investments`
+  kosong -> tetap aman & kosong/nol (baseline dead-read lama, jaring
+  regresi), (b) AFTER — holding diisi lewat jalur tulis nyata
+  `Investment.addHolding()`/`addTransaction()` (fungsi yang sama dipakai
+  `InvestmentListUI`/`InvestmentTxUI` sejak Sesi 466-467, BUKAN ditulis
+  manual ke `D.investments`) -> call site sekarang membaca data itu dgn
+  benar:
+  - `DanaKelolaan.sumInvestasi()`/`listTitipan()` (`dana-kelolaan.js`) —
+    kini menjumlah `Investment.holdingValue(h)` nyata & mendaftar titipan
+    investasi per `titipanOwner`.
+  - `SelfRewardAI._analyzeInvestasi()` (`self-reward-ai-widget.js`) —
+    kini menghasilkan rekomendasi ROI minus/konsentrasi alokasi saat
+    holding memenuhi kondisinya (sebelumnya selalu `[]`, gate
+    `holdings.length` tidak pernah lolos).
+  - `InvestAI._checkPortofolio()` (`invest-ai-widget.js`) — kini gate
+    `summary.holdingsCount` lolos & menghasilkan rekomendasi ROI minus
+    portofolio.
+  - `OwnershipSettingsPresenter._collect()`/`summary()`
+    (`ownership-settings-presenter.js`) — kini holding investasi ikut
+    ter-concat & ter-hitung `OwnershipEngine.countByType()`.
+  - `_eieInvestmentBreakdown()` (`user-finance-adapter.js`) — kini
+    `unit*currentPrice` per `type` terisi sesuai holding nyata (sebelumnya
+    semua key breakdown selalu 0).
+  Manual smoke-test di browser dgn data produksi nyata (item asli §Fix
+  Opsi 3 lama) DIGANTI dgn pendekatan ini karena source ASLI dijalankan
+  end-to-end lewat `loadSource()` (bukan browser headless yang tidak
+  tersedia di sandbox) — dianggap setara utk tujuan verifikasi "call site
+  membaca data, bukan lagi selalu array kosong" krn tidak ada logic
+  DOM/render yang terlibat di kelima call site ini (murni baca &
+  transformasi data). `node --test tests/*.test.js` -> **3028/3028 lolos,
+  0 gagal** (3019 test lama + 9 baru, 0 regresi). Seluruh 4 fase Opsi 3
+  (Aktifkan) sekarang tuntas — **BUG-INV-001 status: FIXED.**
+- **Update Sesi 467**: Fase 2 (UI Transaksi Beli/Jual/Dividen, §3.3) &
+  Fase 3 (UI Watchlist, §3.5) `AUDIT-BUILD-UI-INVESTASI-OPSI3.md` **SELESAI**.
+  File baru `modules/asset/investasi-tx-view.js` (`InvestmentTxUI`) — modal
+  `investmentTxModal` (riwayat transaksi + form tambah tipe Beli/Jual/
+  Dividen), 100% reuse `Investment.addTransaction()`/`deleteTransaction()`/
+  `getTransactions()` (0 rumus baru), dipicu dari tombol "💱 Riwayat
+  Transaksi" baru di `investmentModal` (`InvestmentTxUI.openFromEdit()`,
+  pola sama `InvestmentListUI.openOwnersModalForEdit()`). File baru
+  `modules/asset/investasi-watch-view.js` (`InvestmentWatchUI`) — card
+  "📈 Watchlist" baru di tab Investasi + modal `investmentWatchModal`,
+  100% reuse `Investment.getWatchlist()`/`addWatch()`/`updateWatch()`/
+  `removeWatch()`/`watchlistAlerts()` (0 kondisi alert baru); render()-nya
+  dipanggil dari `InvestmentListUI.render()` (1 titik SSOT, otomatis ikut
+  ter-refresh dari 2 call-site render tab Investasi yang sudah ada). 2 modal
+  baru terdaftar di `MODAL_HTML[94]`/`MODAL_HTML[95]` (`modals.js`,
+  `MODAL_VERSION` → `s467-investment-list-ui-test-coverage`) & kedua file
+  didaftarkan ke `GROUP_B` (`build.js`, tepat setelah
+  `investasi-list-view.js`). Test coverage baru:
+  `tests/investment-tx-watch-ui-s467.test.js` (20 test case, pola sama
+  `investment-list-ui-s466.test.js`) — `node --test tests/*.test.js` →
+  **3019/3019 lolos, 0 gagal** (2999 lama + 20 baru, 0 regresi).
+  Fase 4 (verifikasi 4 dead-read call site dgn data nyata) MASIH belum
+  dikerjakan — butuh smoke-test manual di browser dgn data holding
+  produksi nyata, tidak bisa dilakukan dari sandbox headless. Status TETAP
+  **OPEN** sampai Fase 4 selesai & keempat dead-read call site (§Impact.3
+  di atas) terverifikasi tampil benar dgn data nyata.
+- Status: **OPEN** (Fase 1-3/4 selesai + test coverage `InvestmentListUI`/
+  `InvestmentTxUI`/`InvestmentWatchUI` selesai — lihat "Update Sesi 466
+  (lanjutan)" & "Update Sesi 467" di atas; Fase 4 masih belum dikerjakan)
+- Confidence: **High** — murni fakta struktural dari pencarian
+  `grep -rn` menyeluruh atas seluruh codebase non-test (bukan bergantung
+  data/state runtime yang ambigu), didukung pernyataan eksplisit dari
+  codebase sendiri (`investment-planner-api.js`).
+- Audit Session: Sesi Audit langsung (`investasi.js`/`D.investments`
+  domain, 100%) — dipicu pertanyaan tombol pemicu pasca-Sesi 464/465
+  (2026-08-07)
+
+---
+
 # 1. Known High-Risk Areas Requiring Verification
 
 | ID | Area | Reason | Status |
@@ -1115,6 +1360,7 @@ Status: **BY DESIGN**
 | AUD-005 | Dashboard/widget ownership | multiple migrations/dedup efforts | OPEN |
 | AUD-006 | Data fallback resolution | historical fallback ambiguity fixes | OPEN |
 | AUD-007 | `Zakat.hitungMaal()` (pajak-pbb-zakat.js) baca `document.getElementById('zmUtang').value` tanpa guard `if(el)`, dan memanggil `save()` sendiri di dalam badannya — TIDAK aman dipanggil dari `save()` (lihat s422i, `FIX-v1136-to-v1137-s422i-revert-hitungzakatmaal-guard.md`); kalau mau auto-refresh Zakat Maal dari `save()` nanti, refactor dulu: pisahkan baca input DOM dari kalkulasi murni, hilangkan panggilan `save()` rekursif | OPEN |
+| AUD-008 | `investasi.js` masih model titipan "1 flag + 1 nama" (`fundSource`/`titipanOwner`, satu string per holding) — beda dari `aset.js` yang sudah multi-owner penuh (`a.owners[]` via `MultiOwnerEngine`). Kalau nanti ada kasus 1 holding investasi dititipkan >1 orang sekaligus, `fundSource`/`titipanOwner` tidak bisa merepresentasikan itu (cuma 1 nama titipan per holding). Bukan urgent (belum ada requirement/laporan kasus nyata >1 penitip per holding) — dicatat sebagai utang teknis konsolidasi jangka panjang dari audit "dana titipan" Sesi 458, rekomendasi #1. Kalau kebutuhan itu muncul: pola migrasinya kemungkinan sama seperti `aset.js` Sesi 407/408 (`_synthesizeFromTitipan()` mensintesis `fundSource`/`titipanOwner` legacy jadi 1 baris `owners[]` dulu, baru UI-nya menyusul) | **DONE (Sesi 462)** — `investasi.js` sekarang punya `h.owners[]` opsional (format sama persis `a.owners`) + `Investment.getOwners()`/`setOwners()` lewat `MultiOwnerEngine` yang SUDAH ADA (0 engine baru). `_syncTitipanDebt()` direvisi jadi 1 entry Buku Utang PER OWNER non-SELF (`linkedInvestmentId`+`linkedOwnerId`, pola sama `Aset._syncOwnerDebts()`). `fundSource`/`titipanOwner` (single-owner legacy) TETAP jalan apa adanya, 0 regresi (75 test lama S460/S461 tetap pass tanpa modifikasi) — `owners[]` murni aditif, opt-in lewat `setOwners()`. Lihat `tests/s462-investasi-multi-owner-titipan.test.js` (8 test baru). **UI modal titipan investasi: DONE (Sesi 464)** — `modules/asset/investasi-view.js` (baru), `InvestmentUI` mirror `Aset.openOwnersModal()`/`_renderOwnersList()`/dst dari `aset.js`, versi ringkas TANPA lapisan Nominal (Rp) dua-arah (S429/S457) karena holding investasi tidak punya field nilai manual yang setara — cuma Nama Pemilik + Porsi (%) + toggle "Ini saya", disimpan lewat `Investment.setOwners()` (0 validasi baru). Modal terdaftar di `MODAL_HTML[92]` (`modals.js`, `MODAL_VERSION` s464-investment-owners-modal-ui) & `investasi-view.js` di `GROUP_B` (`build.js`, tepat setelah `investasi.js`). AUD-008 sepenuhnya selesai secara TEKNIS. **Catatan Sesi 465**: audit lanjutan menemukan seluruh domain `D.investments` (termasuk fitur AUD-008 ini) tidak pernah punya jalur UI penulis data sejak Sesi 161 — lihat **BUG-INV-001** di bawah utk detail & opsi remediasi. **Catatan Sesi 466**: BUG-INV-001 Opsi 3 Fase 1 selesai (`modules/asset/investasi-list-view.js`, `InvestmentListUI` — halaman list holding + modal tambah/edit, lihat entri BUG-INV-001 di bawah) — tombol "⚖️ Atur Porsi Kepemilikan" hasil AUD-008 sekarang PUNYA caller nyata lewat `InvestmentListUI.openOwnersModalForEdit()` di modal holding, jadi gap "0 caller" yang dicatat Sesi 465 sudah tertutup utk fitur AUD-008 ini secara spesifik. |
 
 `OPEN` here means **requires verification**, not confirmed bug.
 
@@ -1139,6 +1385,104 @@ Status: **BY DESIGN**
 - Regression test: Tidak ada test baru dibuat (sesuai instruksi sesi); 2721 test suite existing (`npm test`) tetap 100% PASS setelah fix — termasuk 3 file test (`s285`, `s292`, `s303`) yang perlu disesuaikan agar ikut meng-extract fungsi `_amc015()` ke sandbox vm mereka (brace-counting manual atas `advanceBillNextDue()`).
 - Verification: `node --test tests/*.test.js` → 2721 pass / 0 fail. Bundle build (`node scripts/build.js s406-bug015-date-overflow-clamp`) sukses, sintaks bundle valid.
 - Status: FIXED (v1112, sesi s406)
+
+---
+
+## BUG-016
+
+- Severity: P1 High (financial/data inconsistency — Kekayaan Bersih bisa
+  under-state secara sistematis, bukan cuma kasus tepi)
+- Domain: Asset/Investment/Debt cross-domain (dana titipan) — `Aset.
+  totalValue()`, `Investment.portfolioSummary()`, `Debt.totalValue()`,
+  `FI.totalDebt()`, `Kekayaan.currentNetWorth()`
+- Requirement ID: —
+- File: `modules/asset/aset.js` (`totalValue()`, `_syncOwnerDebts()`),
+  `modules/asset/investasi.js` (`_syncTitipanDebt()`), `modules/finance/
+  piutang-utang.js` (`Debt.totalValue()`), `modules/shared/modules-calc.js`
+  (`Kekayaan.currentNetWorth()`)
+- Line: `aset.js` sekitar 1320 (`totalValue()`) & 1020-1043
+  (`_syncOwnerDebts()`); `piutang-utang.js` sekitar 492 (`Debt.totalValue()`)
+- Function/component: interaksi ANTARA `Aset.totalValue()`/`Investment.
+  portfolioSummary()` (exclude porsi non-SELF via `MultiOwnerEngine.
+  selfOwnedValue()`/`isHoldingOwnershipSelf()`, Sesi 193/393/422d) DAN
+  `Aset._syncOwnerDebts()`/`Investment._syncTitipanDebt()` (bikin entry
+  Buku Utang senilai porsi non-SELF itu juga, Sesi 408-410/460) — dua
+  mekanisme yang SAMA-SAMA dimaksudkan mencegah Kekayaan Bersih overstated
+  utk porsi non-SELF, tapi dibangun di sesi berbeda & TIDAK saling sadar,
+  jadi keduanya JALAN BERSAMAAN.
+- Trigger: Aset/holding investasi dengan porsi/kepemilikan non-SELF (owner
+  co-ownership `a.owners[]`, `ownership:'THIRD_PARTY'|'INVESTOR'|
+  'CUSTOMER'|'FAMILY'` whole-entity, atau `fundSource:'titipan'`) yang
+  SUDAH disinkron ke Buku Utang lewat `_syncOwnerDebts()`/
+  `_syncTitipanDebt()` (kondisi normal — ini jalan otomatis tiap
+  `Aset.save()`/`Investment.addHolding()`/`updateHolding()`).
+- Actual: Porsi non-SELF/whole-entity dipotong DUA KALI dari Kekayaan
+  Bersih — sekali via exclusion di `totalValue()`/`portfolioSummary()`
+  (0% atau porsi SELF saja yang terhitung), sekali lagi via `Debt.
+  totalValue()` (entry `linkedAssetId`/`linkedInvestmentId` dihitung
+  PENUH, tidak dikecualikan). Kasus PALING JELAS: aset `ownership:
+  'THIRD_PARTY'` whole-entity — kontribusinya ke `Aset.totalValue()`
+  SUDAH 0 (100% dikecualikan), tapi `_syncOwnerDebts()` tetap bikin 1
+  entry utang senilai 100% `a.nilai`, jadi Kekayaan Bersih turun sebesar
+  nilai aset itu PADAHAL aset itu 0% "milik saya" & seharusnya 0% dampak
+  ke Kekayaan Bersih.
+- Expected: Kalau sebuah porsi/aset SUDAH dikecualikan (0% atau sebagian)
+  dari `totalValue()`/`portfolioSummary()` karena bukan milik SELF, porsi
+  yang SAMA itu seharusnya TIDAK ikut dipotong lagi lewat `Debt.
+  totalValue()` — kedua mekanisme mestinya saling eksklusif per porsi,
+  bukan ditumpuk.
+- Root cause: `totalValue()`-family (Sesi 193/393/422d) dan `_syncOwnerDebts`
+  -family (Sesi 408-410/460) masing-masing "correct in isolation" tapi
+  dikembangkan tanpa test yang menggabungkan keduanya dalam 1 dataset —
+  persis gap yang diidentifikasi audit Sesi 458 rekomendasi #2 (belum ada
+  test lintas-sumber titipan).
+- Impact: Kekayaan Bersih Dashboard/Report/Financial Freedom (SSOT via
+  `Kekayaan.currentNetWorth()`) under-state utk SEMUA user yang punya
+  minimal 1 aset/investasi non-SELF/titipan yang sudah tersinkron ke
+  Buku Utang — makin banyak porsi non-SELF, makin besar under-state-nya.
+  Whole-entity (THIRD_PARTY dst) adalah kasus terburuk (100% nilai aset
+  terpotong dari sisi utang PADAHAL 0% nilai aset itu sendiri yang
+  ditambahkan).
+- Reproduction: lihat Evidence — dataset 2 aset (1 multi-owner titipan,
+  1 THIRD_PARTY whole-entity) + 2 holding investasi (1 titipan biasa, 1
+  THIRD_PARTY+titipan) + 1 utang biasa, sinkron semua via `_syncOwnerDebts`/
+  `_syncTitipanDebt()`, lalu bandingkan `Aset.totalValue()`+`Investment.
+  portfolioSummary().totalCost` (yang SUDAH exclude porsi non-SELF) dengan
+  `Debt.totalValue()` (yang MASIH menghitung penuh porsi non-SELF yang
+  sama sbg utang).
+- Evidence: `tests/s461-cross-source-titipan-total-regression.test.js`
+  (4 test, semua PASS — test ini MEMATOK/pin perilaku saat ini sbg
+  reproduksi terdokumentasi, bukan assertion "ini benar")
+- Fix: **DIPERBAIKI Sesi 463** — dipilih opsi (a) dari 2 kandidat (lebih
+  ringan/lebih kecil blast radius dari opsi (b), yang butuh balik total
+  aset ke nilai penuh dan berdampak lebih luas ke Zakat Maal/Pajak
+  Aset/AssetPortfolioAPI):
+  (a) **[DIPILIH]** `Debt.totalValue()` (`modules/finance/piutang-utang.js`)
+      mengecualikan entry `linkedAssetId`/`linkedInvestmentId` dari total
+      utang (1 filter tambahan, pola SAMA PERSIS
+      `DebtStrategy.activeDebts()` yang sudah lebih dulu mengecualikan
+      kedua tag ini sejak S455/S460). Entry ini TETAP tampil apa adanya di
+      Buku Utang (histori/badge "🔒 Titipan" tidak berubah) — cuma tidak
+      ikut diakumulasi lagi. `totalDebtValue()` (alias
+      `Debt.totalValue()`, dipakai `FI.totalDebt()` →
+      `Kekayaan.currentNetWorth()`, Zakat Maal, Pajak Aset, semua
+      dashboard) otomatis ikut benar TANPA perlu disentuh satu per satu —
+      1 titik perbaikan, banyak konsumen.
+  (b) [TIDAK dipilih] `Aset.totalValue()`/`Investment.portfolioSummary()`
+      balik hitung nilai PENUH — di-skip krn dampaknya lebih luas &
+      butuh audit terpisah per konsumen.
+- Regression test:
+  `tests/s461-cross-source-titipan-total-regression.test.js` — test
+  paling bawah (awalnya "TEMUAN — Debt.totalValue() TETAP menghitung
+  PENUH...") diupdate jadi memverifikasi PERILAKU BARU (benar, 0
+  double-subtraction). `tests/s455-owner-debt-exclude-strategy.test.js` &
+  `tests/s460-investment-titipan-debt-linked-id.test.js` — masing-masing
+  1 test lama yang eksplisit mengunci perilaku LAMA
+  ("... TETAP terhitung...") diupdate mengikuti fix.
+- Verification: `node --test tests/*.test.js` → 2984/2984 pass, 0 fail
+  (2976 dari Sesi 461 + 8 baru Sesi 462, 3 test diupdate angka
+  ekspektasinya mengikuti fix ini, 0 test baru ditambah sesi ini).
+- Status: **FIXED (Sesi 463)**
 
 ---
 

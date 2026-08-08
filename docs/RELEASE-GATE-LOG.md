@@ -115,3 +115,22 @@
 
 - **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak bisa diinstall
 - **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses npm registry, esbuild tidak bisa diinstall - bundle raw concat via fallback build.js, sintaks valid & test suite penuh lolos
+
+## 2026-08-07T23:18:24.521Z — versi s476a-migrate-investasi-to-holdings
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm registry (403), eslint tidak bisa diinstall/dijalankan
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa diinstall; bundle unminified tapi valid (node --check lolos)
+
+## 2026-08-07T23:40:16.995Z — versi s476b-investment-planner-rewire
+
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak tersedia di sandbox tanpa akses internet, sama seperti sesi s476a2 sebelumnya
+
+## 2026-08-07T23:41:17.699Z — versi s476b-investment-planner-rewire
+
+- **lint-unavailable**: override dipakai. Alasan: eslint tidak terpasang di sandbox ini (tidak ada akses npm/network utk install) -- sama seperti keterbatasan esbuild yg sudah dicatat sesi2 sebelumnya (lihat RELEASE-GATE-LOG.md). Perubahan s476b HANYA di 2 file JS (investment-planner-api.js, investment-planner-presenter.js komentar) + 2 file test -- dicek manual: gaya kode konsisten dgn file sekitarnya (2-space indent di dalam const X={...}, ' quotes, semicolon), tidak ada unused var baru, tidak ada perubahan pola yg biasa ditangkap eslint di project ini.
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak tersedia di sandbox tanpa akses internet, sama seperti sesi s476a2 sebelumnya
+
+## 2026-08-08T00:00:00.000Z — versi s477-modal-sweep-coverage-fix
+
+- **lint-unavailable**: override dipakai. Alasan: eslint tidak terpasang di sandbox ini (tidak ada akses npm/network utk install), sama seperti sesi-sesi sebelumnya. Perubahan sesi ini HANYA 1 spec baru (11 baris + komentar) di MODULE_METHOD_MODAL_SPECS (self-test.js), pola 100% sama dgn spec Aset.openOwnersModal() tepat di atasnya -- dicek manual, gaya kode konsisten.
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak tersedia di sandbox tanpa akses internet, sama seperti sesi-sesi sebelumnya.

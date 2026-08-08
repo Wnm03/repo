@@ -18,10 +18,10 @@
 
 | Metric | Baseline |
 |---|---:|
-| Total files | 822 |
-| JavaScript | 555 |
+| Total files | 861 |
+| JavaScript | 579 |
 | Tests | 222 |
-| Markdown | 243 |
+| Markdown | 258 |
 | HTML | 3 |
 | JSON | 2 |
 | CSS | 2 |
@@ -32,6 +32,8 @@
 _Baseline diperbarui pasca-v1100/S398 ("update baseline drift", laporan `lintDocsBaselineCountDrift()` di build.js): Total files 754→740 (-14), JavaScript 611→527 (-84), Markdown 127→189 (+62), Tests 174→222 (+48), Module families tetap 12 — drift terkumpul dari banyak sesi sejak S353 (baseline lama belum sempat diupdate, bukan perubahan tunggal sesi ini). Sesi S398 sendiri cuma nambah +1 JS (tests/salary-allocation-s398.test.js) & +1 Markdown (FIX-v1099-to-v1100-s398-salary-allocation-suggestion.md) dari total drift di atas._
 
 _Baseline diperbarui lagi pasca-v1153/S438 ("update baseline drift"): Total files 740→822 (+82), JavaScript 527→555 (+28), Markdown 189→243 (+54), Tests/HTML/JSON/CSS/Module families tetap — drift terkumpul dari banyak sesi sejak S398 (baseline lama belum sempat diupdate lagi, bukan perubahan tunggal sesi ini; termasuk 3 file baru dari sesi s437 itu sendiri: 1 JS fix + 1 test + 1 dokumen FIX)._
+
+_Baseline diperbarui lagi pasca-v1189/S470 ("update baseline drift"): Total files 822→861 (+39), JavaScript 555→579 (+24), Markdown 243→258 (+15), Tests/HTML/JSON/CSS/Module families tetap — drift terkumpul dari banyak sesi sejak S438 (baseline lama belum sempat diupdate lagi selama ±31 sesi, bukan perubahan tunggal sesi ini; mencakup seluruh pekerjaan BUG-INV-001 Opsi 3, Sesi 466-469 — `InvestmentListUI`/`InvestmentTxUI`/`InvestmentWatchUI` + test coverage-nya, verifikasi 4 dead-read call site, & fix navigasi Investment Planner)._
 
 ---
 
