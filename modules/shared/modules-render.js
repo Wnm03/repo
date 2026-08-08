@@ -2,7 +2,7 @@
 // Dipindah ke modules/shared/modules-render.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
 // Semua fungsi ini murni definisi function global (bukan module), jadi tetap bisa dipanggil dari file manapun
 // yang loadnya belakangan (sama seperti modules-calc.js/features-*.js).
-const MODULE_RENDER_VERSION='s496-owner-registry-cross-domain-validation';
+const MODULE_RENDER_VERSION='s509c-asset-vehicle-view-action';
 
 function renderPageContent(name){
 // KW perf fix: jaring pengaman selain hook di save() -- pastikan cache saldo akun juga fresh
@@ -1341,6 +1341,12 @@ if(typeof DanaKelolaanPresenter!=='undefined')DanaKelolaanPresenter.renderLapora
 // Investment.getOwners()/holdingCost()/holdingValue()/holdingGainLoss() +
 // MultiOwnerEngine.splitByPorsi(), tidak mengubah baris manapun sebelum ini.
 if(typeof DanaTitipanPortfolioPresenter!=='undefined')DanaTitipanPortfolioPresenter.render();
+// SESI 498 (Tab "Dana Titipan" Terpadu, Sesi A) — render tambahan murni
+// (0 rumus baru) ke container BARU #danaTitipanTabList (sub-tab Laporan >
+// Dana Titipan). Container LAMA #danaTitipanPortfolioList di atas TETAP
+// dirender apa adanya (baris sebelum ini tidak diubah) — 2 tempat, 1 sumber
+// data (DanaTitipanPortfolioAPI.build()), 0 SSOT baru.
+if(typeof DanaTitipanPortfolioPresenter!=='undefined'&&typeof DanaTitipanPortfolioPresenter.renderInto==='function')DanaTitipanPortfolioPresenter.renderInto('danaTitipanTabList');
 const km={};
 txs.forEach(t=>{if(!km[t.category])km[t.category]={inc:0,exp:0,n:0};if(t.type==='income')km[t.category].inc+=t.amount;else km[t.category].exp+=t.amount;km[t.category].n++;});
 const ks=Object.entries(km).sort((a,b)=>(b[1].inc+b[1].exp)-(a[1].inc+a[1].exp));

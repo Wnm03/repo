@@ -57,6 +57,21 @@ function assetActionHistory(id){ closeQS('qsAssetActions'); Aset.openTxHistory(i
 function assetActionScan(id){ closeQS('qsAssetActions'); quickScanAsset(id); }
 function assetActionDelete(id){ closeQS('qsAssetActions'); delAsset(id); }
 
+// assetActionViewVehicle(vehicleId) — S509c Asset -> Vehicle Reverse
+// Navigation (lihat PROMPT IMPLEMENTASI S509c): wrapper tipis, BUKAN modal
+// baru. editVehicle(i) (vehicle-core.js, existing) butuh INDEX ASLI di
+// D.vehicles (bukan id), jadi di-cari dulu lewat findIndex + sameId() (pola
+// sama persis renderVehicleManageList() di modules-render.js yang juga
+// nyari index dari object vehicle sebelum dipakai ke data-args editVehicle).
+// Kalau index tidak ketemu (vehicle sudah dihapus sejak modal Aset dibuka),
+// TIDAK ngapa-ngapain -- tidak crash, tidak toast, konsisten pola no-op
+// guard fungsi lain di file ini kalau target sudah hilang.
+function assetActionViewVehicle(vehicleId){
+const i=(D.vehicles||[]).findIndex(v=>v&&sameId(v.id,vehicleId));
+if(i<0)return;
+editVehicle(i);
+}
+
 // toggleBillCardDetail(el) — S301 UI polish pt.5: accordion ringkas per-kartu tagihan.
 // Sengaja pakai chevron TERPISAH (bukan ganti tap kartu jadi toggle) krn tap kartu
 // (`data-action="openBillModal"` di `.bill-item`) sudah dipakai user utk buka Edit —
