@@ -1,3 +1,175 @@
+# Changelog — Sesi 494 (Kuota Nominal Titipan di `investmentOwnersModal`, Gate 2 PLAN-owner-registry-multi-session.md)
+
+## Konteks
+Prasyarat: S493 selesai (registry `ownerId` konsisten lintas 3 domain).
+Gate 2 (kuota nominal dana titipan) dikonfirmasi eksplisit sebelum
+implementasi (lihat percakapan sesi ini): **(1)** basis nominal per
+holding = `holdingCost` (pokok masuk, konsisten `DanaTitipanPortfolioAPI`
+existing) — BUKAN `holdingValue`; **(2)** owner belum punya
+`titipanCommitments`/`principalAmount` -> tampilkan prompt **"catat
+pokok dulu"** (BUKAN tampil tanpa batas/diam saja); **(3)** pelanggaran
+kuota = **soft warning** ⚠️ (tetap bisa Simpan, pola sama
+`OVER_ALLOCATED` existing) — BUKAN hard block; **(4)** scope HANYA
+`investmentOwnersModal` (`assetOwnersModal` di luar scope, tidak
+disentuh).
+
+## Perubahan
+- `modules/finance/dana-titipan-portfolio-presenter.js`: API baru
+  `DanaTitipanPortfolioAPI.allocatedExcluding(ownerId, holdingId)` —
+  total `holdingCost` yang SUDAH teralokasi ke `ownerId` di holding LAIN
+  (semua holding investasi KECUALI `holdingId` yang sedang dibuka di
+  modal). 100% REUSE `_holdingSplits()` (basis cost yang sama dgn
+  `build()`) — **0 rumus baru**, cuma filter+jumlah `costSplit` per
+  owner lintas holding lain. Owner SELF dikecualikan (pola sama
+  `build()`). `holdingId` opsional (kalau kosong, tidak ada holding yang
+  dikecualikan).
+- `modules/asset/investasi-view.js` (`InvestmentUI`):
+  - `_ownerQuotaText(o)` (baru) — hitung & render `"💰 Kuota sisa: Rp X"`
+    per baris owner non-SELF di `investmentOwnersModal`. Formula PERSIS
+    sesuai Gate 2: `principalAmount - allocatedExcluding(ownerId,
+    holdingId) - (holdingCost(holding) * porsiDraft/100)`. Baris SELF
+    -> string kosong (kuota tidak pernah tampil utk SELF). Owner belum
+    punya commitment -> prompt "catat pokok dulu" (Gate 2 #2). Kuota
+    negatif -> soft warning ⚠️ "melebihi pokok dikomit" (Gate 2 #3, TIDAK
+    pernah menonaktifkan tombol Simpan).
+  - `_updateOwnerQuotaDisplay(i)` (baru) — update HANYA
+    `#investOwnerKuota{i}` (live, tiap ketik porsi), TANPA render ulang
+    seluruh list — pola sama alasan `onOwnerPorsiInput()` tidak memanggil
+    `_renderOwnersList()` (supaya fokus/kursor input tidak hilang).
+  - `_renderOwnersList()`: tiap baris non-SELF sekarang punya container
+    `<div id="investOwnerKuota{i}">` berisi `_ownerQuotaText(o)`. Baris
+    SELF TIDAK punya container ini sama sekali.
+  - `onOwnerPorsiInput(i,val)`: tambah 1 baris panggil
+    `_updateOwnerQuotaDisplay(i)` setelah `updateOwnersTotal()` — kuota
+    ter-update live tiap ketik, **terpisah total** dari validasi
+    total-porsi 100% (`updateOwnersTotal()`/`saveBtn.disabled` TIDAK
+    dibaca/diubah oleh kuota, dan sebaliknya — keduanya tidak saling
+    override, sesuai instruksi).
+- `tests/s494-titipan-kuota-nominal-investment-owners.test.js` (**baru**,
+  14 test case): 6 test murni `allocatedExcluding()` (exclude holding
+  sedang dibuka, tanpa `holdingId` = jumlah semua holding, SELF
+  dikecualikan, ownerId tidak ditemukan -> 0, ownerId kosong -> 0 tanpa
+  throw, multi-owner porsi split lintas holding), 8 test DOM
+  `InvestmentUI._ownerQuotaText()`/`_updateOwnerQuotaDisplay()`/
+  `onOwnerPorsiInput()`/`_renderOwnersList()` — termasuk 1 test eksplisit
+  yang membuktikan `saveBtn.disabled` TETAP `false` (total porsi pas
+  100%) meski kuota titipan sudah lebih (soft warning, tidak override
+  validasi total-porsi — Gate 2 #3 & instruksi pemisahan validasi).
+- `app-bundle-a.min.js`, `app-bundle-b.min.js` — rebuild penuh (TANPA
+  minifikasi, esbuild masih tidak tersedia di sandbox ini — sama seperti
+  S488-S493).
+- `sw.js`, `index.html`, `app_production.html` — `?v=`/`CACHE_NAME` →
+  1225 (bagian rutin proses build).
+- `modules/shared/modules-render.js`, `modules/shared/modals.js`,
+  `modules/shared/modules-calc.js`, `chat-action-handlers.js`,
+  `modules/shared/features-helpers-global-security.js` — konstanta versi
+  disamakan ke `s494-owner-registry-cross-domain-validation` (rutin,
+  `bumpVersionEverywhere()` memakai label sesi sebelumnya sbg basis
+  auto-increment nomor sesi — versi APP_BUILD_VERSION tetap naik jadi
+  1225, nama sesi ini tercatat di CHANGELOG & session note).
+- `docs/FILE-MAP.md`/`docs/COVERAGE-PER-MODULE.md` — regenerasi otomatis.
+
+## Yang TIDAK diubah (out-of-scope, sesuai instruksi)
+- `assetOwnersModal`/`aset.js` — 0 sentuhan (Gate 2 #4: scope hanya
+  `investmentOwnersModal`).
+- 0 migrasi/merge/rename data existing — `D.titipanCommitments`/
+  `D.investments[].owners[]` dibaca apa adanya, tidak ditulis ulang oleh
+  fitur kuota ini sama sekali (murni read-only projection, sama prinsip
+  `DanaTitipanPortfolioAPI.build()`).
+- 0 rumus valuasi baru — `allocatedExcluding()` 100% reuse
+  `_holdingSplits()`, `_ownerQuotaText()` 100% reuse `holdingCost()` +
+  `allocatedExcluding()` + `getCommitments()` yang sudah ada.
+- Validasi total-porsi 100% (`MultiOwnerEngine.totalPorsi()`/
+  `remainingPorsi()`/`updateOwnersTotal()`) — 0 baris diubah, tetap satu-
+  satunya yang mengontrol `saveBtn.disabled`.
+
+## Verifikasi
+- `node --test tests/s494-titipan-kuota-nominal-investment-owners.test.js`
+  → **14/14 lolos**.
+- `node --test tests/*.test.js` → **3233/3233 lolos, 0 gagal** (3219 test
+  lama + 14 baru, **0 regresi**).
+- `node scripts/verify-window-expose.js` → lolos (68 modul data-action,
+  semua ter-window-expose, 0 baru butuh expose — `_ownerQuotaText()`/
+  `_updateOwnerQuotaDisplay()` internal, tidak dipanggil lewat
+  `data-action`).
+- `node scripts/build.js` → lolos semua lint blocking; versi naik
+  1224→1225; kedua bundle lolos `node --check`.
+- `node scripts/verify-release-ready.js` → **LOLOS** (2 gate di-override
+  manual: lint eslint & minify esbuild, sandbox tanpa akses jaringan,
+  sama seperti S488-S493 — lihat `docs/RELEASE-GATE-LOG.md`).
+
+## Belum ditangani (di luar scope sesi ini)
+- Gate 2 #4 kalau nanti diputuskan "ikut" `assetOwnersModal` juga —
+  sengaja TIDAK dikerjakan sesi ini (scope eksplisit hanya
+  `investmentOwnersModal`), butuh sesi terpisah kalau diperlukan.
+- Lint (`eslint`) & minifikasi (`esbuild`) nyata — sama seperti sesi
+  sebelumnya, perlu `npm install` di environment dgn akses registry.
+
+# Changelog — Sesi 493 (Owner Registry: Validasi Silang & Cleanup, penutup rangkaian S489-S493)
+
+## Konteks
+Sesi penutup rangkaian `PLAN-owner-registry-multi-session.md` (S489 core
+registry, S490 wiring `assetOwnersModal`, S491 wiring
+`investmentOwnersModal`, S492 retrofit `titipanCommitmentModal` Gate #2
+= SENTUH). S493 MURNI pengujian & dokumentasi — **0 baris business logic
+diubah** (0 sentuhan ke `MultiOwnerEngine`/`OwnerRegistry`/
+`Investment.getOwners()`/`DanaTitipanPortfolioAPI` — semua fungsi
+dipanggil apa adanya, hanya dites lintas domain).
+
+## Perubahan
+- **Test baru**: `tests/s493-owner-registry-cross-domain-validation.test.js`
+  (7 test) — membuktikan `ownerId` hasil `OwnerRegistry.findOrCreate()`
+  bisa dipakai KONSISTEN lintas 3 domain (Aset via `MultiOwnerEngine`
+  langsung, Investasi via `Investment.getOwners()`, Titipan via
+  `DanaTitipanPortfolioAPI.listExistingOwners()`/`build()`), dan bahwa
+  `validateOwners()`/`splitByPorsi()`/`selfPorsi()`/`selfOwnedValue()`/
+  agregasi SELF-non-SELF **TIDAK berubah** perilakunya sama sekali walau
+  `ownerId` berasal dari registry (bukan `uid()` manual) — termasuk 1
+  test regresi eksplisit yang membuktikan owner legacy (`ownerId` manual
+  pra-S489) tetap diterima berdampingan dgn owner registry di
+  aset/holding yang sama, tanpa migrasi dipaksakan.
+- **Audit regresi**: `MultiOwnerEngine.validateOwners()` (dan seluruh
+  suite `tests/multi-owner-engine.test.js` 41 test,
+  `tests/multi-owner-piutang-debt-split-s394.test.js` 12 test,
+  `tests/s462-investasi-multi-owner-titipan.test.js` 4 test — total 57
+  test regresi domain multi-owner) dijalankan ulang penuh setelah S489-492
+  — 57/57 lolos, 0 regresi formula porsi/validasi/split.
+- `docs/BUG_REGISTRY.md`: entri baru **OWNREG-GATE3-001** (§0a-10) —
+  mendokumentasikan rename-owner UI (`OwnerRegistry.rename()`/edit nama
+  entri existing) sebagai **OUT OF SCOPE (Gate #3)**, keputusan sadar
+  sejak awal plan (Gate #1 poin 3), bukan utang teknis diam-diam.
+- `PLAN-owner-registry-multi-session.md`: status diupdate — rangkaian
+  S489-S493 **SELESAI**; Gate 2 baru (Kuota Nominal Titipan, S494) masih
+  BELUM diputuskan, menunggu sesi terpisah sesuai instruksi eksplisit.
+- Konstanta versi build disamakan ke
+  `s493-owner-registry-cross-domain-validation` di semua file yang biasa
+  ikut sinkron per sesi (lihat `s493-SESSION-NOTE.md` untuk daftar
+  lengkap file).
+
+## Verifikasi yang sudah dijalankan
+- `node --test tests/s493-owner-registry-cross-domain-validation.test.js`
+  → **7/7 lolos**.
+- `node --test tests/multi-owner-engine.test.js
+  tests/multi-owner-piutang-debt-split-s394.test.js
+  tests/s462-investasi-multi-owner-titipan.test.js` → **57/57 lolos**
+  (audit regresi `validateOwners()` full, 0 gagal).
+- `node --test tests/*.test.js` → **3219/3219 lolos, 0 gagal** (3212
+  baseline S492 + 7 baru S493, 0 regresi).
+- `node scripts/verify-window-expose.js` → lolos.
+- `node scripts/verify-release-ready.js` (dgn override lint/minify —
+  eslint & esbuild tidak tersedia di sandbox tanpa akses jaringan,
+  dicatat di `docs/RELEASE-GATE-LOG.md`) → lolos.
+
+## Tidak dilakukan (sesuai instruksi eksplisit scope S493)
+- Tidak ada migrasi/merge/rename `ownerId` data existing.
+- Gate 2 baru (Kuota Nominal Titipan, untuk S494) **belum diputuskan**
+  sesi ini — di luar scope, plan mensyaratkan sesi terpisah.
+- `OwnerRegistry.rename()`/UI edit nama owner — tetap out-of-scope
+  (Gate #3), didokumentasikan di `docs/BUG_REGISTRY.md` (OWNREG-GATE3-001),
+  bukan diimplementasikan.
+
+---
+
 # Changelog — Sesi 488 (Tes Buka/Tutup Modal: daftarkan titipanCommitmentModal & titipanReturnModal ke sweep)
 
 ## Konteks
