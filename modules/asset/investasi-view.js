@@ -57,10 +57,123 @@ const InvestmentUI = {
     openModal('investmentOwnersModal');
   },
 
+  // _ownerNameFieldHtml(o,i) — SESI 491 (langkah 3/5 PLAN-owner-registry-multi-session.md),
+  // replikasi PERSIS Aset._ownerNameFieldHtml() (S490): baris isSelf tetap free-text (TIDAK
+  // berubah). Baris non-SELF: kalau OwnerRegistry SUDAH punya minimal 1 entri & baris ini TIDAK
+  // sedang mode "buat baru" (o._creatingNew), render <select> (pilih existing owner atau "Buat
+  // pemilik baru..."). Registry masih kosong ATAU baris sedang _creatingNew -> fallback free-text
+  // SAMA PERSIS perilaku sebelum S491 — onOwnerNameInput() TIDAK diubah, dipakai apa adanya di
+  // kedua fallback ini. Opsi dropdown SELALU sertakan ownerId lama baris ini kalau belum terdaftar
+  // di registry (owner legacy dari data sebelum S489/S491 ada) — supaya buka modal tidak
+  // "kehilangan" nama yang sudah tersimpan. 0 perbedaan logic dgn Aset._ownerNameFieldHtml() selain
+  // namespace (InvestmentUI vs Aset) & nama handler onchange.
+  _ownerNameFieldHtml(o, i) {
+    const registryList = (typeof OwnerRegistry !== 'undefined') ? OwnerRegistry.listAll() : [];
+    if (o.isSelf || !registryList.length || o._creatingNew) {
+      return '<input type="text" class="fi" style="flex:1" placeholder="Nama pemilik" value="' + escapeHtml(o.ownerName || '') + '" oninput="InvestmentUI.onOwnerNameInput(' + i + ',this.value)">';
+    }
+    let matched = false;
+    let opts = '<option value="">— Pilih pemilik —</option>';
+    registryList.forEach((r) => {
+      const sel = (o.ownerId === r.id) ? ' selected' : '';
+      if (o.ownerId === r.id) matched = true;
+      opts += '<option value="' + escapeHtml(r.id) + '"' + sel + '>' + escapeHtml(r.name) + '</option>';
+    });
+    if (o.ownerId && !matched && o.ownerName) {
+      opts += '<option value="' + escapeHtml(o.ownerId) + '" selected>' + escapeHtml(o.ownerName) + '</option>';
+    }
+    opts += '<option value="__new__">➕ Buat pemilik baru…</option>';
+    return '<select class="fi" style="flex:1" onchange="InvestmentUI.onOwnerSelectChange(' + i + ',this.value)">' + opts + '</select>';
+  },
+
+  // onOwnerSelectChange(i,val) — SESI 491: replikasi PERSIS Aset.onOwnerSelectChange() (S490).
+  // Dipanggil dari dropdown pilih pemilik (_ownerNameFieldHtml(), baris non-SELF, hanya muncul
+  // kalau OwnerRegistry sudah punya entri). val==="__new__" -> masuk mode _creatingNew (render
+  // ulang jadi free-text kosong, sama seperti baris baru dari addOwnerRow()). val kosong ->
+  // kosongkan ownerId/ownerName (belum pilih apa-apa). val id existing -> isi ownerId/ownerName
+  // draft dari entri registry yang cocok. Render ulang list — event onchange DISKRIT (bukan tiap
+  // ketik), aman & tidak kena masalah fokus/kursor seperti onOwnerNameInput()/onOwnerPorsiInput().
+  onOwnerSelectChange(i, val) {
+    if (!Array.isArray(InvestmentUI._ownersDraft) || !InvestmentUI._ownersDraft[i]) return;
+    if (val === '__new__') {
+      InvestmentUI._ownersDraft[i]._creatingNew = true;
+      InvestmentUI._ownersDraft[i].ownerId = '';
+      InvestmentUI._ownersDraft[i].ownerName = '';
+      InvestmentUI._renderOwnersList();
+      return;
+    }
+    if (!val) {
+      InvestmentUI._ownersDraft[i].ownerId = '';
+      InvestmentUI._ownersDraft[i].ownerName = '';
+      InvestmentUI._renderOwnersList();
+      return;
+    }
+    const registryList = (typeof OwnerRegistry !== 'undefined') ? OwnerRegistry.listAll() : [];
+    const entry = registryList.find((r) => r.id === val);
+    InvestmentUI._ownersDraft[i].ownerId = val;
+    InvestmentUI._ownersDraft[i].ownerName = entry ? entry.name : InvestmentUI._ownersDraft[i].ownerName;
+    InvestmentUI._ownersDraft[i]._creatingNew = false;
+    InvestmentUI._renderOwnersList();
+  },
+
+  // _ownerQuotaText(o) — SESI 494 (Gate 2, PLAN-owner-registry-multi-session.md, dikonfirmasi:
+  // basis nominal holdingCost, owner belum punya commitment -> prompt "catat pokok dulu" bukan
+  // tampil tanpa batas, pelanggaran kuota = soft warning bukan hard block). Hitung & render "Kuota
+  // sisa: Rp X" LIVE utk 1 baris owner non-SELF, TERPISAH dari validasi total-porsi 100%
+  // (updateOwnersTotal() TIDAK dibaca/diubah di sini, & fungsi ini TIDAK PERNAH menonaktifkan
+  // #investmentOwnersSaveBtn — soft warning saja, sesuai Gate 2 #3).
+  //
+  // 100% REUSE: `DanaTitipanPortfolioAPI.getCommitments()` (baca principalAmount mentah by
+  // ownerId — bukan build(), supaya tidak ikut proyeksi holding lain yang tidak relevan di sini),
+  // `DanaTitipanPortfolioAPI.allocatedExcluding()` (S494, alokasi owner ini di holding LAIN), &
+  // `Investment.holdingCost()` (utk konversi porsi% draft baris ini -> nominal, basis holdingCost
+  // holding yang SEDANG dibuka di modal ini — Gate 2 #1). 0 rumus baru selain penjumlahan
+  // "principal - allocatedExcluding - nominal draft saat ini" yang sudah didefinisikan eksplisit
+  // di rencana sesi (RENCANA S494).
+  //
+  // Owner belum punya record commitment (`getCommitments()` tidak ketemu / principalAmount bukan
+  // angka) -> Gate 2 #2: prompt "catat pokok dulu" (BUKAN tampil tanpa batas/diam saja).
+  _ownerQuotaText(o) {
+    if (!o || o.isSelf || !o.ownerId) return '';
+    if (typeof DanaTitipanPortfolioAPI === 'undefined') return '';
+    const commit = DanaTitipanPortfolioAPI.getCommitments().find((c) => c && c.ownerId === o.ownerId);
+    if (!commit || !isFinite(commit.principalAmount)) {
+      return '<div class="u-fs11 u-t2 u-mt2">💰 Kuota titipan: <span class="u-fw700">belum dicatat</span> — catat pokok dulu di menu Dana Titipan</div>';
+    }
+    const principal = Number(commit.principalAmount);
+    const holding = InvestmentUI._ownersModalHolding;
+    const holdingId = holding ? holding.id : null;
+    const excluding = DanaTitipanPortfolioAPI.allocatedExcluding(o.ownerId, holdingId);
+    const holdingCost = (holding && typeof Investment !== 'undefined' && typeof Investment.holdingCost === 'function')
+      ? (Investment.holdingCost(holding) || 0) : 0;
+    const porsiNum = typeof o.porsi === 'number' && isFinite(o.porsi) ? o.porsi : 0;
+    const draftNominal = holdingCost * (porsiNum / 100);
+    const sisa = principal - excluding - draftNominal;
+    const money = (typeof fmtFull === 'function') ? fmtFull : ((typeof fmt === 'function') ? fmt : (n) => 'Rp ' + Math.round(n || 0));
+    if (sisa < 0) {
+      return '<div class="u-fs11 u-mt2"><span class="u-fw700 red">⚠️ Kuota sisa: ' + money(sisa) + ' (melebihi pokok dikomit)</span></div>';
+    }
+    return '<div class="u-fs11 u-t2 u-mt2">💰 Kuota sisa: <span class="u-fw700">' + money(sisa) + '</span></div>';
+  },
+
+  // _updateOwnerQuotaDisplay(i) — SESI 494. Update HANYA elemen #investOwnerKuota{i} tiap ketik
+  // porsi (dipanggil dari onOwnerPorsiInput()), TANPA render ulang seluruh list — pola sama alasan
+  // onOwnerPorsiInput()/onOwnerNameInput() TIDAK memanggil _renderOwnersList() (supaya fokus/kursor
+  // input porsi tidak hilang tiap karakter diketik).
+  _updateOwnerQuotaDisplay(i) {
+    const el = document.getElementById('investOwnerKuota' + i);
+    if (!el) return;
+    const draft = Array.isArray(InvestmentUI._ownersDraft) ? InvestmentUI._ownersDraft : [];
+    if (!draft[i]) return;
+    el.innerHTML = InvestmentUI._ownerQuotaText(draft[i]);
+  },
+
   // _renderOwnersList() — render ulang #investmentOwnersList dari InvestmentUI._ownersDraft.
   // Dipanggil tiap ada tambah/hapus baris (addOwnerRow/removeOwnerRow), TIDAK dipanggil tiap
   // karakter diketik di input nama/porsi (lihat onOwnerNameInput/onOwnerPorsiInput di bawah) supaya
   // fokus/kursor input tidak hilang tiap ketik — pola sama persis Aset._renderOwnersList().
+  // SESI 491: baris nama pemilik sekarang lewat _ownerNameFieldHtml(o,i) (dropdown registry/
+  // free-text, sama pola Aset._renderOwnersList() sejak S490) — 0 perubahan lain di fungsi ini.
   _renderOwnersList() {
     const listBox = document.getElementById('investmentOwnersList');
     if (!listBox) { InvestmentUI.updateOwnersTotal(); return; }
@@ -79,13 +192,14 @@ const InvestmentUI = {
       const porsiNum = typeof o.porsi === 'number' && isFinite(o.porsi) ? o.porsi : null;
       return '<div style="margin-bottom:8px">'
         + '<div class="u-flex u-gap8" style="align-items:center;margin-bottom:6px">'
-        + '<input type="text" class="fi" style="flex:1" placeholder="Nama pemilik" value="' + escapeHtml(o.ownerName || '') + '" oninput="InvestmentUI.onOwnerNameInput(' + i + ',this.value)">'
+        + InvestmentUI._ownerNameFieldHtml(o, i)
         + '<button type="button" class="btn btn-ghost btn-sm" data-action="InvestmentUI.removeOwnerRow" data-args=\'[' + i + ']\' aria-label="Hapus pemilik">✕</button>'
         + '</div>'
         + '<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Porsi (%)</label><input type="number" class="fi" id="investOwnerPorsi' + i + '" placeholder="%" inputmode="decimal" value="' + (porsiNum !== null ? porsiNum : '') + '" oninput="InvestmentUI.onOwnerPorsiInput(' + i + ',this.value)"></div>'
         + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:4px;cursor:pointer">'
         + '<input type="checkbox" style="width:14px;height:14px"' + (o.isSelf ? ' checked' : '') + ' onchange="InvestmentUI.onOwnerIsSelfToggle(' + i + ',this.checked)"> 👤 Ini saya (porsi ini dihitung ke Zakat/Pajak milikmu)'
         + '</label>'
+        + (o.isSelf ? '' : ('<div id="investOwnerKuota' + i + '">' + InvestmentUI._ownerQuotaText(o) + '</div>'))
         + '</div>';
     }).join('');
     InvestmentUI.updateOwnersTotal();
@@ -157,6 +271,9 @@ const InvestmentUI = {
     const n = parseFloat(val);
     InvestmentUI._ownersDraft[i].porsi = isFinite(n) ? n : 0;
     InvestmentUI.updateOwnersTotal();
+    // SESI 494 — "Kuota sisa" per owner terpisah dari validasi total-porsi 100% di atas (soft
+    // warning, TIDAK menyentuh saveBtn.disabled — lihat _ownerQuotaText()/_updateOwnerQuotaDisplay()).
+    InvestmentUI._updateOwnerQuotaDisplay(i);
   },
 
   // onOwnerIsSelfToggle(i,checked) — tandai/lepas baris ke-i draft sbg porsi milik sendiri (dipakai
@@ -173,6 +290,11 @@ const InvestmentUI = {
   // dari addOwnerRow(), belum pernah tersimpan) diberi id via uid() sebelum divalidasi — pola sama
   // persis Aset.saveOwners(). Investment.setOwners() melempar Error (bukan {ok,reason} spt
   // MultiOwnerEngine.setOwners() mentah) kalau validasi gagal, jadi dibungkus try/catch di sini.
+  // SESI 491: baris baru (ownerId masih kosong) non-SELF -> ownerId lewat OwnerRegistry.
+  // findOrCreate() (dedup by nama, konsisten lintas aset/investasi — TUJUAN UTAMA S489-S491),
+  // BUKAN uid() langsung lagi. Baris SELF & baris yang ownerId-nya SUDAH ada (dari dropdown pilih
+  // existing, atau data lama) TIDAK disentuh — perilaku persis sebelum S491, replikasi PERSIS
+  // Aset.saveOwners() (S490).
   saveOwners() {
     if (!InvestmentUI._ownersModalHolding) { toast('⚠️ Holding investasi ini tidak ditemukan'); return; }
     if (typeof Investment === 'undefined') { toast('⚠️ Fitur porsi kepemilikan investasi belum siap dimuat'); return; }
@@ -184,12 +306,17 @@ const InvestmentUI = {
         return;
       }
     }
-    const owners = draft.map((o) => ({
-      ownerId: (o.ownerId && String(o.ownerId).trim()) ? String(o.ownerId).trim() : String(typeof uid === 'function' ? uid() : Date.now() + Math.random()),
-      ownerName: o.ownerName.trim(),
-      porsi: o.porsi,
-      isSelf: !!o.isSelf,
-    }));
+    const owners = draft.map((o) => {
+      let ownerId;
+      if (o.ownerId && String(o.ownerId).trim()) {
+        ownerId = String(o.ownerId).trim();
+      } else if (!o.isSelf && typeof OwnerRegistry !== 'undefined') {
+        ownerId = OwnerRegistry.findOrCreate(o.ownerName.trim());
+      } else {
+        ownerId = String(typeof uid === 'function' ? uid() : Date.now() + Math.random());
+      }
+      return { ownerId, ownerName: o.ownerName.trim(), porsi: o.porsi, isSelf: !!o.isSelf };
+    });
     let h;
     try {
       h = Investment.setOwners(InvestmentUI._ownersModalHolding.id, owners);
