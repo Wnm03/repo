@@ -791,6 +791,30 @@ const GROUP_B = [
   'modules/self-reward/self-reward-ai-widget.js',
   'modules/asset/investasi.js',
 
+  // S464: UI modal "⚖️ Atur Porsi Kepemilikan" utk holding investasi (AUD-008 lanjutan S462) —
+  // ditaruh TEPAT SETELAH investasi.js (dependency: InvestmentUI.openOwnersModal()/saveOwners()
+  // butuh `Investment` sudah dimuat lebih dulu, pola sama persis aset.js -> Aset yang dipakainya
+  // sendiri, tapi di sini engine & UI-nya dipisah 2 file — lihat komentar header investasi-view.js).
+  'modules/asset/investasi-view.js',
+
+  // S466: halaman/tab "💹 Investasi" (Fase 1, BUG-INV-001 Opsi 3 — lihat
+  // AUDIT-BUILD-UI-INVESTASI-OPSI3.md) — ditaruh TEPAT SETELAH investasi.js (dependency:
+  // InvestmentListUI.render()/save()/openModal() butuh `Investment`/`INVESTMENT_TYPES` sudah
+  // dimuat lebih dulu) DAN setelah investasi-view.js (dependency:
+  // InvestmentListUI.openOwnersModalForEdit() butuh `InvestmentUI` sudah dimuat lebih dulu —
+  // pola sama persis urutan aset.js -> investasi.js -> investasi-view.js di atas).
+  'modules/asset/investasi-list-view.js',
+
+  // S467: Fase 2 (UI Transaksi Beli/Jual/Dividen, §3.3 AUDIT-BUILD-UI-INVESTASI-OPSI3.md) &
+  // Fase 3 (UI Watchlist, §3.5) — ditaruh TEPAT SETELAH investasi-list-view.js (dependency:
+  // InvestmentTxUI.openFromEdit() butuh `InvestmentListUI.editId`, dan
+  // InvestmentListUI.render() sekarang juga memanggil `InvestmentWatchUI.render()` — lihat
+  // komentar di kepala kedua file). Keduanya sudah butuh `Investment`/`INVESTMENT_TYPES`
+  // (investasi.js) & `InvestmentListUI` (investasi-list-view.js) dimuat lebih dulu, jadi
+  // urutan ini WAJIB tepat setelah investasi-list-view.js, bukan sebelumnya.
+  'modules/asset/investasi-tx-view.js',
+  'modules/asset/investasi-watch-view.js',
+
   // S101 (Batch 10): Asset Portfolio Foundation — ditaruh SETELAH
   // investasi.js (dependency: AssetPortfolioAPI._investment() butuh
   // `Investment` sudah dimuat lebih dulu). `Aset` (aset.js)/
