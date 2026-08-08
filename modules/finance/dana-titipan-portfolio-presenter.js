@@ -108,6 +108,51 @@ _holdingSplits(h) {
   return { owners, costSplit: costSplit.splits, valueSplit: valueSplit.splits, gainSplit: gainSplit.splits };
 },
 
+// allocatedExcluding(ownerId, holdingId) — SESI 494 (Gate 2,
+// PLAN-owner-registry-multi-session.md, dikonfirmasi eksplisit sebelum
+// sesi ini mulai: basis nominal = holdingCost, owner belum punya
+// commitment -> prompt "catat pokok dulu" di UI (bukan tampil tanpa
+// batas), pelanggaran kuota = soft warning bukan hard block). Dipakai
+// `investasi-view.js` (`InvestmentUI`) utk hitung "Kuota sisa" LIVE di
+// modal `investmentOwnersModal` — total `holdingCost` yang SUDAH
+// teralokasi ke `ownerId` ini di holding LAIN (semua holding KECUALI
+// `holdingId` yang sedang dibuka di modal, supaya draft porsi yang
+// belum disimpan di holding itu sendiri tidak ganda dihitung — caller
+// yang menjumlah nominal draft holding yang sedang dibuka secara
+// terpisah, lihat `InvestmentUI._ownerQuotaText()`).
+//
+// 100% REUSE `_holdingSplits()` (basis cost, sama seperti `build()`) —
+// 0 rumus baru ditulis di sini, cuma filter+jumlah `costSplit` per
+// owner lintas holding lain. Owner SELF tetap dikecualikan (pola sama
+// `build()`). `holdingId` opsional — kalau tidak diberikan (mis. modal
+// dibuka utk holding baru yang belum tersimpan / `id` kosong), TIDAK
+// ada holding yang dikecualikan (semua holding existing owner itu
+// dihitung, karena tidak ada holding "sedang dibuka" yang perlu
+// dikeluarkan).
+//
+// Return: angka (0 kalau `ownerId` kosong, holdings tidak terbaca, atau
+// owner ini tidak muncul di holding manapun selain yang dikecualikan).
+allocatedExcluding(ownerId, holdingId) {
+  if (!ownerId) return 0;
+  const canReadHoldings = !(typeof Investment === 'undefined' || typeof Investment.getHoldings !== 'function');
+  if (!canReadHoldings) return 0;
+  const holdings = Investment.getHoldings() || [];
+  let total = 0;
+  holdings.forEach((h) => {
+    if (!h) return;
+    if (holdingId && h.id === holdingId) return;
+    const splits = this._holdingSplits(h);
+    if (!splits) return;
+    const { owners, costSplit } = splits;
+    owners.forEach((o, idx) => {
+      if (!o || o.isSelf) return;
+      if (o.ownerId !== ownerId) return;
+      total += (costSplit[idx] && costSplit[idx].bagian) || 0;
+    });
+  });
+  return total;
+},
+
 // build() — projection utama. Grouping per owner NON-SELF lintas SEMUA
 // holding investasi (satu owner bisa tersebar ke banyak instrumen; satu
 // instrumen bisa punya porsi dari beberapa owner — keduanya sudah
@@ -246,56 +291,94 @@ build() {
   return { owners, totals };
 },
 
-// listExistingOwners() — Sesi 485a (Gap #3 audit, langkah 1/5: fondasi
-// data model + owner picker, READ-ONLY). Kumpulkan daftar owner UNIK
-// (by `ownerId`, BUKAN `ownerName` — dua owner beda `ownerId` dgn nama
-// sama TETAP 2 entri terpisah, sesuai keputusan audit: ownerId adalah
-// identity, ownerName cuma display) dari SELURUH holding investasi yang
-// ada sekarang, 100% reuse `Investment.getHoldings()`/`getOwners(h)`
-// (0 sumber data baru, 0 registry baru — TIDAK ada `D.titipanOwners[]`).
+// listExistingOwners() — Sesi 485a (langkah 1/5), diperluas Sesi 492
+// (Gap #2 plan owner-registry, PLAN-owner-registry-multi-session.md,
+// Gate #2 = SENTUH — dikonfirmasi eksplisit sebelum sesi ini mulai).
 //
-// Dipakai sebagai sumber dropdown "Pilih Owner" di form komitmen (sesi
-// UI, S485d) — supaya ownerId TIDAK PERNAH diketik manual oleh user
-// (mencegah user membuat identity baru yang tidak dikenal sistem).
-// Owner SELF tetap DIKECUALIKAN (pola sama build(): `.filter((o) =>
-// !o.isSelf)`) — dana titipan hanya utk owner non-SELF.
+// SESI 492 — apa yang berubah & apa yang TIDAK:
+//   - Fungsi ini sekarang JUGA jadi consumer `OwnerRegistry.listAll()`
+//     (S489) — owner yang dibuat lewat dropdown `assetOwnersModal`
+//     (S490) / `investmentOwnersModal` (S491) sekarang IKUT muncul di
+//     picker "💰 Pokok Dana Titipan", supaya satu orang yang sama TIDAK
+//     perlu identity terpisah lagi kalau sudah pernah dipilih/dibuat di
+//     Aset atau Investasi.
+//   - Sumber LAMA (union dari `Investment.getHoldings()`/`getOwners(h)`)
+//     TIDAK DIHAPUS/DIGANTI — tetap dijalankan APA ADANYA, 0 baris logic
+//     lama diubah. Registry ditambahkan sebagai sumber KEDUA, di-append
+//     setelah union holding (dedup gabungan by `ownerId`/`id`).
+//   - Ini SENGAJA bukan "ganti total ke registry": Gate #1 (S489) sudah
+//     mengunci seed KOSONG, artinya SEMUA owner yang sudah ada di
+//     holding sebelum S490/491 live TIDAK PERNAH masuk registry (dan
+//     TIDAK di-backfill sesi ini — dilarang migrasi). Kalau union holding
+//     dibuang & diganti murni `OwnerRegistry.listAll()`, seluruh owner
+//     lama akan hilang dari picker titipan (regresi total ke pengguna
+//     existing + 10 test S485a yang menguji union holding jadi rusak).
+//     Union tetap dipertahankan justru untuk MENJAGA data existing aman
+//     ("tidak melakukan migrasi/rename/merge/perubahan ownerId pada data
+//     existing" — instruksi Gate #2), sekaligus fungsi ini benar-benar
+//     "menjadi consumer" registry (dibaca & digabung, bukan diabaikan).
+//   - Dedup gabungan: kalau `id` registry KEBETULAN sama dgn `ownerId`
+//     union holding (mis. dari findOrCreate yang balik id existing utk
+//     satu orang yang SUDAH pernah dipakai di Aset/Investasi & TERNYATA
+//     ownerId itu juga muncul di suatu holding lama) -> entri holding
+//     (union lama) menang, entri registry di-skip (union holding tetap
+//     "sumber utama" utk owner yang SUDAH terhubung ke suatu holding,
+//     sesuai catatan lama di bawah — 0 perubahan urutan/isi union lama).
+//   - Owner SELF tetap DIKECUALIKAN dari kedua sumber (union holding
+//     sudah filter `!o.isSelf`; `OwnerRegistry` sendiri tidak pernah
+//     menyimpan baris SELF — S490/491 hanya panggil `findOrCreate()`
+//     utk baris non-SELF, lihat `aset.js`/`investasi-view.js`).
 //
-// CATATAN LEGACY COLLISION (audit, TIDAK diperbaiki sesi ini — lihat
-// investasi.js Investment.getOwners(): holding legacy `fundSource:
+// CATATAN LEGACY COLLISION (audit S485a, TIDAK diperbaiki sesi ini —
+// lihat investasi.js Investment.getOwners(): holding legacy `fundSource:
 // 'titipan'` SELALU balik ownerId literal 'titipan_investor' apa pun
 // isi `titipanOwner`-nya). Konsekuensi: kalau ada 2 holding legacy milik
 // 2 orang berbeda (mis. Budi & Cici, keduanya lewat fundSource:'titipan'
 // tanpa h.owners[]), keduanya collapse jadi 1 entri di sini dgn
 // `ownerId:'titipan_investor'` (ownerName = milik holding yang diproses
 // PERTAMA, sesuai urutan Investment.getHoldings()). Ini BUKAN bug baru
-// sesi ini — PRE-EXISTING/OUT OF SCOPE, didokumentasikan di
-// SESSION-NOTE, TIDAK di-patch (dilarang oleh keputusan audit: dilarang
-// migrate ownerId/rewrite legacy holdings/ubah getOwners()).
+// sesi ini — PRE-EXISTING/OUT OF SCOPE, TIDAK di-patch (dilarang oleh
+// keputusan audit: dilarang migrate ownerId/rewrite legacy holdings/ubah
+// getOwners()) — tetap valid persis seperti sebelum S492 karena union
+// holding di bawah ini TIDAK disentuh sama sekali.
 //
 // Parameter: tidak ada.
-// Return: array `{ownerId, ownerName}`, urutan mengikuti kemunculan
-//   pertama tiap ownerId di `Investment.getHoldings()` (deterministik,
-//   TIDAK di-sort ulang di sini — sorting jadi tanggung jawab caller/UI
-//   kalau perlu, supaya fungsi ini tetap murni "kumpulkan & dedup").
+// Return: array `{ownerId, ownerName}` — urutan: union holding dulu
+//   (deterministik, mengikuti kemunculan pertama di
+//   `Investment.getHoldings()`, sama persis S485a), lalu entri
+//   `OwnerRegistry.listAll()` yang BELUM ada di union holding (mengikuti
+//   urutan `D.ownerRegistry`, TIDAK di-sort ulang).
 listExistingOwners() {
-  if (typeof Investment === 'undefined' || typeof Investment.getHoldings !== 'function') return [];
-  if (typeof Investment.getOwners !== 'function') return [];
   const seen = new Set();
   const result = [];
-  const holdings = Investment.getHoldings() || [];
-  holdings.forEach((h) => {
-    if (!h) return;
-    const owners = Investment.getOwners(h);
-    if (!Array.isArray(owners)) return;
-    owners.forEach((o) => {
-      if (!o || o.isSelf) return;
-      if (!o.ownerId) return;
-      if (seen.has(o.ownerId)) return;
-      seen.add(o.ownerId);
-      const ownerName = (o.ownerName && String(o.ownerName).trim()) || 'Pemilik dana titipan';
-      result.push({ ownerId: o.ownerId, ownerName });
+  if (typeof Investment !== 'undefined' && typeof Investment.getHoldings === 'function' && typeof Investment.getOwners === 'function') {
+    const holdings = Investment.getHoldings() || [];
+    holdings.forEach((h) => {
+      if (!h) return;
+      const owners = Investment.getOwners(h);
+      if (!Array.isArray(owners)) return;
+      owners.forEach((o) => {
+        if (!o || o.isSelf) return;
+        if (!o.ownerId) return;
+        if (seen.has(o.ownerId)) return;
+        seen.add(o.ownerId);
+        const ownerName = (o.ownerName && String(o.ownerName).trim()) || 'Pemilik dana titipan';
+        result.push({ ownerId: o.ownerId, ownerName });
+      });
     });
-  });
+  }
+  // Sesi 492: tambahan sumber kedua, OwnerRegistry (S489) — append-only,
+  // dedup gabungan by id, union holding di atas tidak berubah sama sekali.
+  if (typeof OwnerRegistry !== 'undefined' && typeof OwnerRegistry.listAll === 'function') {
+    const registryList = OwnerRegistry.listAll() || [];
+    registryList.forEach((r) => {
+      if (!r || !r.id) return;
+      if (seen.has(r.id)) return;
+      seen.add(r.id);
+      const ownerName = (r.name && String(r.name).trim()) || 'Pemilik dana titipan';
+      result.push({ ownerId: r.id, ownerName });
+    });
+  }
   return result;
 },
 
