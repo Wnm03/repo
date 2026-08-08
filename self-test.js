@@ -1866,6 +1866,19 @@ call:()=>{ Aset.openModal(); }},
 before:()=>{ const backup=Aset.editId; D.assets.push({id:'__sweep_dummy_asset_owners__',name:'(tes sweep)',nilai:0,jenis:'Lainnya'}); Aset.editId='__sweep_dummy_asset_owners__'; return backup; },
 call:()=>{ Aset.openOwnersModal(); },
 after:(backup)=>{ Aset.editId=backup; D.assets=D.assets.filter(a=>a.id!=='__sweep_dummy_asset_owners__'); }},
+// S477: investmentOwnersModal ("⚖️ Atur Porsi Kepemilikan" holding
+// investasi, dibuat S464 tapi baru dapat caller nyata di S466-468 lewat
+// InvestmentListUI.openOwnersModalForEdit()) belum terdaftar di sweep
+// manapun -- terdeteksi "(kelengkapan cakupan) modal belum terdaftar" di
+// Tes Buka/Tutup Modal. InvestmentUI.openOwnersModal(id)
+// dipanggil TANPA id (persis Aset.openOwnersModal() di atas kalau
+// Aset.editId kosong) tetap aman: h jadi null, modal tetap render dalam
+// mode "holding tidak ditemukan" lalu openModal() -- jadi TIDAK perlu
+// before/after push+hapus dummy holding ke D.investments seperti spec
+// assetOwnersModal di atas (0 mutasi data, sweep tetap 100% aman
+// dijalankan kapan saja).
+{label:'InvestmentUI.openOwnersModal()',id:'investmentOwnersModal',
+call:()=>{ InvestmentUI.openOwnersModal(); }},
 {label:'Piutang.openModal()',id:'piutangModal',
 call:()=>{ Piutang.openModal(); }},
 {label:'Debt.openModal()',id:'debtModal',

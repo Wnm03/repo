@@ -83,9 +83,9 @@
 <link rel="preconnect" href="https://accounts.google.com" crossorigin>
 <link rel="dns-prefetch" href="https://accounts.google.com">
 <title>Keluarga W</title>
-<link rel="stylesheet" href="styles.css?v=1197">
-<link rel="stylesheet" href="modern-ui-layer.css?v=1197">
-<script src="nav-scroll.js?v=1197" defer></script>
+<link rel="stylesheet" href="styles.css?v=1205">
+<link rel="stylesheet" href="modern-ui-layer.css?v=1205">
+<script src="nav-scroll.js?v=1205" defer></script>
 <script>
 /* Debug console (Eruda) — aktifkan sekali lewat ?debug=1 di URL, nempel via localStorage.
    Matikan lagi lewat ?debug=0. Tidak aktif buat user biasa. */
@@ -151,17 +151,17 @@ function ensureZXing(){return _loadScriptOnce('https://cdn.jsdelivr.net/npm/@zxi
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn CDN di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // > Proyek Renovasi pertama dibuka.
-function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1197');}
+function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1205');}
 // sewakios.js dikeluarkan dari app-bundle-a.min.js (scripts/build.js GROUP_A),
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn Renov di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // pertama dibuka.
-function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1197');}
+function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1205');}
 // business-intelligence-presenter.js dikeluarkan dari app-bundle-b.min.js
 // (scripts/build.js GROUP_B), dimuat on-demand lewat pola sama.
 // Dipanggil dari setShopTab() (cobek-io.js) saat tab Shop > Business
 // Intelligence pertama dibuka.
-function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1197');}
+function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1205');}
 </script>
 <script>
 window.__moduleLoadFail=function(name){
@@ -250,8 +250,8 @@ window.location.reload();
 }catch(e){}
 })();
 </script>
-<script src="app-bundle-a.min.js?v=1197" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
-<script src="modules/shared/smoke-test.js?v=1197" defer></script>
+<script src="app-bundle-a.min.js?v=1205" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
+<script src="modules/shared/smoke-test.js?v=1205" defer></script>
 <link rel="manifest" id="pwaManifestLink" href="manifest.json">
 </head>
 <body data-theme="fresh">
@@ -2384,6 +2384,7 @@ window.location.reload();
         <div class="budget-sum-box"><div class="budget-sum-val" id="investSummaryCost">Rp 0</div><div class="budget-sum-lbl">Modal (Cost Basis)</div></div>
       </div>
       <div class="u-fs13 u-mt10" id="investSummaryGain"></div>
+      <div class="u-fs12 u-mt6" id="investSummaryYield"></div>
       <div class="u-fs12 u-t2 u-mt8" id="investSummaryMeta"></div>
     </div>
     <div class="card u-mb12">
@@ -3900,6 +3901,6 @@ window.location.reload();
 <script>document.write(MODAL_HTML[94]);</script><!-- modal:investmentTxModal (S467, Fase 2 BUG-INV-001 Opsi 3) -->
 <script>document.write(MODAL_HTML[95]);</script><!-- modal:investmentWatchModal (S467, Fase 3 BUG-INV-001 Opsi 3) -->
 
-<script src="app-bundle-b.min.js?v=1197" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
+<script src="app-bundle-b.min.js?v=1205" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
 </body>
 </html>

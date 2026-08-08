@@ -1,3 +1,28 @@
+# Changelog — Sesi 477 (Tes Buka/Tutup Modal: daftarkan investmentOwnersModal ke sweep)
+
+## Konteks
+`investmentOwnersModal` ("⚖️ Atur Porsi Kepemilikan" holding investasi,
+dibuat S464) terdeteksi "(kelengkapan cakupan) modal belum terdaftar" di
+Tes Buka/Tutup Modal — gap coverage tes murni, bukan bug fungsional.
+
+## Perubahan
+- `self-test.js` + `app-bundle-b.min.js` (embedded copy) —
+  `MODULE_METHOD_MODAL_SPECS`: 1 spec baru
+  `InvestmentUI.openOwnersModal()`, dipanggil TANPA id (aman, 0 mutasi
+  `D.investments`, sama seperti pola `Aset.openOwnersModal()` saat
+  `Aset.editId` kosong).
+- Konstanta versi build disamakan ke `s477-modal-sweep-coverage-fix` di
+  semua file yang biasa ikut sinkron per sesi (lihat
+  `s477-SESSION-NOTE.md` utk daftar lengkap file).
+- Cache-busting `?v=1201`→`?v=1202` (index.html, app_production.html)
+  & `kw-cache-v1201`→`kw-cache-v1202` (sw.js).
+
+## Status
+Lihat `s477-SESSION-NOTE.md` utk detail & daftar verifikasi yang masih
+perlu dijalankan manual (full test suite + cek visual sweep modal).
+
+---
+
 # Changelog — Sesi 474 (Virtual Bill Item — s468d: buffer/regression final)
 
 ## Konteks
