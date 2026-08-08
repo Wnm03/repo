@@ -1,12 +1,16 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s474-virtual-bill-item-final';
+const MODULE_CALC_VERSION='s480-stok-koreksi-opname';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){
 const fi=D.finansialFreedom||{};
 if((fi.assetScope||'zakatable')==='semua') return totalAssetValue();
-return (D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);
+// s476a (Blocker B): sama seperti Zakat.hitungMaal() (pajak-pbb-zakat.js) --
+// exclude aset yang sudah `_migratedToInvestmentId` (dobel-hitung), tambah
+// `Investment.zakatableValue()` supaya holding hasil migrasi tetap ikut
+// scope FI "Hanya Zakatable".
+return (D.assets||[]).filter(a=>a.zakatable&&!a._migratedToInvestmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0)+(typeof Investment!=='undefined'?Investment.zakatableValue():0);
 },
 assetFund(){ return totalSaldoAkun()+FI.investmentAssetValue()+totalPiutangValue(); },
 totalDebt(){
@@ -837,7 +841,17 @@ const Kekayaan={
 // FI.totalDebt() (0 rumus baru) supaya SEMUA konsumen Net Worth
 // (Dashboard/Report/Home) pakai 1 sumber utang yang sama (SSOT).
 currentNetWorth(){
-return totalSaldoAkun()+totalAssetValue()+totalInventoriBisnisValue()+totalPiutangValue()-FI.totalDebt();
+// s476a (Blocker A, docs/s476-PLAN-migrate-investasi-to-holdings.md):
+// TAMBAH `Investment.selfOwnedTotalValue()` (holding investasi, porsi SELF
+// terskala -- pola sama Aset.totalValue()) -- SEBELUM sesi ini,
+// Investment.portfolioSummary()/holdings TIDAK PERNAH masuk formula Net
+// Worth manapun (Blocker A). Sengaja DITAMBAH DI SINI, bukan di dalam
+// Aset.totalValue() sendiri -- `totalAssetValue()` dipakai jg oleh
+// AssetPortfolioAPI sbg `assetValue`, yang SUDAH menjumlah `investmentValue`
+// (Investment.portfolioSummary().totalValue) terpisah di
+// portfolioComposition() -- kalau ditambah di Aset.totalValue() juga,
+// jadi dobel-hitung di kartu Portfolio itu.
+return totalSaldoAkun()+totalAssetValue()+(typeof Investment!=='undefined'?Investment.selfOwnedTotalValue():0)+totalInventoriBisnisValue()+totalPiutangValue()-FI.totalDebt();
 },
 saveSnapshot(manual){
 const today=todayStr();
@@ -929,7 +943,10 @@ document.getElementById('wealthCAGRNote').textContent=`Dihitung dari snapshot ${
 },
 renderBersih(){
 const saldoAkun=totalSaldoAkun();
-const totalAset=totalAssetValue();
+// s476a (Blocker A): sama seperti currentNetWorth() di atas -- tambah
+// Investment.selfOwnedTotalValue() supaya Kekayaan Bersih di Dashboard
+// (elemen ini) tetap SAMA PERSIS dgn SSOT currentNetWorth().
+const totalAset=totalAssetValue()+(typeof Investment!=='undefined'?Investment.selfOwnedTotalValue():0);
 const totalInventori=totalInventoriBisnisValue();
 const totalPiutang=totalPiutangValue();
 const utangManual=D.pajakZakat.utangJT||parsePzNum(document.getElementById('zmUtang')?document.getElementById('zmUtang').value:0);

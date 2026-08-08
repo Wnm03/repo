@@ -53,11 +53,11 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's474-virtual-bill-item-final';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's474-virtual-bill-item-final';
+const APP_BUILD_VERSION = 's480-stok-koreksi-opname';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's480-stok-koreksi-opname';
 let D = {
 schemaVersion:SCHEMA_VERSION,
-transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],
+transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],productStockCorrections:[],
 catatan:{anak:[]},
 milestones:[false,false,false,false,false],
 nextPulang:'',lastBackup:null,lastResetPromptDate:null,
@@ -424,6 +424,9 @@ if(!D.productMovementOverride) D.productMovementOverride={};
 // Sesi 378 — Purchase Order (record beli dari supplier, module Inventory
 // Movement lanjutan S377). Pola migration guard SAMA PERSIS inventoryTransfers.
 if(!D.purchaseOrders) D.purchaseOrders=[];
+// Sesi s478 — Koreksi Stok / Stok Opname (module Inventory Movement lanjutan).
+// Pola migration guard SAMA PERSIS purchaseOrders di atas.
+if(!D.productStockCorrections) D.productStockCorrections=[];
 if(!D.debts) D.debts=[];
 D.debts.forEach(d=>{try{if(typeof Debt!=='undefined')Debt.syncBill(d);}catch(e){}});
 if(!D.renovProjects) D.renovProjects=[];
