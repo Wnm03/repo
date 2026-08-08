@@ -134,3 +134,18 @@
 
 - **lint-unavailable**: override dipakai. Alasan: eslint tidak terpasang di sandbox ini (tidak ada akses npm/network utk install), sama seperti sesi-sesi sebelumnya. Perubahan sesi ini HANYA 1 spec baru (11 baris + komentar) di MODULE_METHOD_MODAL_SPECS (self-test.js), pola 100% sama dgn spec Aset.openOwnersModal() tepat di atasnya -- dicek manual, gaya kode konsisten.
 - **unminified-bundle**: override dipakai. Alasan: esbuild tidak tersedia di sandbox tanpa akses internet, sama seperti sesi-sesi sebelumnya.
+
+## 2026-08-08T02:38:30.578Z — versi s483-stok-koreksi-opname
+
+- **lint-unavailable**: override dipakai. Alasan: Sandbox tanpa akses jaringan (bash_tool network disabled), npm install eslint tidak bisa dijalankan; perubahan kode sudah dicek manual mengikuti style existing (indentasi, guard typeof, penamaan) & lolos node --check sintaks.
+- **unminified-bundle**: override dipakai. Alasan: Sandbox tanpa akses jaringan, esbuild tidak bisa di-install; bundle tetap valid (lolos node --check) hanya lebih besar ukurannya.
+
+## 2026-08-08T05:20:26.465Z — versi s486-titipan-commitment-partial-return
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm registry (403), eslint tidak bisa diinstall — sudah diverifikasi manual: perubahan sesi ini terbatas pada dana-titipan-portfolio-presenter.js/modals.js/index.html/tests, mengikuti pola escapeHtml() & data-action existing, tidak ada pola baru yg biasa ditangkap lint
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa diinstall — bundle unminified diterima utk checkpoint WIP ini, ukuran besar tapi valid (node --check lolos)
+
+## 2026-08-08T05:28:25.477Z — versi s487-pmicons-badge-tagihan-utang
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan npm registry (403), eslint tidak bisa diinstall — perubahan sesi ini terbatas pada pmIcons object literal (1 baris tambahan, 2-space indent, single-quote, semicolon) di tx-list-cashflow.js, gaya identik file sekitarnya, dicek manual
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak bisa diinstall — bundle unminified valid, lolos node --check

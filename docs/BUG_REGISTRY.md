@@ -1349,6 +1349,77 @@ Status: **BY DESIGN**
 
 ---
 
+# 0a-9. Open — New Findings (Sesi Audit pasca-implementasi Gap #3 Dana Titipan, S484→S485e)
+
+## GAP3-AUD-001
+
+- Severity: **LOW**
+- Domain: Data Identity / Documentation (legacy `Investment.getOwners()`, tidak terkait implementasi Gap #3)
+- Status: **PRE-EXISTING / OUT OF SCOPE** (bukan diperkenalkan oleh Sesi 484–485e / Gap #3 Dana Titipan)
+- File: `modules/asset/investasi.js`
+- Function/component: `Investment.getOwners(h)` — cabang legacy `h.fundSource === 'titipan'`
+- Trigger: Holding investasi mana pun yang masih pakai model titipan legacy 1-flag
+  (`fundSource==='titipan'`, belum dimigrasi ke `h.owners[]` via `setOwners()`).
+- Actual: Cabang legacy mensintesis satu baris owner dengan `ownerId` konstan
+  `'titipan_investor'` untuk SEMUA holding legacy titipan, terlepas dari nama
+  penitip (`titipanOwner`) yang sebenarnya berbeda-beda.
+- Expected: Dua penitip berbeda (mis. Budi dan Cici) seharusnya punya
+  `ownerId` identity yang berbeda satu sama lain.
+- Root cause: Desain lama (pra-AUD-008/Sesi 462) tidak pernah mensintesis
+  `ownerId` per-nama untuk jalur legacy — hanya `ownerName` yang dibaca dari
+  `h.titipanOwner`, sedangkan `ownerId` di-hardcode `'titipan_investor'`.
+- Impact: Jika legacy holdings milik dua orang berbeda (kedua-duanya masih
+  `fundSource:'titipan'`, belum dimigrasi ke `owners[]`) dipakai bersamaan
+  dalam agregasi berbasis `ownerId` (mis. proyeksi Dana Titipan Gap #3),
+  keduanya dapat collapse menjadi satu identity gabungan.
+- Evidence: `modules/asset/investasi.js`, cabang `if (h.fundSource ===
+  'titipan')` pada `getOwners(h)` — lihat baris `ownerId: 'titipan_investor'`.
+  Perilaku ini didokumentasikan & sengaja dikunci oleh test S485a
+  (owner picker) yang mengasumsikan collision ini sebagai known legacy
+  behavior — bukan regresi Gap #3.
+- Introduced by Gap #3: **NO** — perilaku sudah ada sejak jalur legacy
+  `fundSource==='titipan'` dibuat (pra-Sesi 462), hanya baru teraudit ulang
+  konteksnya pada audit pasca-implementasi Gap #3 (S484→S485e).
+- Fix: **NOT APPLIED (out of scope sesi ini)** — perbaikan memerlukan skema
+  `ownerId` per-nama untuk jalur legacy (atau migrasi paksa ke `owners[]`),
+  keduanya berpotensi mengubah legacy behavior & data existing — butuh audit
+  & sesi tersendiri.
+- Regression test: Tidak ada perubahan — `tests/s485a-titipan-commitment-owner-picker.test.js`
+  (yang mendokumentasikan perilaku ini) TIDAK diubah.
+- Verification: `node --test tests/*.test.js` → 3144/3144 pass, 0 fail (angka
+  tidak berubah dari baseline Gap #3, 0 test baru ditambah sesi ini).
+- Status: **OPEN / OUT OF SCOPE** (dicatat untuk tracking, tidak diperbaiki sesi ini)
+- Audit Session: Sesi Audit pasca-implementasi Gap #3 Dana Titipan
+  (S484→S485e closeout, 2026-08-08)
+
+## GAP3-AUD-002
+
+- Severity: **LOW / informational**
+- Domain: Build tooling / versioning convention
+- Status: **PRE-EXISTING / DESIGN LIMITATION / OUT OF SCOPE**
+- File: `scripts/build.js`
+- Trigger: `npm run build` dijalankan ketika version string sesi saat ini
+  tidak cocok dengan regex auto-versioning yang diharapkan build tooling
+  (contoh: `s485e-final-regression-docs`).
+- Actual: Build dapat gagal pada kasus version string non-konvensional
+  seperti di atas.
+- Expected/Impact: Ini adalah keterbatasan desain auto-versioning yang sudah
+  diketahui, bukan bug fungsional pada logika aplikasi maupun pada
+  implementasi Gap #3.
+- Introduced by Gap #3: **NO** — ini adalah keterbatasan pre-existing pada
+  konvensi versioning `scripts/build.js`, dicatat ulang di sini semata agar
+  tidak salah diklasifikasikan sebagai regresi Gap #3.
+- Fix: **NOT APPLIED (out of scope sesi ini)** — `scripts/build.js` dan
+  konvensi versioning TIDAK diubah.
+- Regression test: Tidak ada perubahan.
+- Verification: Tidak relevan diverifikasi ulang lewat test suite (tooling
+  build, bukan logika aplikasi) — dicatat sebagai informational only.
+- Status: **OPEN / OUT OF SCOPE / INFORMATIONAL**
+- Audit Session: Sesi Audit pasca-implementasi Gap #3 Dana Titipan
+  (S484→S485e closeout, 2026-08-08)
+
+---
+
 # 1. Known High-Risk Areas Requiring Verification
 
 | ID | Area | Reason | Status |
