@@ -32,6 +32,21 @@
 // (S254A, self-scroll utk kartu komposit).
 const INVESTPLANNER_NAV_TARGETS = Object.freeze({
   self: { page: 'keuangan', tab: 'laporan', goTo: 'investPlannerWrap' },
+  // investasiTab (S469) — target navigasi BARU, TERPISAH dari `self`.
+  // Awalnya (S469) Investment Planner & tab "💹 Investasi"
+  // (`InvestmentListUI`, Sesi 466-468/BUG-INV-001) adalah 2 fitur BEDA
+  // sumber data (Planner baca D.assets via Aset.investmentPerformance(),
+  // tab Investasi baca D.investments via Investment.*). SEJAK s476b,
+  // Investment Planner SUDAH direwire baca `Investment.*` juga (SSOT
+  // sekarang, lihat modules/finance/investment-planner-api.js) — target
+  // `investasiTab` di bawah TETAP dipertahankan apa adanya (tetap tujuan
+  // yang benar utk "tambah holding", cuma sekarang keduanya baca sumber
+  // data yang SAMA, bukan lagi beda). 0 perubahan pada `self`/kartu
+  // allocation/recommendation. Dipakai KHUSUS di _overviewCard() saat
+  // `holdingsCount===0`, mengarahkan user ke tab yang bisa dipakai
+  // mencatat holding (celah navigasi yang dicatat
+  // REKOMENDASI-SESI-467-FASE2-TRANSAKSI.md §3).
+  investasiTab: { page: 'aset', tab: 'investasi', goTo: 'asetTab-investasi' },
 });
 const InvestmentPlannerPresenter = {
 
@@ -84,7 +99,18 @@ const InvestmentPlannerPresenter = {
       return { icon: '📈', label: 'Portofolio Investasi', value: '—', cls: '', sub: p && p.reason, onClick };
     }
     if (p.holdingsCount === 0) {
-      return { icon: '📈', label: 'Portofolio Investasi', value: 'Belum ada data modal', cls: '', sub: 'Isi Modal Investasi (atau Harga Beli × Jumlah Unit) di 📋 Buku Aset.', onClick };
+      // S469: arahkan langsung ke tab "💹 Investasi" (bukan `self`) —
+      // di situ sekarang ADA jalur nyata mencatat holding
+      // (`InvestmentListUI`), beda dari `self` yang cuma scroll ke
+      // section komposit Investment Planner tanpa form isi data.
+      return {
+        icon: '📈',
+        label: 'Portofolio Investasi',
+        value: 'Belum ada data modal',
+        cls: '',
+        sub: 'Belum ada data. Buka tab 💹 Investasi di Buku Aset untuk mulai mencatat holding.',
+        onClick: { action: 'dashHubNavigateToFeature', args: [INVESTPLANNER_NAV_TARGETS.investasiTab] },
+      };
     }
     return {
       icon: '📈',

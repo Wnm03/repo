@@ -169,6 +169,81 @@ sumTitipanAset() {
     }, 0);
 },
 
+// sumTitipanInvestasi() — BUGFIX Sesi 458: jumlah cost basis SEMUA holding
+// investasi (Investment.getHoldings(), investasi.js) yang ownership
+// keseluruhan holding-nya SELF TAPI `fundSource==='titipan'` (dana yang
+// dipakai buat beli instrumen ini sebagian/seluruhnya dititipkan orang
+// lain). SEBELUM sesi ini, titipan investasi SAMA SEKALI TIDAK terhitung
+// di Dana Kelolaan: sumInvestasi(type) di atas cuma baca field `ownership`
+// (status kepemilikan SELURUH holding), sedangkan fundSource='titipan'
+// TIDAK PERNAH mengubah `ownership` holding (lihat isHoldingOwnershipSelf()
+// & addHolding()/updateHolding() di investasi.js -- pola SENGAJA sama
+// dgn aset: whole-entity ownership vs partial-titipan terpisah). Padahal
+// investasi.js SUDAH mencatat titipan ini sbg 1 entry Buku Utang
+// (Investment._syncTitipanDebt(), `debtLinkId`) — jadi datanya ada &
+// akurat, cuma Dana Kelolaan belum menjumlahkannya. Pola SAMA PERSIS
+// sumTitipanAset() di atas (partial/whole-SELF-but-titipan, dipisah dari
+// sumInvestasi(type) supaya tidak dobel-hitung), bedanya investasi cuma
+// 1 flag biner (bukan porsi majemuk % seperti aset), jadi nilainya =
+// Investment.holdingCost(h) APA ADANYA (angka SAMA PERSIS yang dipakai
+// _syncTitipanDebt() buat isi `nilai` di Buku Utang, 0 rumus baru).
+// Filter _resolveType(h)==='SELF' sama alasannya dgn sumTitipanAset():
+// kalau suatu saat holding titipan punya `ownership` non-SELF juga, itu
+// SUDAH kehitung penuh via sumInvestasi(type), jadi TIDAK boleh dobel di
+// sini. Guard typeof Investment: kalau modul investasi belum dimuat,
+// fallback 0 (pola sama semua guard lain di file ini).
+sumTitipanInvestasi() {
+  if (typeof Investment === 'undefined') return 0;
+  const holdings = Investment.getHoldings ? Investment.getHoldings() : [];
+  return holdings
+    .filter((h) => h.fundSource === 'titipan' && this._resolveType(h) === 'SELF')
+    .reduce((s, h) => s + (Investment.holdingCost(h) || 0), 0);
+},
+
+// listTitipan() — Sesi 459 (rekomendasi #2 dari audit "dana titipan"):
+// daftar RINCI per-entri titipan yang bermuara ke titipanAset/
+// titipanInvestasi di atas (nama pemilik, sumber aset/investasi, nominal,
+// referensi id entitas asal supaya presenter bisa link balik). MURNI
+// presenter-support, BACA SAJA (0 mutasi, 0 rumus baru) — reuse
+// MultiOwnerEngine.getOwners() (utk pecah tiap baris owner non-SELF per
+// aset, pola SAMA PERSIS sumTitipanAset() tapi TANPA agregasi jadi 1
+// angka) & Investment.holdingCost() (utk holding titipan, pola SAMA
+// PERSIS sumTitipanInvestasi()). SENGAJA TIDAK mencakup whole-entity
+// non-SELF (THIRD_PARTY/INVESTOR/CUSTOMER/FAMILY dari byType()) --
+// entitas itu SUDAH terlihat apa adanya di modul asalnya masing2 (Buku
+// Akun/Aset/Investasi/Shop dgn ownership sendiri), sedangkan titipan
+// PARSIAL di dalam aset/holding SELF itu yang sebelumnya "tersembunyi"
+// (cuma nongol sbg 1 angka gabungan di summary()) -- itu fokus daftar
+// rinci ini. Return array {owner, source, name, nominal, refId}, urutan
+// nominal terbesar dulu (guna presentasi, bukan makna data).
+listTitipan() {
+  const out = [];
+  if (typeof MultiOwnerEngine !== 'undefined') {
+    (D.assets || [])
+      .filter((a) => this._resolveType(a) === 'SELF')
+      .forEach((a) => {
+        const nilai = typeof a.nilai === 'number' && isFinite(a.nilai) ? a.nilai : 0;
+        const res = MultiOwnerEngine.getOwners(a);
+        (res.owners || []).filter((o) => !o.isSelf).forEach((o) => {
+          const nominal = Math.round(nilai * (o.porsi / 100));
+          if (nominal <= 0) return;
+          out.push({ owner: o.ownerName || o.ownerId, source: 'aset', name: a.name || 'Aset', nominal, refId: a.id });
+        });
+      });
+  }
+  if (typeof Investment !== 'undefined') {
+    const holdings = Investment.getHoldings ? Investment.getHoldings() : [];
+    holdings
+      .filter((h) => h.fundSource === 'titipan' && this._resolveType(h) === 'SELF')
+      .forEach((h) => {
+        const nominal = Investment.holdingCost(h) || 0;
+        if (nominal <= 0) return;
+        out.push({ owner: (h.titipanOwner && String(h.titipanOwner).trim()) || 'Pemilik dana titipan', source: 'investasi', name: h.name || 'Holding', nominal, refId: h.id });
+      });
+  }
+  return out.sort((x, y) => y.nominal - x.nominal);
+},
+
 // summary() — ringkasan Dana Kelolaan, 1 angka per tipe kepemilikan
 // non-SELF + total. Label sesuai spesifikasi sesi ini:
 //   INVESTOR -> "Dana Investor", THIRD_PARTY -> "Dana Titipan",
@@ -177,19 +252,24 @@ sumTitipanAset() {
 // mencampur whole-asset THIRD_PARTY dgn partial-titipan aset SELF) -> ikut
 // masuk `total` supaya Dana Kelolaan tetap 1 angka utuh yang mewakili
 // SEMUA dana pihak lain yang tercatat di app, dari sumber mana pun.
+// titipanInvestasi (Sesi 458, BUGFIX) — pola SAMA PERSIS titipanAset,
+// sumber investasi (lihat sumTitipanInvestasi() di atas) -> ikut masuk
+// `total` dgn alasan sama: dana titipan tetap dana titipan, tidak peduli
+// "wadahnya" aset atau instrumen investasi.
 summary() {
   const investor = this.byType('INVESTOR');
   const titipan = this.byType('THIRD_PARTY');
   const dpCustomer = this.byType('CUSTOMER');
   const keluarga = this.byType('FAMILY');
   const titipanAset = this.sumTitipanAset();
-  const total = investor + titipan + dpCustomer + keluarga + titipanAset;
+  const titipanInvestasi = this.sumTitipanInvestasi();
+  const total = investor + titipan + dpCustomer + keluarga + titipanAset + titipanInvestasi;
   // utangNonSelf (Sesi 255, Ownership Sync Piutang & Utang) — total utang
   // ber-ownership non-SELF, SENGAJA TIDAK ikut `total` di atas (lihat
   // komentar sumDebt()). Field tambahan murni informasional supaya utang
   // yang dikecualikan dari Total Utang tetap terlihat/terlacak di sini.
   const utangNonSelf = this.sumDebt('INVESTOR') + this.sumDebt('THIRD_PARTY') + this.sumDebt('CUSTOMER') + this.sumDebt('FAMILY');
-  return { investor, titipan, dpCustomer, keluarga, titipanAset, utangNonSelf, total };
+  return { investor, titipan, dpCustomer, keluarga, titipanAset, titipanInvestasi, utangNonSelf, total };
 },
 
 };

@@ -73,6 +73,7 @@ const DanaKelolaanPresenter = {
       { icon: '💼', label: 'Dana Investor', value: this._money(s.investor), badge: ownBadge('INVESTOR'), detail: ownDetail('INVESTOR'), onClick: { action: 'dashHubNavigateToFeature', args: [DANAKELOLAAN_NAV_TARGETS.self] } },
       { icon: '🤝', label: 'Dana Titipan', value: this._money(s.titipan), badge: ownBadge('THIRD_PARTY'), detail: ownDetail('THIRD_PARTY'), onClick: { action: 'dashHubNavigateToFeature', args: [DANAKELOLAAN_NAV_TARGETS.self] } },
       { icon: '🏷️', label: 'Titipan dlm Aset Sendiri', value: this._money(s.titipanAset), badge: '', detail: '', onClick: { action: 'dashHubNavigateToFeature', args: [DANAKELOLAAN_NAV_TARGETS.self] } },
+      { icon: '📈', label: 'Titipan dlm Investasi Sendiri', value: this._money(s.titipanInvestasi), badge: '', detail: '', onClick: { action: 'dashHubNavigateToFeature', args: [DANAKELOLAAN_NAV_TARGETS.self] } },
       { icon: '🧾', label: 'DP Customer', value: this._money(s.dpCustomer), badge: ownBadge('CUSTOMER'), detail: ownDetail('CUSTOMER'), onClick: { action: 'dashHubNavigateToFeature', args: [DANAKELOLAAN_NAV_TARGETS.self] } },
       { icon: '👨‍👩‍👧', label: 'Dana Keluarga', value: this._money(s.keluarga), badge: ownBadge('FAMILY'), detail: ownDetail('FAMILY'), onClick: { action: 'dashHubNavigateToFeature', args: [DANAKELOLAAN_NAV_TARGETS.self] } },
       { icon: '💰', label: 'Total Dana Kelolaan', value: this._money(s.total), cls: 'u-fw700', badge: '', detail: '', onClick: { action: 'dashHubNavigateToFeature', args: [DANAKELOLAAN_NAV_TARGETS.self] } },
@@ -110,12 +111,51 @@ const DanaKelolaanPresenter = {
         <div class="u-flex u-jcb u-fs12 u-mb4"><span>💼 Dana Investor</span><span class="u-fw700">${this._money(s.investor)}</span></div>
         <div class="u-flex u-jcb u-fs12 u-mb4"><span>🤝 Dana Titipan</span><span class="u-fw700">${this._money(s.titipan)}</span></div>
         <div class="u-flex u-jcb u-fs12 u-mb4"><span>🏷️ Titipan dlm Aset Sendiri</span><span class="u-fw700">${this._money(s.titipanAset)}</span></div>
+        <div class="u-flex u-jcb u-fs12 u-mb4"><span>📈 Titipan dlm Investasi Sendiri</span><span class="u-fw700">${this._money(s.titipanInvestasi)}</span></div>
         <div class="u-flex u-jcb u-fs12 u-mb4"><span>🧾 DP Customer</span><span class="u-fw700">${this._money(s.dpCustomer)}</span></div>
         <div class="u-flex u-jcb u-fs12"><span>👨‍👩‍👧 Dana Keluarga</span><span class="u-fw700">${this._money(s.keluarga)}</span></div>
       `;
     }
     const totalEl = document.getElementById('danaKelolaanLapTotal');
     if (totalEl) totalEl.textContent = this._money(s.total);
+    this.renderTitipanDetail();
+  },
+
+  // renderTitipanDetail() — Sesi 459 (rekomendasi #2 audit dana titipan):
+  // daftar rinci per-entri titipanAset/titipanInvestasi (bukan cuma total
+  // Rp gabungan), reuse DanaKelolaan.listTitipan() apa adanya. Baris
+  // sumber 'aset' clickable, buka kembali Aset asalnya lewat
+  // 'openAssetModal' (action yang SUDAH ADA & terverifikasi dipakai di
+  // aset.js, mis. baris riwayat aset di Buku Aset). Baris sumber
+  // 'investasi' SENGAJA TIDAK dibuat clickable — repo ini belum punya
+  // action buka-modal holding investasi tersendiri (beda dgn aset), jadi
+  // menebak nama action akan jadi link mati/silent-noop, bukan ditambah
+  // di sesi ringkas ini. Container #danaKelolaanTitipanDetailList
+  // opsional (guard typeof) — presenter aman dipakai di halaman yang
+  // belum punya container ini.
+  renderTitipanDetail() {
+    const el = document.getElementById('danaKelolaanTitipanDetailList');
+    if (!el) return;
+    if (typeof DanaKelolaan === 'undefined' || typeof DanaKelolaan.listTitipan !== 'function') return;
+    const rows = DanaKelolaan.listTitipan();
+    if (!rows.length) {
+      el.innerHTML = '<div class="u-fs11 u-t2 u-mt6">Belum ada titipan parsial dlm aset/investasi sendiri.</div>';
+      return;
+    }
+    const sourceIcon = (src) => (src === 'investasi' ? '📈' : '🏷️');
+    el.innerHTML = `
+      <div class="u-fs11 u-t2 u-mt10 u-mb4">Rincian titipan dlm aset/investasi sendiri:</div>
+      ${rows.map((r) => {
+        const clickable = r.source === 'aset';
+        const attrs = clickable ? ` data-action="openAssetModal" data-args="${escapeHtml(JSON.stringify([r.refId]))}"` : '';
+        return `
+        <div class="u-flex u-jcb u-fs11 u-mb2${clickable ? ' u-pointer' : ''}"${attrs}>
+          <span>${sourceIcon(r.source)} ${escapeHtml(r.owner)} — ${escapeHtml(r.name)}</span>
+          <span class="u-fw700">${this._money(r.nominal)}</span>
+        </div>
+      `;
+      }).join('')}
+    `;
   },
 
   // renderStatistik() — 1 baris ringkas di tab Laporan/Statistik Shop
@@ -146,7 +186,7 @@ const DanaKelolaanInsight = {
     const out = [{
       id: 'dana-kelolaan-total',
       icon: '💰',
-      text: `Total Dana Kelolaan (di luar milik sendiri): ${money(s.total)} — Investor ${money(s.investor)}, Titipan ${money(s.titipan)}, DP Customer ${money(s.dpCustomer)}, Keluarga ${money(s.keluarga)}, Titipan dlm Aset Sendiri ${money(s.titipanAset)}.`,
+      text: `Total Dana Kelolaan (di luar milik sendiri): ${money(s.total)} — Investor ${money(s.investor)}, Titipan ${money(s.titipan)}, DP Customer ${money(s.dpCustomer)}, Keluarga ${money(s.keluarga)}, Titipan dlm Aset Sendiri ${money(s.titipanAset)}, Titipan dlm Investasi Sendiri ${money(s.titipanInvestasi)}.`,
     }];
     return out;
   },

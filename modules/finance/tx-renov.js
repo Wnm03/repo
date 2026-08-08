@@ -48,7 +48,7 @@ return;
 }
 sel.disabled=false;
 sel.innerHTML=D.renovProjects.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
-if(cur&&D.renovProjects.find(p=>p.id===cur))sel.value=cur;
+if(cur&&D.renovProjects.find(p=>sameId(p.id,cur)))sel.value=cur;
 }
 function setTxRenovStatus(status){
 _txRenovStatus=(status==='belum')?'belum':'sudah';
@@ -97,8 +97,24 @@ if(!chk||!chk.checked)return;
 const panel=document.getElementById('txRenovPanel');
 if(!panel||panel.style.display==='none')return;
 if(_txRenovStatus==='belum')return;
-const projId=document.getElementById('txRenovProject').value;
-const p=projId?D.renovProjects.find(x=>x.id===projId):null;
+const projSel=document.getElementById('txRenovProject');
+// BUGFIX (s446): dulu projId cuma diambil dari projSel.value -- kalau karena alasan apapun
+// (mis. re-render lain sempat mengosongkan select tepat sebelum Simpan ditekan) value-nya
+// kosong padahal user SUDAH centang & isi panel ini, hasilnya warning "Pilih dulu Proyek
+// Renovasi-nya" nongol meski user merasa sudah pilih proyeknya (lihat screenshot laporan:
+// dropdown kelihatan sudah terisi "Renov" waktu modal dibuka lagi). Fix: fallback ke opsi
+// pertama yang benar-benar ada di DOM select (persis logika default population di
+// populateTxRenovSelect()) sebelum baru dianggap "belum pilih" -- projId hanya kosong kalau
+// select memang tidak punya opsi sama sekali (D.renovProjects kosong).
+const projId=(projSel&&projSel.value)?projSel.value:(projSel&&projSel.options&&projSel.options.length?projSel.options[0].value:'');
+// BUGFIX (s447): dulu perbandingan id pakai `x.id===projId` (strict equality) -- tapi id
+// proyek dibuat oleh uid() yg return NUMBER, sedangkan projId selalu STRING (semua value
+// DOM <select>/<option> otomatis di-stringify browser). Akibatnya find() SELALU gagal walau
+// user sudah benar pilih proyeknya di dropdown (lihat screenshot laporan: dropdown kelihatan
+// terisi "Renov", tapi tetap muncul warning "Pilih dulu Proyek Renovasi-nya" pas Simpan).
+// Semua perbandingan id proyek Renov di modules/home/renovasi.js sudah benar pakai sameId()
+// (helper global yg bandingkan String(a)===String(b)) -- fix: samakan di sini juga.
+const p=projId?D.renovProjects.find(x=>sameId(x.id,projId)):null;
 if(!p)return '⚠️ Pilih dulu Proyek Renovasi-nya (item tidak dicatat ke Renovasi, transaksi Keuangan tetap tersimpan)';
 const itemName=(note||cat||'Item Renovasi').trim()||'Item Renovasi';
 const it={id:uid(),name:itemName,ukuran:'',harga:amt,hargaTotal:null,category:cat,accountId:accId,note:'',tglBayar:date,calcDetail:null,paid:true,txId:txId,paidDate:date};
@@ -124,8 +140,11 @@ const chk=document.getElementById('txAddRenov');
 const panel=document.getElementById('txRenovPanel');
 if(!chk||!chk.checked||!panel||panel.style.display==='none')return false;
 if(_txRenovStatus!=='belum')return false;
-const projId=document.getElementById('txRenovProject').value;
-const p=projId?D.renovProjects.find(x=>x.id===projId):null;
+const projSel=document.getElementById('txRenovProject');
+// BUGFIX (s446): fallback sama seperti applyTxRenovFromTx (lihat komentar di sana).
+// BUGFIX (s447): samakan pakai sameId() juga (lihat komentar detail di applyTxRenovFromTx).
+const projId=(projSel&&projSel.value)?projSel.value:(projSel&&projSel.options&&projSel.options.length?projSel.options[0].value:'');
+const p=projId?D.renovProjects.find(x=>sameId(x.id,projId)):null;
 if(!p){toast('⚠️ Pilih dulu Proyek Renovasi-nya');return false;}
 evalAmtExpr('txAmt');
 const amt=parseFloat(document.getElementById('txAmt').value)||0;

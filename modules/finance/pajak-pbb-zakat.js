@@ -115,7 +115,12 @@ const saldoAkun=totalSaldoAkun();
 // yang juga dipanggil lintas-domain apa adanya). Guard typeof: kalau engine
 // belum dimuat, fallback nilai penuh (perilaku SEBELUM Sesi 393, 0 regresi
 // utk aset single-owner yang jadi mayoritas kasus).
-const asetZakatable=(D.assets||[]).filter(a=>a.zakatable).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);
+// s476a (Blocker B, docs/s476-PLAN-migrate-investasi-to-holdings.md): filter
+// `!a._migratedToInvestmentId` supaya aset yang sudah dimigrasi ke Holding
+// (D.investments) tidak dobel-hitung -- nilainya sekarang disumbang lewat
+// `Investment.zakatableValue()` (holding.zakatable, field baru investasi.js)
+// yang ditambahkan di bawah. Aset zakatable yang BELUM dimigrasi 0 perubahan.
+const asetZakatable=(D.assets||[]).filter(a=>a.zakatable&&!a._migratedToInvestmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0)+(typeof Investment!=='undefined'?Investment.zakatableValue():0);
 const piutangZakatable=totalPiutangValue();
 const utangManual=parsePzNum(document.getElementById('zmUtang').value);
 pz.utangJT=utangManual; save();

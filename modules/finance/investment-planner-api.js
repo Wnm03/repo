@@ -1,35 +1,49 @@
 // modules/finance/investment-planner-api.js — Investment Planner API
-// (Sesi 95, Batch 10; REWIRED Sesi 161 — lihat catatan di atas
-// `_portfolio()`/`_allocation()`/`watchlistAlerts()` di bawah). Target
-// sesi: Investment Planner Foundation — Portfolio Overview, Asset
-// Allocation, Watchlist Alerts, Investment Recommendation, Presenter.
+// (Sesi 95, Batch 10; REWIRED Sesi 161 dari `Investment.*` ke
+// `Aset.investmentPerformance()`; REWIRED KEMBALI s476b — lihat catatan
+// panjang di atas `_portfolio()`/`_allocation()`/`watchlistAlerts()` di
+// bawah). Target sesi: Investment Planner Foundation — Portfolio
+// Overview, Asset Allocation, Watchlist Alerts, Investment
+// Recommendation, Presenter.
 //
-// PRINSIP (RULE #1 sesi ini, per Sesi 161): 100% REUSE
-// `Aset.investmentPerformance()` (modules/asset/aset.js, diekstrak dari
-// Aset.renderInvestasi() yang sudah lama ada & sudah dipakai halaman Buku
-// Aset — field-fieldnya SUDAH FINAL, dihitung ulang oleh Aset sendiri —
-// TIDAK dihitung ulang di sini) + `FinancialGoalAPI._surplus()`
-// (modules/finance/financial-goal-api.js, Sesi 94 — method ini SUDAH
-// membaca `CashFlowProjectionAPI.summary()` & menghasilkan
-// `monthlySurplus`, dipanggil ULANG di sini APA ADANYA supaya TIDAK ada
-// duplikasi helper "baca CashFlowProjectionAPI.summary() lalu
-// income.avgMonthly-expense.avgMonthly" yang SUDAH ADA persis di
-// financial-goal-api.js) — TIDAK ada rumus keuangan baru, TIDAK
-// duplikasi logic, TIDAK framework baru, TIDAK mengubah struktur data D
-// (murni membaca D.assets lewat `Aset.investmentPerformance()`, yang
-// sudah ada sejak fitur "Performa Investasi" di Buku Aset).
+// PRINSIP (RULE #1, tetap berlaku): 100% REUSE modul yang SUDAH ADA —
+// TIDAK ada rumus keuangan baru, TIDAK duplikasi logic, TIDAK framework
+// baru, TIDAK mengubah struktur data D. `FinancialGoalAPI._surplus()`
+// (modules/finance/financial-goal-api.js, Sesi 94 — SUDAH membaca
+// `CashFlowProjectionAPI.summary()` & menghasilkan `monthlySurplus`)
+// dipanggil ULANG apa adanya, sama seperti sebelumnya — tidak berubah
+// sesi ini.
 //
-// `Investment`/`D.investments` (modules/asset/investasi.js, Sesi 9) TIDAK
-// dipakai lagi di sini — modul itu tidak pernah punya UI penulis data
-// (Investment.addHolding() tidak pernah dipanggil dari mana pun), jadi
-// selalu kosong. Buku Aset (D.assets) adalah tempat user SEBENARNYA
-// mengisi data investasi.
+// SESI s476b — REWIRE KEMBALI ke `Investment.*` (docs/
+// s476-PLAN-migrate-investasi-to-holdings.md, bagian "s476b — Investment
+// Planner"): premis Sesi 161 (`Investment.addHolding()` tidak pernah
+// dipanggil dari UI mana pun, jadi `D.investments` selalu kosong) SUDAH
+// TIDAK BERLAKU sejak s476a — `D.investments` sekarang jadi SSOT data
+// investasi (migrasi 1x-jalan dari `D.assets` via
+// `migrateAssetInvestmentsToHoldings()`, + tab "💹 Investasi"
+// (`InvestmentListUI`, Sesi 466-468) adalah UI penulis data yang nyata,
+// beda dari kondisi Sesi 161). `Aset.investmentPerformance()` (yang
+// dipakai sejak Sesi 161) MASIH membaca `D.assets` MENTAH — TIDAK
+// mengecualikan aset yang sudah `_migratedToInvestmentId` (beda dari
+// `Aset.totalValue()` yang sudah dikecualikan sejak s476a) — jadi kalau
+// dibiarkan, Investment Planner akan terus membaca salinan data LAMA yang
+// makin lama makin menyimpang dari `D.investments` (SSOT sekarang),
+// terutama begitu ada holding yang murni ditambah/diedit lewat tab
+// Investasi (Investment.addHolding()/updateHolding()) TANPA lewat Buku
+// Aset sama sekali — perubahan itu TIDAK PERNAH kelihatan di Investment
+// Planner selama masih baca `Aset.investmentPerformance()`.
+//
+// Sama seperti pola `AssetPortfolioAPI._investment()` (modules/asset/
+// asset-portfolio-api.js, S101 — SUDAH lebih dulu baca
+// `Investment.portfolioSummary()`/`Investment.assetAllocation()` dgn
+// guard sama persis di bawah) — 0 pola baru, cuma menyamakan sumber data
+// Investment Planner dgn API sejenis yang sudah ada.
 //
 // Portfolio Overview/Asset Allocation di bawah BUKAN hasil hitungan baru
-// — murni MEMBACA ULANG hasil `Aset.investmentPerformance()` apa adanya
-// (0 recompute selain grouping by-jenis yang sudah ada polanya di
-// AssetInsight.compute()), pola sama persis `financialGoals()`
-// (financial-goal-api.js) yang murni membaca ulang `goalAdapterList(D)`.
+// — murni MEMBACA ULANG hasil `Investment.portfolioSummary()`/
+// `Investment.assetAllocation()` apa adanya (0 recompute), pola sama
+// persis `financialGoals()` (financial-goal-api.js) yang murni membaca
+// ulang `goalAdapterList(D)`.
 //
 // `topAllocation` di bawah SATU-SATUNYA "logic" baru sesi ini — murni
 // `array.reduce((a,b)=>b.value>a.value?b:a)` (cari item bernilai
@@ -49,93 +63,69 @@
 // Semua fungsi di bawah PURE (read-only) — tidak pernah memanggil save()
 // atau menulis ke D/localStorage, tidak menyentuh DOM. TIDAK ada UI di
 // file ini — presenternya (InvestmentPlannerPresenter) ada di file
-// terpisah, sesi ini juga, 100% konsumsi objek ini.
-// SESI 160B — GAP FIX: `Investment`/`D.investments` (modules/asset/
-// investasi.js) DIGANTI jadi `Aset.investmentPerformance()` (modules/asset/
-// aset.js) sbg sumber data. Alasan: TIDAK ADA UI di app ini yang pernah
-// menulis ke `D.investments` (Investment.addHolding() tidak pernah
-// dipanggil dari button/modal manapun) — jadi Investment Planner yang
-// baca `Investment.*` PASTI selalu kosong berapa pun data yang user isi,
-// krn user SEBENARNYA mengisi data investasinya lewat 📋 Buku Aset
-// (D.assets, field modalInvestasi/hargaBeli/jumlahUnit — SUDAH ADA UI-nya
-// & SUDAH dipakai Aset.renderInvestasi() utk kartu "Performa Investasi").
-// `Aset.investmentPerformance()` (diekstrak dari Aset.renderInvestasi()
-// sesi ini, 0 rumus baru — lihat modules/asset/aset.js) adalah SATU-
-// SATUNYA tempat yang benar-benar merepresentasikan data investasi yang
-// user isi. `Investment`/`D.investments` TIDAK dihapus (masih dipakai
-// modul lain / mungkin dipakai lagi kalau nanti dibuatkan UI-nya sendiri)
-// — hanya TIDAK dipakai lagi sbg sumber Investment Planner.
+// terpisah, 100% konsumsi objek ini, TIDAK diubah sesi ini (bentuk
+// summary() tidak berubah).
 const InvestmentPlannerAPI = {
 
 // _portfolio() — helper internal: satu titik akses ke
-// `Aset.investmentPerformance()`. Guard berlapis (Aset belum dimuat) —
-// pola sama persis guard `typeof goalAdapterList==='function'` di
-// FinancialGoalAPI._goals(). Field di-mapping APA ADANYA dari hasil
-// investmentPerformance() (0 recompute) ke bentuk yang sama seperti
-// sebelumnya (holdingsCount/totalValue/totalCost/totalGainLoss/roiPct)
-// supaya presenter & investmentRecommendation() di bawah TIDAK perlu
-// diubah sama sekali. totalDividend/totalRealizedGain selalu 0 — Buku
-// Aset memang tidak melacak riwayat dividen/transaksi jual per instrumen
-// (beda cakupan dari `Investment`), jadi jujur dilaporkan 0, BUKAN
-// dihitung-hitung/diperkirakan.
+// `Investment.portfolioSummary()` (modules/asset/investasi.js, SSOT data
+// investasi sejak s476a). Guard berlapis (Investment belum dimuat) —
+// pola sama persis `AssetPortfolioAPI._investment()`
+// (modules/asset/asset-portfolio-api.js). Field di-mapping APA ADANYA
+// dari hasil portfolioSummary() (0 recompute) ke bentuk yang sama
+// seperti sebelumnya (holdingsCount/totalValue/totalCost/
+// totalGainLoss/roiPct/totalDividend/totalRealizedGain) supaya presenter
+// & investmentRecommendation() di bawah TIDAK perlu diubah sama sekali.
+// `yieldPct` (CAGR, s476a2) ikut diteruskan apa adanya — bonus field,
+// belum dikonsumsi presenter/recommendation, tapi tersedia utk sesi
+// depan tanpa perlu ubah _portfolio() lagi.
 _portfolio() {
-  if (typeof Aset === 'undefined' || typeof Aset.investmentPerformance !== 'function') {
-    return { ok: false, reason: 'Aset belum dimuat' };
+  if (typeof Investment === 'undefined' || typeof Investment.portfolioSummary !== 'function') {
+    return { ok: false, reason: 'Investment belum dimuat' };
   }
   let p;
   try {
-    p = Aset.investmentPerformance();
+    p = Investment.portfolioSummary();
   } catch (e) {
-    return { ok: false, reason: 'Aset.investmentPerformance() gagal dipanggil' };
+    return { ok: false, reason: 'Investment.portfolioSummary() gagal dipanggil' };
   }
   return {
     ok: true,
     holdingsCount: p.holdingsCount,
-    totalValue: p.totalNilai,
-    totalCost: p.totalModal,
-    totalGainLoss: p.gain,
+    totalValue: p.totalValue,
+    totalCost: p.totalCost,
+    totalGainLoss: p.totalGainLoss,
     roiPct: p.roiPct,
-    totalDividend: 0,
-    totalRealizedGain: 0,
+    yieldPct: p.yieldPct,
+    totalDividend: p.totalDividend || 0,
+    totalRealizedGain: p.totalRealizedGain || 0,
   };
 },
 
-// portfolioOverview() — Investment Portfolio Overview. `Aset.
-// investmentPerformance()` APA ADANYA (lewat _portfolio() — 0 recompute).
+// portfolioOverview() — Investment Portfolio Overview. `Investment.
+// portfolioSummary()` APA ADANYA (lewat _portfolio() — 0 recompute).
 portfolioOverview() {
   return this._portfolio();
 },
 
-// _allocation() — helper internal: alokasi per `jenis` aset (field yang
-// SUDAH ADA di Buku Aset, dipilih user tiap input aset — lihat
-// modules/asset/aset.js), dihitung dari `tracked` (list aset yang punya
-// data modal) hasil `Aset.investmentPerformance()`. Bentuk output
-// {type,value,pct} SAMA PERSIS pola lama (Investment.assetAllocation())
-// supaya presenter tidak perlu diubah. Pengelompokan by-jenis & reduce
-// max/sort di bawah bentuknya SAMA PERSIS pola grouping-by-kategori yang
-// sudah ada di AssetInsight.compute() (aset.js) — bukan rumus baru.
+// _allocation() — helper internal: satu titik akses ke
+// `Investment.assetAllocation()` (modules/asset/investasi.js) — SUDAH
+// mengembalikan bentuk {type,value,pct} terurut value terbesar (0
+// recompute perlu di sini, beda dari versi Sesi 161 yang harus
+// grouping manual dari `tracked` krn `Aset.investmentPerformance()`
+// tidak punya breakdown per-tipe siap pakai). Guard berlapis sama pola
+// `_portfolio()` di atas.
 _allocation() {
-  if (typeof Aset === 'undefined' || typeof Aset.investmentPerformance !== 'function') {
-    return { ok: false, reason: 'Aset belum dimuat' };
+  if (typeof Investment === 'undefined' || typeof Investment.assetAllocation !== 'function') {
+    return { ok: false, reason: 'Investment belum dimuat' };
   }
-  let p;
+  let allocation;
   try {
-    p = Aset.investmentPerformance();
+    allocation = Investment.assetAllocation();
   } catch (e) {
-    return { ok: false, reason: 'Aset.investmentPerformance() gagal dipanggil' };
+    return { ok: false, reason: 'Investment.assetAllocation() gagal dipanggil' };
   }
-  const tracked = Array.isArray(p.tracked) ? p.tracked : [];
-  const totalValue = tracked.reduce((s, x) => s + (x.a.nilai || 0), 0);
-  const byType = new Map();
-  for (const x of tracked) {
-    const type = x.a.jenis || 'Lainnya';
-    const v = x.a.nilai || 0;
-    byType.set(type, (byType.get(type) || 0) + v);
-  }
-  const allocation = Array.from(byType.entries())
-    .map(([type, value]) => ({ type, value, pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
-    .sort((a, b) => b.value - a.value);
-  return { ok: true, allocation };
+  return { ok: true, allocation: Array.isArray(allocation) ? allocation : [] };
 },
 
 // assetAllocation() — Asset Allocation. `Investment.assetAllocation()`
@@ -152,16 +142,29 @@ assetAllocation() {
   return { ok: true, allocation: a.allocation, topAllocation };
 },
 
-// watchlistAlerts() — Watchlist Alerts. SESI 160B: Buku Aset (sumber data
-// Investment Planner sekarang, lihat catatan _portfolio()/_allocation() di
-// atas) TIDAK punya konsep watchlist (instrumen yang dipantau tapi belum
-// dibeli) — field itu cuma ada di `Investment`/`D.investments` yang tidak
-// pernah terisi. Jadi selalu `ok:true, count:0` (BUKAN error — watchlist
-// memang belum jadi fitur di Buku Aset, bukan gagal load), supaya
-// investmentRecommendation() di bawah tetap jalan normal tanpa alert
-// watchlist apa pun.
+// watchlistAlerts() — Watchlist Alerts. s476b: `D.investments` (SSOT
+// sekarang) SELALU punya konsep watchlist (`D.investmentWatchlist`,
+// `Investment.getWatchlist()`/`Investment.watchlistAlerts()` — modul
+// investasi.js, sudah ada sejak awal, TIDAK pernah dipakai Investment
+// Planner sebelum sesi ini krn premis Sesi 161 di atas). Sekarang
+// dibaca APA ADANYA (0 recompute) — `Investment.watchlistAlerts()`
+// sendiri sudah memfilter item watchlist yang `lastPrice<=targetPrice`
+// (harga sudah menyentuh/lewat target beli). Guard berlapis sama pola
+// `_portfolio()`/`_allocation()` — TIDAK lagi selalu {alerts:[],count:0}
+// seperti versi Sesi 161 (itu cuma benar selama sumbernya Buku Aset yang
+// memang tidak punya watchlist).
 watchlistAlerts() {
-  return { ok: true, alerts: [], count: 0 };
+  if (typeof Investment === 'undefined' || typeof Investment.watchlistAlerts !== 'function') {
+    return { ok: false, reason: 'Investment belum dimuat' };
+  }
+  let alerts;
+  try {
+    alerts = Investment.watchlistAlerts();
+  } catch (e) {
+    return { ok: false, reason: 'Investment.watchlistAlerts() gagal dipanggil' };
+  }
+  alerts = Array.isArray(alerts) ? alerts : [];
+  return { ok: true, alerts, count: alerts.length };
 },
 
 // _surplus() — helper internal: satu titik akses ke
@@ -204,7 +207,10 @@ investmentRecommendation() {
   const out = [];
   if (!p.ok) return out;
   if (p.holdingsCount === 0) {
-    out.push({ type: 'info', code: 'invest_no_holdings', message: 'Belum ada instrumen dengan data modal — isi Modal Investasi (atau Harga Beli × Jumlah Unit) di 📋 Buku Aset utk mulai memantau ROI & alokasi aset.' });
+    // s476b: sumber data sekarang Investment.* (D.investments) — pesan
+    // diarahkan ke tab "💹 Investasi" (tempat holding sebenarnya
+    // ditambah/dimigrasi), BUKAN lagi Buku Aset (pesan versi Sesi 161).
+    out.push({ type: 'info', code: 'invest_no_holdings', message: 'Belum ada holding investasi — tambah holding di tab 💹 Investasi utk mulai memantau ROI & alokasi aset.' });
   } else {
     if (p.roiPct < 0) {
       out.push({ type: 'warning', code: 'invest_negative_roi', message: `Portofolio sedang rugi (ROI ${p.roiPct.toFixed(1)}%) — pertimbangkan tinjau ulang alokasi.` });

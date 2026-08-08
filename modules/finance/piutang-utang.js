@@ -489,7 +489,20 @@ Debt.renderList();renderKekayaanBersih();hitungZakatMaal();renderBillList();chec
 // S394: kalikan tiap utang dgn resolveEntryAssetSelfPorsi(d)/100 -- pola
 // SAMA PERSIS Piutang.totalValue(), utang tanpa assetId (mayoritas) selalu
 // porsi 100 (0 regresi kasus umum).
-totalValue(){return(D.debts||[]).filter(isDebtOwnershipSelf).filter(d=>!d.lunas).reduce((s,d)=>s+(d.nilai||0)*(resolveEntryAssetSelfPorsi(d)/100),0);},
+// BUG-016 FIX (Sesi 463, opsi (a) dari 2 kandidat di docs/BUG_REGISTRY.md):
+// TAMBAH 1 filter lagi -- exclude entry `linkedAssetId`/`linkedInvestmentId`
+// (auto-sync dari Aset._syncOwnerDebts()/Investment._syncTitipanDebt(),
+// pola exclude SAMA PERSIS DebtStrategy.activeDebts() yang sudah lebih dulu
+// mengecualikan kedua tag ini sejak S455/S460 -- 0 filter baru, REUSE
+// kondisi yang sama). Alasan: porsi non-SELF/whole-entity aset/holding
+// terkait entry ini SUDAH dikecualikan di sisi aset lewat
+// Aset.totalValue()/Investment.portfolioSummary() (selfOwnedValue()/
+// isHoldingOwnershipSelf(), S193/S393/S422d) -- kalau entry utangnya IKUT
+// dihitung di sini juga, porsi yang sama kepotong DUA KALI dari Kekayaan
+// Bersih (double-subtraction, lihat BUG-016). Entry ini TETAP tampil apa
+// adanya di Debt.renderList() (histori/badge "🔒 Titipan" tidak berubah)
+// -- cuma tidak ikut diakumulasi ke Total Utang/Kekayaan Bersih lagi.
+totalValue(){return(D.debts||[]).filter(isDebtOwnershipSelf).filter(d=>!d.lunas).filter(d=>!d.linkedAssetId&&!d.linkedInvestmentId).reduce((s,d)=>s+(d.nilai||0)*(resolveEntryAssetSelfPorsi(d)/100),0);},
 totalCicilanBulanan(){return(D.debts||[]).filter(isDebtOwnershipSelf).filter(d=>!d.lunas).reduce((s,d)=>s+(d.cicilanBulanan||0),0);},
 // billCicilanAktif() — KW-170: cicilan barang aktif dari Buku Tagihan
 // (D.bills kind:'cicilan', sisaTenor>0) — dianggap "utang beneran": ikut
@@ -526,6 +539,14 @@ if(d.catatan)metaParts.push(escapeHtml(d.catatan));
 // S394: badge porsi kepemilikan kalau utang ini ditautkan ke aset
 // multi-owner (assetId) & porsinya < 100 — pola sama Piutang.renderList().
 if(d.assetId){const _porsi=resolveEntryAssetSelfPorsi(d);if(_porsi<100)metaParts.push(`👥 Porsi Anda ${_porsi}% dari aset multi-owner`);}
+// FIX (S455): badge beda utk entri titipan (linkedAssetId, auto-sync dari
+// Aset._syncOwnerDebts()) -- bukan kewajiban dibayar, biar user tidak
+// bingung kenapa tidak ada tombol strategi/cicilan (memang sengaja
+// exclude dari activeDebts(), lihat komentar di sana).
+// FIX (S460): badge SAMA juga utk entri titipan investasi (linkedInvestmentId,
+// auto-sync dari Investment._syncTitipanDebt()) -- pola identik, cuma
+// sumbernya beda modul (aset vs investasi).
+if(d.linkedAssetId||d.linkedInvestmentId)metaParts.push('🔒 Titipan — bukan kewajiban dibayar');
 return `<div class="tx-item u-pointer" data-action="openDebtModal" data-args="${escapeHtml(JSON.stringify([d.id]))}"><div class="tx-icon" style="background:var(--accent2-soft)">📕</div><div class="tx-info"><div class="tx-name">${escapeHtml(d.name)}${d.lunas?' <span class="bill-due-badge bill-due-ok u-ml4">Lunas</span>':(overdue?' <span class="bill-due-badge bill-due-urgent u-ml4">Jatuh Tempo</span>':'')}</div><div class="tx-meta">${metaParts.join(' · ')}</div></div><div class="tx-amount${d.lunas?'':' red'}">${fmt(d.nilai)}</div><button class="tx-del" data-stop="1" data-action="delDebt" data-args="${escapeHtml(JSON.stringify([d.id]))}" aria-label="Hapus">🗑</button></div>`;
 }).join('');
 // KW-170: baris cicilan barang — read-only dari sini (edit/hapus/riwayat
@@ -559,7 +580,20 @@ save();
 DebtStrategy.render();
 },
 activeDebts(){
-const real=(D.debts||[]).filter(d=>!d.lunas&&(d.nilai||0)>0);
+// FIX (S455): entri utang "dana titipan" (linkedAssetId terisi, auto-sync
+// dari Aset._syncOwnerDebts()) BUKAN kewajiban yang perlu strategi
+// pelunasan (bunga/cicilan selalu 0, tidak ada jatuh tempo) -- exclude dari
+// activeDebts() supaya tidak nongol di computeOrder() (snowball/avalanche)
+// & tidak menaikkan activeCount di Debt Optimizer. Debt.totalValue()
+// (Kekayaan Bersih) TIDAK disentuh -- titipan tetap harus terhitung di
+// situ, cuma bukan target "dibayar".
+// FIX (S460): exclude SAMA juga utk entri titipan investasi
+// (linkedInvestmentId, auto-sync dari Investment._syncTitipanDebt()) --
+// SEBELUM sesi ini, titipan investasi TIDAK punya penanda apa pun di
+// object utangnya sendiri (beda dari titipan aset yang sudah ditandai
+// linkedAssetId sejak awal), jadi salah masuk activeDebts() & ikut
+// disimulasikan snowball/avalanche padahal bukan kewajiban riil.
+const real=(D.debts||[]).filter(d=>!d.lunas&&(d.nilai||0)>0&&!d.linkedAssetId&&!d.linkedInvestmentId);
 return real.concat(DebtStrategy.billCicilanAsDebtLike());
 },
 // billCicilanAsDebtLike() — KW-170: map cicilan barang aktif (Debt.

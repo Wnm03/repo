@@ -571,10 +571,31 @@ updateTxVehiclePanels();
 const stockChk=document.getElementById('txAddStock');
 if(stockChk)stockChk.checked=false;
 toggleTxStockFields();
+// BUGFIX (s452): dulu renovChkEdit SELALU dipaksa checked=false di sini tanpa
+// pengecualian -- beda dgn shopChk tepat di bawah (lihat blok hasShopStock)
+// yang memang mengecek dulu apakah transaksi ini punya link stok sebelum
+// centang ulang. Akibatnya: transaksi yang barusan disimpan dgn centang "🔨
+// Catat juga ke Proyek Renovasi?" AKTIF (item-nya sudah benar ke-link &
+// nongol di fitur Proyek Renovasi -- lihat applyTxRenovFromTx) tetap tampil
+// TIDAK tercentang begitu transaksi yang sama dibuka lagi lewat Edit,
+// walaupun `t.renovProjectLinkId`/`t.renovItemLinkId` sudah tersimpan valid
+// di data. User jadi mengira centangnya "hilang"/gagal tersimpan, padahal
+// datanya aman -- cuma representasi checkbox di form Edit yang tidak pernah
+// disinkronkan balik ke data transaksi. Fix: samakan pola dgn shopChk --
+// cek dulu apakah transaksi ini memang sudah ter-link ke item Renov (&
+// proyeknya masih ada), baru tentukan status checkbox + isi ulang dropdown
+// Proyek-nya, alih-alih selalu di-reset ke false.
 const renovChkEdit=document.getElementById('txAddRenov');
-if(renovChkEdit)renovChkEdit.checked=false;
+const renovLinkedProject=(t.renovProjectLinkId&&t.renovItemLinkId&&D.renovProjects)
+?D.renovProjects.find(p=>sameId(p.id,t.renovProjectLinkId))
+:null;
+if(renovChkEdit)renovChkEdit.checked=!!renovLinkedProject;
 if(typeof setTxRenovStatus==='function')setTxRenovStatus('sudah');
 if(typeof toggleTxRenovFields==='function')toggleTxRenovFields();
+if(renovLinkedProject){
+const renovProjSelEdit=document.getElementById('txRenovProject');
+if(renovProjSelEdit)renovProjSelEdit.value=renovLinkedProject.id;
+}
 const shopChk=document.getElementById('txAddShopStock');
 const hasShopStock=(t.stockItems&&t.stockItems.length)||t.stockProductId;
 if(hasShopStock&&shopChk){
