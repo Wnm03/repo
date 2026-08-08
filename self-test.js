@@ -476,8 +476,16 @@ if(netEl&&netEl.textContent){
 renderKekayaanBersih();
 const utangManual=D.pajakZakat.utangJT||parsePzNum(document.getElementById('zmUtang')?document.getElementById('zmUtang').value:0);
 const utang=utangManual+totalDebtValue()+totalCicilanOutstanding();
-const expected=totalSaldoAkun()+totalAssetValue()+totalInventoriBisnisValue()+totalPiutangValue()-utang;
-_selfTestAssert(parsePzNum(netEl.textContent)===expected,'Kekayaan Bersih harus = saldo akun + total aset + inventori bisnis + total piutang − (utang manual + utang tercatat + sisa cicilan/paylater), dapat '+parsePzNum(netEl.textContent)+' vs ekspektasi '+expected);
+// FIX (S482, laporan Tes Otomatis "Buku Aset: totalAssetValue() & Kekayaan Bersih
+// konsisten"): formula ekspektasi di bawah ini ketinggalan zaman -- Kekayaan.renderBersih()
+// (modules-calc.js) & SSOT Kekayaan.currentNetWorth() sejak S476a (Blocker A) SUDAH
+// menambahkan Investment.selfOwnedTotalValue() (holding investasi porsi SELF) ke totalAset,
+// tapi baris expected di sini tidak ikut diperbarui -- bikin test ini SELALU gagal (false
+// positive) begitu ada holding investasi tersimpan, walau kodenya sendiri sudah benar &
+// konsisten dgn SSOT. Disamakan persis dgn rumus renderBersih()/currentNetWorth().
+const totalAsetExpected=totalAssetValue()+(typeof Investment!=='undefined'?Investment.selfOwnedTotalValue():0);
+const expected=totalSaldoAkun()+totalAsetExpected+totalInventoriBisnisValue()+totalPiutangValue()-utang;
+_selfTestAssert(parsePzNum(netEl.textContent)===expected,'Kekayaan Bersih harus = saldo akun + total aset (termasuk holding investasi porsi SELF) + inventori bisnis + total piutang − (utang manual + utang tercatat + sisa cicilan/paylater), dapat '+parsePzNum(netEl.textContent)+' vs ekspektasi '+expected);
 }
 }},
 {name:'Regresi bug ID string vs number: pencarian & hapus di Aset/Piutang/Kekayaan/SIM/Zakat (sementara, tidak disimpan)', fn:()=>{
@@ -1894,6 +1902,19 @@ call:()=>{ InvestmentListUI.openModal(); }},
 call:()=>{ InvestmentTxUI.open(); }},
 {label:'InvestmentWatchUI.openModal()',id:'investmentWatchModal',
 call:()=>{ InvestmentWatchUI.openModal(); }},
+// S487: titipanCommitmentModal & titipanReturnModal ("\ud83d\udcb0 Pokok Dana Titipan" /
+// "\u21a9\ufe0f Catat Pengembalian Dana Titipan", dibuat S485d/S486) belum terdaftar di sweep
+// manapun -- terdeteksi "(kelengkapan cakupan) modal belum terdaftar" di Tes Buka/Tutup
+// Modal. Kedua open(ownerId) dipanggil TANPA ownerId (persis InvestmentUI.openOwnersModal()
+// & InvestmentListUI.openModal() di atas) tetap aman: DanaTitipanCommitmentUI.open() render
+// dropdown owner kosong ('\u2014 Belum ada owner di holding investasi \u2014') kalau
+// listExistingOwners() kosong, & DanaTitipanReturnUI.open() render ownerDisplayEl kosong
+// (known jadi undefined) -- keduanya lalu openModal() seperti biasa, 0 mutasi data (tidak
+// push dummy apa pun ke D), jadi TIDAK perlu before/after seperti spec assetOwnersModal.
+{label:'DanaTitipanCommitmentUI.open()',id:'titipanCommitmentModal',
+call:()=>{ DanaTitipanCommitmentUI.open(); }},
+{label:'DanaTitipanReturnUI.open()',id:'titipanReturnModal',
+call:()=>{ DanaTitipanReturnUI.open(); }},
 {label:'Piutang.openModal()',id:'piutangModal',
 call:()=>{ Piutang.openModal(); }},
 {label:'Debt.openModal()',id:'debtModal',

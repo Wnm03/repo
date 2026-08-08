@@ -1,3 +1,48 @@
+# Changelog — Sesi 488 (Tes Buka/Tutup Modal: daftarkan titipanCommitmentModal & titipanReturnModal ke sweep)
+
+## Konteks
+`titipanCommitmentModal` ("💰 Pokok Dana Titipan", dibuat S485d) &
+`titipanReturnModal` ("↩️ Catat Pengembalian Dana Titipan", dibuat S486)
+terdeteksi "(kelengkapan cakupan) modal belum terdaftar" di Tes
+Buka/Tutup Modal (dilihat user lewat 🧪 Tes Buka/Tutup Modal di halaman
+Beranda: "107/119 modal aman · 11 butuh konteks (wajar) · 1
+bermasalah") — gap coverage tes murni, bukan bug fungsional (kedua
+modal sudah berfungsi normal lewat tombol asli di UI Dana Titipan).
+
+## Perubahan
+- `self-test.js` + `app-bundle-b.min.js` (embedded copy) —
+  `MODULE_METHOD_MODAL_SPECS`: 2 spec baru, `DanaTitipanCommitmentUI.open()`
+  & `DanaTitipanReturnUI.open()`, keduanya dipanggil TANPA `ownerId`
+  (aman, 0 mutasi `D` — `DanaTitipanCommitmentUI.open()` render dropdown
+  owner kosong kalau `listExistingOwners()` kosong,
+  `DanaTitipanReturnUI.open()` render tampilan owner kosong — pola sama
+  `InvestmentUI.openOwnersModal()`/`InvestmentListUI.openModal()` di
+  spec-spec sekitarnya).
+- Konstanta versi build disamakan ke `s488-titipan-modal-sweep-fix` di
+  semua file yang biasa ikut sinkron per sesi (lihat
+  `s488-SESSION-NOTE.md` utk daftar lengkap file).
+- Cache-busting `?v=1216`→`?v=1218` (index.html, app_production.html)
+  & `kw-cache-v1216`→`kw-cache-v1218` (sw.js) — via `node scripts/build.js`.
+
+## Verifikasi yang sudah dijalankan
+- `node scripts/build.js s488-titipan-modal-sweep-fix` — lolos, versi
+  konstanta tersinkron, kedua bundle ditulis ulang & valid sintaks.
+- `node --test tests/*.test.js` → **3178/3178 lolos, 0 gagal** (0
+  regresi).
+- `node scripts/verify-window-expose.js` → lolos.
+- `node scripts/verify-bundle-freshness.js` → lolos, kedua bundle segar.
+- `node scripts/verify-release-ready.js` (dgn override lint/minify —
+  eslint & esbuild tidak tersedia di sandbox tanpa akses jaringan,
+  dicatat di `docs/RELEASE-GATE-LOG.md`) → lolos.
+
+## Status akhir
+Kedua modal sekarang terdaftar di sweep. Jalankan 🧪 Tes Buka/Tutup
+Modal sekali lagi di aplikasi utk konfirmasi visual "119/119 modal
+aman" (tidak bisa disimulasikan headless di sandbox ini karena sweep
+jalan di DOM browser sungguhan).
+
+---
+
 # Changelog — Sesi 477 (Tes Buka/Tutup Modal: daftarkan investmentOwnersModal ke sweep)
 
 ## Konteks
