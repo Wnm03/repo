@@ -2,7 +2,7 @@
 // Dipindah ke modules/shared/modules-render.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
 // Semua fungsi ini murni definisi function global (bukan module), jadi tetap bisa dipanggil dari file manapun
 // yang loadnya belakangan (sama seperti modules-calc.js/features-*.js).
-const MODULE_RENDER_VERSION='s481-stok-koreksi-opname';
+const MODULE_RENDER_VERSION='s487-pmicons-badge-tagihan-utang';
 
 function renderPageContent(name){
 // KW perf fix: jaring pengaman selain hook di save() -- pastikan cache saldo akun juga fresh
@@ -1336,6 +1336,11 @@ if(typeof AsetKeluarga!=='undefined')AsetKeluarga.render();
 // AsetKeluarga.render() di atas — 100% reuse DanaKelolaan.summary(),
 // tidak mengubah baris manapun sebelum ini.
 if(typeof DanaKelolaanPresenter!=='undefined')DanaKelolaanPresenter.renderLaporan();
+// Sesi 484 (Dana Titipan dalam Investasi — Portfolio Allocation Projection):
+// tambahan murni read-only, pola sama baris di atas — 100% reuse
+// Investment.getOwners()/holdingCost()/holdingValue()/holdingGainLoss() +
+// MultiOwnerEngine.splitByPorsi(), tidak mengubah baris manapun sebelum ini.
+if(typeof DanaTitipanPortfolioPresenter!=='undefined')DanaTitipanPortfolioPresenter.render();
 const km={};
 txs.forEach(t=>{if(!km[t.category])km[t.category]={inc:0,exp:0,n:0};if(t.type==='income')km[t.category].inc+=t.amount;else km[t.category].exp+=t.amount;km[t.category].n++;});
 const ks=Object.entries(km).sort((a,b)=>(b[1].inc+b[1].exp)-(a[1].inc+a[1].exp));
