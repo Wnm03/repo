@@ -59,16 +59,26 @@ test('VEH_JENIS_DEFAULT_INTERVAL — motor 3000km, mobil 5000km (beda wajar, sin
   assert.equal(ctx.VEH_JENIS_DEFAULT_INTERVAL.mobil, 5000);
 });
 
+// S507 (Vehicle ↔ Asset Read-Only Bridge): vehMetaText() sekarang SELALU
+// menambahkan potongan bridge (lihat vehAssetBridgeHtml()) di baris paling
+// akhir, additive di atas teks S506 — assertion di bawah diupdate dari
+// assert.equal exact-string jadi cek prefix + kehadiran baris bridge,
+// supaya tetap memverifikasi teks interval/oli LAMA tidak berubah SAMA
+// SEKALI, sekaligus mengizinkan penambahan additive S507.
 test('vehMetaText() — motor: format "Interval servis: X km", fallback 3000 kalau kosong', () => {
   const ctx = makeCtx();
-  assert.equal(ctx.vehMetaText({ jenis: 'motor', serviceIntervalKm: 4000 }), 'Interval servis: 4.000 km');
-  assert.equal(ctx.vehMetaText({ serviceIntervalKm: 0 }), 'Interval servis: 3.000 km');
+  const t1 = ctx.vehMetaText({ jenis: 'motor', serviceIntervalKm: 4000 });
+  assert.match(t1, /^Interval servis: 4\.000 km/);
+  assert.match(t1, /Belum terhubung ke Buku Aset/);
+  const t2 = ctx.vehMetaText({ serviceIntervalKm: 0 });
+  assert.match(t2, /^Interval servis: 3\.000 km/);
 });
 
 test('vehMetaText() — mobil: tampilkan oli mesin & oli transmisi terpisah', () => {
   const ctx = makeCtx();
   const text = ctx.vehMetaText({ jenis: 'mobil', serviceIntervalKm: 5000, oliTransmisiIntervalKm: 20000 });
-  assert.equal(text, 'Oli mesin: 5.000 km · Oli transmisi: 20.000 km');
+  assert.match(text, /^Oli mesin: 5\.000 km · Oli transmisi: 20\.000 km/);
+  assert.match(text, /Belum terhubung ke Buku Aset/);
 });
 
 test('vehMetaText() — mobil tanpa oli transmisi diisi -> "belum diisi" (bukan 0 km / crash)', () => {
@@ -80,8 +90,8 @@ test('vehMetaText() — mobil tanpa oli transmisi diisi -> "belum diisi" (bukan 
 test('vehMetaText() — listrik: tampilkan kapasitas baterai, bukan interval KM', () => {
   const ctx = makeCtx();
   const text = ctx.vehMetaText({ jenis: 'listrik', batteryCapacityKwh: 5.5 });
-  assert.equal(text, 'Kapasitas baterai: 5.5 kWh');
-  assert.doesNotMatch(text, /km/);
+  assert.match(text, /^Kapasitas baterai: 5\.5 kWh/);
+  assert.doesNotMatch(text, /km/); // "km" tetap tidak boleh muncul di bagian baterai (bridge S507 tidak pakai "km")
 });
 
 test('vehMetaText() — listrik tanpa kapasitas diisi -> pesan "belum diisi" (bukan crash/NaN)', () => {
@@ -93,5 +103,5 @@ test('vehMetaText() — listrik tanpa kapasitas diisi -> pesan "belum diisi" (bu
 test('vehMetaText() — kendaraan lama tanpa field jenis (data pre-KW165) default ke motor', () => {
   const ctx = makeCtx();
   const text = ctx.vehMetaText({ serviceIntervalKm: 3000 });
-  assert.equal(text, 'Interval servis: 3.000 km');
+  assert.match(text, /^Interval servis: 3\.000 km/);
 });
