@@ -154,3 +154,33 @@
 
 - **lint-unavailable**: override dipakai. Alasan: Sandbox tanpa akses jaringan/npm registry, eslint tidak bisa diinstall
 - **unminified-bundle**: override dipakai. Alasan: Sandbox tanpa akses jaringan, esbuild tidak bisa diinstall - bundle valid tapi belum diminify
+
+## 2026-08-08T06:58:21.681Z — versi s489-owner-registry-core
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan/npm registry, eslint tidak terpasang
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak terpasang - bundle valid secara sintaks, hanya lebih besar
+
+## 2026-08-08T07:08:43.028Z — versi s490-asset-owners-registry-wiring
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan/npm registry, eslint tidak terpasang
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak terpasang - bundle valid secara sintaks, hanya lebih besar
+
+## 2026-08-08T07:17:02.805Z — versi s491-investment-owners-registry-wiring
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses jaringan, eslint tidak terpasang (sama seperti S488/S489/S490)
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa akses jaringan, esbuild tidak terpasang (sama seperti S488/S489/S490)
+
+## 2026-08-08T07:42:26.870Z — versi s492-titipan-listexistingowners-registry-consumer
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak terpasang, sama seperti S488-S491
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak terpasang di sandbox (tanpa akses jaringan), sama seperti S488-S491
+
+## 2026-08-08T07:53:52.679Z — versi s493-owner-registry-cross-domain-validation
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak terpasang, sama seperti S488-S492
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak terpasang di sandbox (tanpa akses jaringan), sama seperti S488-S492
+
+## 2026-08-08T08:04:03.946Z — versi s494-owner-registry-cross-domain-validation
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak terpasang, sama seperti S488-S493
+- **unminified-bundle**: override dipakai. Alasan: esbuild tidak terpasang di sandbox (tanpa akses jaringan), sama seperti S488-S493
