@@ -126,8 +126,13 @@ function goalSourceFI(D) {
   }];
 }
 
+// FIX (S456): entri utang "dana titipan" (linkedAssetId terisi, auto-sync
+// dari Aset._syncOwnerDebts()) BUKAN kewajiban yang perlu jadi target Goal
+// -- sama alasan/pola dgn DebtStrategy.activeDebts() (S455,
+// piutang-utang.js): lunas selalu false & tidak ada jatuhTempo asli, jadi
+// tanpa exclude ini nongol permanen sbg goal card 0% yg gak pernah selesai.
 function goalSourceDebt(D) {
-  return (D.debts || []).filter((d) => (d.nilai || 0) > 0).map((d) => ({
+  return (D.debts || []).filter((d) => (d.nilai || 0) > 0 && !d.linkedAssetId).map((d) => ({
     id: `debt:${d.id}`, sourceKind: 'debt', sourceId: d.id,
     name: d.name, emoji: '📕',
     targetAmount: d.nilai, currentAmount: d.lunas ? d.nilai : 0,
