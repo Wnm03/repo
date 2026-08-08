@@ -5,16 +5,24 @@ Prioritas tertinggi PALING ATAS. Satu item = target 1 sesi.
 ## Bill/Piutang/Debt — dari Sesi Audit 2026-08-01
 
 Diimplementasikan dari hasil audit eksternal (`docs/BUG_REGISTRY.md` §0a).
-Belum ada satu pun yang dikerjakan sesi ini — murni pencatatan.
+
+> **Update Sesi 487 (2026-08-08)**: tabel ini basi — dicek ulang langsung
+> ke source sebelum mengerjakan item teratas (`buka file md kerjakan 1
+> sesi`), ternyata 4 dari 6 item di bawah **sudah lama diperbaiki di sesi
+> lampau tapi tidak pernah disinkronkan ke sini** (komentar `FIX (BUG-00N,
+> sesi NNN)` sudah ada di source, cuma tabel TODO ini yang tidak diupdate
+> — pola stale-doc yang sama seperti `docs/STALE-DOC-SCHEDULE.md`).
+> **BUG-004** (satu-satunya yang benar OPEN) dikerjakan sesi ini — lihat
+> `FIX-v1215-to-v1216-s487-pmicons-badge-tagihan-utang.md`.
 
 | Priority | Task | Related Bug | Owner | Status |
 |---|---|---|---|---|
-| Medium-High | Perbaiki fallback self-heal `_saveBillInner()` supaya memakai `countFallbackBillPaymentCandidates()` (cegah kandidat ambigu salah ter-link) | BUG-001 | Unassigned | OPEN |
-| Medium | Daftarkan `payMethod` kind `"utang"` ke `pmIcons` & dropdown filter metode (`markBillPaid()`) | BUG-004 | Unassigned | OPEN |
-| Medium | `delBillArchive()` panggil `refreshBillEverywhere()`/`renderBillList()` supaya Daftar Tagihan tab Lunas tidak stale | BUG-005 | Unassigned | OPEN |
-| P2 | Tambah validasi nilai positif di `Piutang.save()` dan `Debt.save()` | BUG-FIN-001 | Unassigned | OPEN |
-| Not specified in audit input | Investigasi mismatch `tx.amount` vs label "Jumlah Total per Periode" | BUG-002 | Unassigned | OPEN |
-| Not specified in audit input | Investigasi interaksi `_saveBillInner()` dengan `syncOutstandingSharedPiutang()` | BUG-003 | Unassigned | OPEN |
+| Medium-High | Perbaiki fallback self-heal `_saveBillInner()` supaya memakai `countFallbackBillPaymentCandidates()` (cegah kandidat ambigu salah ter-link) | BUG-001 | Unassigned | ✅ DONE (sesi 338, sudah di source — `tagihan-kalender.js` ~baris 508) |
+| Medium | Daftarkan `payMethod` kind `"tagihan"`/`"utang"` ke `pmIcons` (badge kartu transaksi) — dropdown filter `#kfMethod` sendiri sudah lebih dulu punya opsi 🧾/📕 | BUG-004 | Unassigned | ✅ DONE (sesi 487, lihat `modules/finance/tx-list-cashflow.js` + `tests/s487-txhtml-pmicons-tagihan-utang-badge.test.js`) |
+| Medium | `delBillArchive()` panggil `refreshBillEverywhere()`/`renderBillList()` supaya Daftar Tagihan tab Lunas tidak stale | BUG-005 | Unassigned | ✅ DONE (audit s327, sudah di source — `tagihan-kalender.js` ~baris 646) |
+| P2 | Tambah validasi nilai positif di `Piutang.save()` dan `Debt.save()` | BUG-FIN-001 | Unassigned | ✅ DONE (sudah di source — `piutang-utang.js` ~baris 246 & 414) |
+| Not specified in audit input | Investigasi mismatch `tx.amount` vs label "Jumlah Total per Periode" | BUG-002 | Unassigned | ✅ DONE (sesi 342, sudah di source — `tagihan-kalender.js` ~baris 519) |
+| Not specified in audit input | Investigasi interaksi `_saveBillInner()` dengan `syncOutstandingSharedPiutang()` | BUG-003 | Unassigned | ✅ DONE (sesi 339, sudah di source — `tagihan-kalender.js` ~baris 554) |
 
 **Update Sesi Audit-Docs 2 (2026-08-01):** ke-4 fungsi di atas yang
 tadinya "belum diaudit" sudah selesai diaudit langsung dari source code —

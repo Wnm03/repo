@@ -83,9 +83,9 @@
 <link rel="preconnect" href="https://accounts.google.com" crossorigin>
 <link rel="dns-prefetch" href="https://accounts.google.com">
 <title>Keluarga W</title>
-<link rel="stylesheet" href="styles.css?v=1206">
-<link rel="stylesheet" href="modern-ui-layer.css?v=1206">
-<script src="nav-scroll.js?v=1206" defer></script>
+<link rel="stylesheet" href="styles.css?v=1216">
+<link rel="stylesheet" href="modern-ui-layer.css?v=1216">
+<script src="nav-scroll.js?v=1216" defer></script>
 <script>
 /* Debug console (Eruda) — aktifkan sekali lewat ?debug=1 di URL, nempel via localStorage.
    Matikan lagi lewat ?debug=0. Tidak aktif buat user biasa. */
@@ -151,17 +151,17 @@ function ensureZXing(){return _loadScriptOnce('https://cdn.jsdelivr.net/npm/@zxi
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn CDN di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // > Proyek Renovasi pertama dibuka.
-function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1206');}
+function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1216');}
 // sewakios.js dikeluarkan dari app-bundle-a.min.js (scripts/build.js GROUP_A),
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn Renov di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // pertama dibuka.
-function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1206');}
+function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1216');}
 // business-intelligence-presenter.js dikeluarkan dari app-bundle-b.min.js
 // (scripts/build.js GROUP_B), dimuat on-demand lewat pola sama.
 // Dipanggil dari setShopTab() (cobek-io.js) saat tab Shop > Business
 // Intelligence pertama dibuka.
-function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1206');}
+function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1216');}
 </script>
 <script>
 window.__moduleLoadFail=function(name){
@@ -250,8 +250,8 @@ window.location.reload();
 }catch(e){}
 })();
 </script>
-<script src="app-bundle-a.min.js?v=1206" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
-<script src="modules/shared/smoke-test.js?v=1206" defer></script>
+<script src="app-bundle-a.min.js?v=1216" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
+<script src="modules/shared/smoke-test.js?v=1216" defer></script>
 <link rel="manifest" id="pwaManifestLink" href="manifest.json">
 </head>
 <body data-theme="fresh">
@@ -1033,6 +1033,15 @@ window.location.reload();
     <div class="u-hint10">Dana milik pihak lain yang dikelola lewat aplikasi ini (investor, titipan, DP pelanggan, keluarga) — dikecualikan dari Kas/Aset/Kekayaan Bersih, ditampilkan terpisah di sini.</div>
     <div id="danaKelolaanLapBody" class="u-mb10"></div>
     <div id="danaKelolaanTitipanDetailList"></div>
+    <!-- S484 (Dana Titipan dalam Investasi — Portfolio Allocation Projection):
+         diisi DanaTitipanPortfolioPresenter.render() (modules/finance/
+         dana-titipan-portfolio-presenter.js), dipanggil dari renderLaporan()
+         (modules-render.js) tepat setelah DanaKelolaanPresenter.renderLaporan().
+         Read-only, 100% reuse Investment.getOwners()/holdingCost()/
+         holdingValue()/holdingGainLoss() + MultiOwnerEngine.splitByPorsi() —
+         pokok teralokasi/nilai sekarang/P&L per pemilik dana titipan, digrupkan
+         lintas semua holding investasi. -->
+    <div id="danaTitipanPortfolioList"></div>
     <div class="u-flex u-jcb u-aic u-mt10 divider-top">
       <span class="u-fs12t2">Total Dana Kelolaan</span>
       <span class="stat-val u-fs16" id="danaKelolaanLapTotal">Rp 0</span>
@@ -3900,7 +3909,9 @@ window.location.reload();
 <script>document.write(MODAL_HTML[93]);</script><!-- modal:investmentModal (S466, Fase 1 BUG-INV-001 Opsi 3) -->
 <script>document.write(MODAL_HTML[94]);</script><!-- modal:investmentTxModal (S467, Fase 2 BUG-INV-001 Opsi 3) -->
 <script>document.write(MODAL_HTML[95]);</script><!-- modal:investmentWatchModal (S467, Fase 3 BUG-INV-001 Opsi 3) -->
+<script>document.write(MODAL_HTML[96]);</script><!-- modal:titipanCommitmentModal (S485d, Sesi 4/5 Gap #3 audit) -->
+<script>document.write(MODAL_HTML[97]);</script><!-- modal:titipanReturnModal (S486, Case F: Partial Return) -->
 
-<script src="app-bundle-b.min.js?v=1206" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
+<script src="app-bundle-b.min.js?v=1216" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
 </body>
 </html>
