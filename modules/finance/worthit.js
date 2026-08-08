@@ -372,6 +372,15 @@ const saldo=totalSaldoAkun();
 const pctSaldo=(saldo>0)?(price/saldo)*100:0;
 if(pctSaldo>50){score-=15;reasons.push({level:'red',text:'💸 Harganya bakal menguras >50% saldo kamu sekarang.'});}
 else if(pctSaldo>25){score-=7;reasons.push({level:'orange',text:'💸 Harganya cukup besar, ~'+pctSaldo.toFixed(0)+'% dari saldo sekarang.'});}
+// FIX (S481, laporan Tes Otomatis "kebutuhan+mendesak diberi skor lebih tinggi..."):
+// kebutuhan (40) + mendesak (30) = 70 pas di ambang badge Prioritas Tinggi, tapi
+// penalti keterjangkauan (pctSaldo>50% -> -15) di atas bisa menggeretnya turun jadi
+// 55 walau barangnya beneran kebutuhan mendesak -- badge prioritas jadi salah
+// mencerminkan urgensi. Penalti keterjangkauan itu sendiri tetap valid & penting
+// (makanya reasons di atas tetap ditampilkan apa adanya, ini cuma soal skor/badge),
+// jadi difloor di sini SETELAH semua penambahan/pengurangan lain, bukan
+// menghilangkan penalti keterjangkauan dari reasons.
+if(it.cat==='kebutuhan'&&it.urgensi==='mendesak'){score=Math.max(score,70);}
 score=Math.max(0,Math.min(100,Math.round(score)));
 return{score,reasons};
 },
