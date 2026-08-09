@@ -290,6 +290,20 @@ ScannerSession.isActive();
 // berjalan sudah "basi" krn modal/record sudah berpindah sebelum hasil scan
 // selesai -- lihat komentar lengkap di _scanEpochNow()/_scanEpochStale().
 window._modalEpoch=(window._modalEpoch||0)+1;
+// FIX (audit "dropdown Pilih Pemilik tidak bisa dipilih", laporan user Agustus
+// 2026): kalau modal ini dibuka SEBAGAI TUMPUKAN di atas modal lain yang masih
+// terbuka (mis. assetOwnersModal dari dalam assetModal -- lihat
+// Aset.openOwnersModal()), tandai `.modal` di dalamnya dengan class `.no-anim`
+// (lihat styles.css) supaya animasi slideUp/transform TIDAK dipasang -- mencegah
+// compositing layer tumpukan yang jadi pemicu native <select> di dalamnya gagal
+// merespons tap opsi selain opsi yang sedang aktif. Modal yang dibuka sendirian
+// (tanpa modal lain yang masih `.open`) tidak terpengaruh sama sekali -- animasi
+// tetap seperti semula. querySelector('.overlay.open') dicek SEBELUM class
+// 'open' baru ditambahkan ke `el` di bawah, supaya `el` sendiri tidak ikut
+// terhitung sebagai "modal lain yang masih terbuka".
+const _stacked=!!document.querySelector('.overlay.open');
+const _modalInner=(typeof el.querySelector==='function')?el.querySelector('.modal'):null;
+if(_modalInner)_modalInner.classList.toggle('no-anim',_stacked);
 el.classList.remove('closing');
 el.classList.add('open');
 // FIX (audit opacity-stuck-0, laporan user "vehicleModal keluar tapi opacity 0
