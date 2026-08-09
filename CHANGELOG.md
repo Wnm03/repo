@@ -1,3 +1,58 @@
+# Changelog — Sesi 516 (BUG-S516-001: Owner Picker Dana Titipan — Fix Escaping ownerId)
+
+## Konteks
+Laporan user: modal "💰 Pokok Dana Titipan" kadang gagal simpan dgn error
+"Owner tidak ditemukan..." walau owner jelas ada di dropdown. Audit statis
+awal (baca `listExistingOwners()`/`saveCommitment()`/`recordReturn()` +
+3 sumber ownerId) SALAH menyimpulkan race condition/bundle basi — semua
+fungsi itu 100% konsisten kalau dibaca terpisah. Root cause sebenarnya ada
+di lapisan yang terlewat: `DanaTitipanCommitmentUI.open()`, tempat
+dropdown benar-benar dirender ke DOM.
+
+## Root Cause
+`open()` menyuntik `o.ownerId` MENTAH (tanpa `escapeHtml`) ke atribut HTML
+`<option value="${o.ownerId}">` lewat `innerHTML` — cuma `o.ownerName` yg
+di-escape di baris yg sama. `ownerId` yg memuat `"` merusak atribut HTML
+di tengah jalan -> `sel.value` terbaca TERPOTONG, beda dari `ownerId` asli
+-> validasi `saveCommitment()`/`recordReturn()` gagal cocokkan ke
+`listExistingOwners()` -> error "Owner tidak ditemukan..." walau owner
+aslinya valid. Dua tombol per-owner (`data-args='["${o.ownerId}"]'`) punya
+lubang sama utk karakter `'`.
+
+## Perubahan
+- `modules/finance/dana-titipan-portfolio-presenter.js`:
+  - `DanaTitipanCommitmentUI.open()` — `value="${o.ownerId}"` ->
+    `value="${escapeHtml(o.ownerId)}"`.
+  - `render()` (2 tombol per-owner) — `data-args='["${o.ownerId}"]'` ->
+    `data-args="${escapeHtml(JSON.stringify([o.ownerId]))}"` (pola SUDAH
+    established di file yg sama, `Aset.openOwnersModalById`).
+- `tests/s516-dana-titipan-commitment-ownerid-escaping.test.js` (BARU,
+  2 test, dgn `escapeHtml` ASLI bukan stub — dikonfirmasi FAIL thd kode
+  sblm fix, PASS stlh fix).
+- `tests/s485d-titipan-commitment-ui.test.js` — 2 assertion lama diupdate
+  mengikuti format `data-args` baru yg ter-escape.
+
+Detail lengkap: `FIX-v1249-to-v1250-s516-titipan-commitment-ownerid-escape.md`,
+`docs/BUG_REGISTRY.md` (`BUG-S516-001`).
+
+## Verifikasi
+- `node --test tests/*.test.js` -> **3374/3374 lolos, 0 gagal** (3372
+  baseline + 2 baru).
+- `node scripts/build.js` -> `v1249/s515-...` -> `v1250/s516-...`, sintaks
+  bundle lolos `node --check`.
+- `node scripts/verify-bundle-freshness.js` / `verify-window-expose.js` ->
+  OK.
+- `node scripts/verify-release-ready.js` -> LOLOS (gate `lint`/`minify`
+  di-override manual — eslint/esbuild tidak bisa diinstall di sandbox
+  tanpa akses jaringan, konsisten pola sesi sebelumnya).
+
+## HARD RULE — isolasi sentuhan
+0 sentuhan ke `listExistingOwners()`/`saveCommitment()`/`recordReturn()`
+(logic-nya sudah benar sejak awal). 0 sentuhan ke `ownership-engine.js`,
+`multi-owner-engine.js`, `investasi.js`, `akun.js`.
+
+---
+
 # Changelog — Sesi 494 (Kuota Nominal Titipan di `investmentOwnersModal`, Gate 2 PLAN-owner-registry-multi-session.md)
 
 ## Konteks
