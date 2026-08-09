@@ -138,6 +138,16 @@ const FEATURE_REGISTRY = [
       { key: 'keu-cashflow', label: 'Proyeksi Arus Kas 30 Hari', icon: '🌊', desc: 'Perkiraan saldo 30 hari ke depan', target: { page: 'keuangan', tab: 'laporan', subtab: 'aruskas', goTo: 'cfBody' } },
       { key: 'keu-laporan-kategori', label: 'Laporan per Kategori', icon: '🗂️', desc: 'Rekap pengeluaran/pemasukan per kategori', target: { page: 'keuangan', tab: 'laporan', subtab: 'aruskas', goTo: 'lapKat' } },
       { key: 'keu-export', label: 'Export', icon: '📤', desc: 'Export laporan ke CSV/JSON/PDF/Gambar', target: { page: 'keuangan', tab: 'laporan', subtab: 'transaksi' } },
+      // Sesi 512 (audit S511 — Dana Titipan Navigation & Entry Point):
+      // Dana Titipan sebelumnya cuma bisa dijangkau lewat Keuangan > Laporan
+      // (sub-tab ke-4). Entry ini MURNI nav-only — 0 file lain diubah, 0
+      // presenter/API baru — reuse penuh dashHubNavigateToFeature() yang
+      // sudah mendukung target.subtab (LAPORAN_SUBTAB_IDX.titipan=3,
+      // dashboard-hub.js) & container #danaTitipanTabList yang sudah
+      // dirender renderLaporan() -> DanaTitipanPortfolioPresenter.renderInto()
+      // (dana-titipan-portfolio-presenter.js). Tab/panel/presenter existing
+      // TIDAK dipindah/diubah sama sekali.
+      { key: 'keu-dana-titipan', label: 'Dana Titipan', icon: '💰', desc: 'Pokok, alokasi, dan pengembalian dana titipan per pemilik', target: { page: 'keuangan', tab: 'laporan', subtab: 'titipan', goTo: 'danaTitipanTabList' } },
     ],
   },
   {
