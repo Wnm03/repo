@@ -36,6 +36,150 @@ const v=D.vehicles.find(x=>x.id===vehicleId);
 if(!v)return true;
 return OwnershipEngine.resolve(v).type==='SELF';
 }
+// resolveVehicleAssetLink(assetId) — S506 Vehicle ↔ Asset Identity Link (lihat
+// PROMPT IMPLEMENTASI S506, Option A: D.vehicles.assetId → D.assets.id). Validasi
+// SEBELUM disimpan sbg vehicle.assetId (dipanggil dari saveVehicle() di bawah):
+// assetId harus merujuk ke entry D.assets yang BENAR-BENAR ADA DAN
+// asset.jenis==='Kendaraan' -- selain itu (tidak ada / jenis lain / assetId
+// kosong) dianggap TIDAK valid, balikin null (bukan bikin link asal-asalan,
+// bukan bikin asset baru otomatis, sesuai guardrail §3/§20 prompt). PURE
+// function (tidak sentuh DOM), hanya baca D.assets + sameId() (pola sama
+// persis validasi assetId lain di project, mis. resolveTxAssetSplit()).
+function resolveVehicleAssetLink(assetId){
+if(!assetId)return null;
+const a=(D.assets||[]).find(x=>x&&sameId(x.id,assetId));
+if(!a||a.jenis!=='Kendaraan')return null;
+return a;
+}
+// resolveLinkedVehicleAsset(vehicle) — S507 Vehicle ↔ Asset Read-Only Bridge (lihat
+// PROMPT IMPLEMENTASI S507). Cukup delegasi ke resolveVehicleAssetLink() (S506) yang
+// sudah tepat: validasi assetId ADA di D.assets DAN jenis==='Kendaraan', balikin null
+// kalau orphan/tidak valid. PURE function, TIDAK sentuh DOM/D, TIDAK ada SSOT baru —
+// vehicle.assetId tetap satu-satunya pointer, D.assets tetap sumber data finansial.
+function resolveLinkedVehicleAsset(vehicle){
+if(!vehicle)return null;
+return resolveVehicleAssetLink(vehicle.assetId);
+}
+// resolveVehicleByAssetId(assetId) — S509c Asset -> Vehicle Reverse Navigation
+// (lihat PROMPT IMPLEMENTASI S509c). Arah BALIK dari resolveVehicleAssetLink()
+// (S506): dari sebuah assetId, cari D.vehicles[] mana (kalau ada) yang
+// v.assetId-nya menunjuk ke assetId itu. PURE function (tidak sentuh DOM),
+// hanya baca D.vehicles + sameId() -- pola & guard sama persis
+// resolveVehicleAssetLink(). Tidak ada index/cache baru, cukup .find() linear
+// (jumlah kendaraan kecil, sama seperti pola lain di file ini). Kalau ada
+// lebih dari 1 vehicle yang assetId-nya sama (data kotor/edge case, seharusnya
+// tidak terjadi lewat alur UI normal karena tiap vehicle hanya boleh pilih 1
+// asset), balikin MATCH PERTAMA yang ditemukan (urutan D.vehicles) -- tidak
+// dianggap error, cuma diambil salah satu secara deterministik.
+function resolveVehicleByAssetId(assetId){
+if(!assetId)return null;
+return (D.vehicles||[]).find(v=>v&&sameId(v.assetId,assetId))||null;
+}
+// vehAssetBridgeHtml(v) — S507: bangun potongan HTML read-only utk kartu Kelola
+// Kendaraan (dipanggil dari vehMetaText() di bawah). TIDAK copy nilai/owners ke
+// vehicle, cuma BACA live dari D.assets tiap render lewat resolveLinkedVehicleAsset().
+// 3 kondisi (sesuai §UI REQUIREMENT prompt S507):
+//   1) v.assetId kosong -> "Belum terhubung ke Buku Aset"
+//   2) v.assetId ada TAPI resolve gagal (asset dihapus/jenis berubah) -> warning orphan,
+//      assetId TIDAK dihapus di sini (itu tanggung jawab saveVehicle() saja, S506 §2C).
+//   3) resolve sukses -> tampilkan nilai (fmtFull, reuse format-tema.js) & kalau
+//      multi-owner (MultiOwnerEngine.getOwners(), reuse S390/406b, 0 rumus baru)
+//      tampilkan ringkasan porsi "70% Budi · 30% Ayah". Aset single-owner (porsi 100%
+//      1 baris) sengaja TIDAK menampilkan baris Kepemilikan (tidak menambah info).
+// resolveVehicleAssetTitipan(a) — S508 Vehicle ↔ Asset Dana Titipan Bridge
+// (lihat PROMPT IMPLEMENTASI S508). PURE, READ-ONLY, 0 rumus baru: hanya
+// memanggil `DanaTitipanPortfolioAPI.build()` (SUDAH ADA, S485c/S499 — lihat
+// dana-titipan-portfolio-presenter.js) lalu FILTER+JUMLAH baris `holdings[]`
+// (lintas semua owner projection) yang `linkedAssetId===a.id` — angka
+// `allocatedPrincipal` per baris itu sendiri SUDAH dihitung sepenuhnya oleh
+// `build()` (via `_assetSplits()`/`MultiOwnerEngine.splitByPorsi()`, tidak
+// diulang di sini); menjumlah baris yang sudah match assetId BUKAN rumus
+// baru (pola sama persis `totals` reduce di dalam `build()` sendiri).
+// Guard typeof DanaTitipanPortfolioAPI (module titipan opsional, sama pola
+// guard MultiOwnerEngine di atas) & typeof build!=='function' -> null (TIDAK
+// crash, TIDAK fallback ke estimasi apa pun -- sesuai guardrail §2 "kalau
+// API tidak menyediakan data -> STOP" diterapkan di level tampilan: line
+// Dana Titipan disembunyikan, bukan diisi 0/asumsi).
+// Return: total Rp (number) kalau ADA minimal 1 holding titipan ber-
+// `linkedAssetId===a.id` (termasuk 0 kalau totalnya kebetulan 0), atau
+// `null` kalau aset ini TIDAK muncul di projection titipan sama sekali
+// (aset belum pernah diatur porsi kepemilikan titipan eksplisit, ATAU
+// hanya dimiliki SELF, ATAU module belum dimuat) -> caller (vehAssetBridgeHtml)
+// menyembunyikan baris "Dana Titipan" sepenuhnya kalau null.
+function resolveVehicleAssetTitipan(a){
+if(!a||typeof DanaTitipanPortfolioAPI==='undefined'||typeof DanaTitipanPortfolioAPI.build!=='function')return null;
+const projection=DanaTitipanPortfolioAPI.build();
+if(!projection||!Array.isArray(projection.owners))return null;
+let total=0,found=false;
+projection.owners.forEach(o=>{
+(o&&Array.isArray(o.holdings)?o.holdings:[]).forEach(h=>{
+if(h&&h.linkedAssetId!=null&&sameId(h.linkedAssetId,a.id)){
+found=true;
+total+=h.allocatedPrincipal||0;
+}
+});
+});
+return found?total:null;
+}
+// vehAssetViewActionHtml(a) — S509b (PROMPT IMPLEMENTASI S509b, hasil audit
+// S509): potongan HTML tombol/link navigasi "🔍 Lihat di Buku Aset", HANYA
+// dipanggil dari vehAssetBridgeHtml() di bawah pada kondisi (3) resolve
+// sukses (asset ADA & jenis==='Kendaraan' — sudah divalidasi
+// resolveLinkedVehicleAsset() oleh caller, tidak diulang di sini). Reuse
+// murni: data-action existing "Aset.openModal" (lihat modules/asset/aset.js)
+// + dispatcher data-action/data-args generik yang sudah ada
+// (features-helpers-global-security.js) — TIDAK ada modal baru, TIDAK ada
+// router baru, TIDAK ada side effect apa pun sebelum Aset.openModal()
+// dipanggil (read/navigation only, sesuai §6 prompt S509b). escapeHtml()
+// dipakai utk asset.id di data-args (JSON string) — pola sama persis
+// escapeHtml(a.name) di vehicleAssetLinkOptionsHtml() di atas.
+function vehAssetViewActionHtml(a){
+return '<button type="button" class="btn btn-ghost btn-sm u-fs10" data-action="Aset.openModal" data-args="'+escapeHtml(JSON.stringify([a.id]))+'">🔍 Lihat di Buku Aset</button>';
+}
+function vehAssetBridgeHtml(v){
+if(!v.assetId)return '<div class="u-fs10 u-t2">Belum terhubung ke Buku Aset</div>';
+const a=resolveLinkedVehicleAsset(v);
+if(!a)return '<div class="u-fs10" style="color:var(--warning,#c77700)">⚠️ Link Buku Aset tidak ditemukan</div>';
+let ownersLine='';
+if(typeof MultiOwnerEngine!=='undefined'){
+const res=MultiOwnerEngine.getOwners(a);
+if(res&&res.ok&&res.isMultiOwner){
+ownersLine=res.owners.filter(o=>o.porsi>0).map(o=>Math.round(o.porsi)+'% '+escapeHtml(o.ownerName||'?')).join(' · ');
+}
+}
+const nilaiText=typeof fmtFull==='function'?fmtFull(a.nilai||0):('Rp '+(a.nilai||0));
+// titipanTotal — S508: baris "Dana Titipan" HANYA tampil kalau
+// resolveVehicleAssetTitipan() balikin data (bukan null) — lihat komentar
+// helper di atas utk kondisi persisnya.
+const titipanTotal=resolveVehicleAssetTitipan(a);
+const titipanLine=(titipanTotal!=null)?('<br>Dana Titipan: '+(typeof fmtFull==='function'?fmtFull(titipanTotal):('Rp '+titipanTotal))):'';
+// viewActionLine — S509b: tombol navigasi ke Aset.openModal(), HANYA di
+// kondisi ini (resolve sukses) — lihat vehAssetViewActionHtml() di atas.
+const viewActionLine='<br>'+vehAssetViewActionHtml(a);
+return '<div class="u-fs10 u-t2">🔗 Terhubung ke Buku Aset<br>Nilai: '+nilaiText+(ownersLine?('<br>Kepemilikan: '+ownersLine):'')+titipanLine+viewActionLine+'</div>';
+}
+// vehicleAssetLinkOptionsHtml(currentAssetId) — bangun <option> list utk dropdown
+// "🔗 Hubungkan ke Buku Aset" (modal Kelola Kendaraan, S506 §2B): opsi pertama
+// selalu "— Tidak terhubung —" (biar user bisa lepas link secara eksplisit,
+// guardrail §2B), sisanya HANYA D.assets yang jenis==='Kendaraan' (Tanah/Rumah/
+// Emas/Investasi/dst sengaja TIDAK ditampilkan, sesuai scope §2B). PURE function,
+// hanya baca D.assets.
+function vehicleAssetLinkOptionsHtml(currentAssetId){
+const opts=['<option value="">— Tidak terhubung —</option>'];
+(D.assets||[]).filter(a=>a&&a.jenis==='Kendaraan').forEach(a=>{
+opts.push('<option value="'+a.id+'"'+(sameId(a.id,currentAssetId)?' selected':'')+'>'+escapeHtml(a.name||'?')+'</option>');
+});
+return opts.join('');
+}
+// _populateVehAssetLinkSelect(v) — helper DOM (S506, reuse pola persis
+// _populateVehOwnershipSelect() di atas) dipakai openVehicleModal (tambah baru,
+// v=null) & editVehicle (v=kendaraan existing, assetId-nya kalau ada otomatis
+// ke-select).
+function _populateVehAssetLinkSelect(v){
+const sel=document.getElementById('vehAssetId');
+if(!sel)return;
+sel.innerHTML=vehicleAssetLinkOptionsHtml(v&&v.assetId);
+}
 /* moved to modules-render.js: renderCarImportVehicleSelect */
 let vehEditIdx=null;
 // Field per Jenis Kendaraan (KW-165, lanjutan sesi KW-164 — sebelumnya cuma 1 field generik
@@ -95,6 +239,7 @@ onVehJenisChange();
 const kmWrap=document.getElementById('vehKmAwalWrap');if(kmWrap)kmWrap.style.display='';
 document.getElementById('vehSaveBtn').textContent='+ Tambah Kendaraan';
 _populateVehOwnershipSelect(null);
+_populateVehAssetLinkSelect(null);
 openModal('vehicleModal');
 }
 // _populateVehOwnershipSelect(v) — helper (S231, reuse OwnershipEngine) dipakai openVehicleModal
@@ -124,6 +269,7 @@ onVehJenisChange();
 const kmWrap=document.getElementById('vehKmAwalWrap');if(kmWrap)kmWrap.style.display='none';
 document.getElementById('vehSaveBtn').textContent='Simpan Perubahan';
 _populateVehOwnershipSelect(v);
+_populateVehAssetLinkSelect(v);
 openModal('vehicleModal');
 }
 function saveVehicle(){
@@ -156,6 +302,14 @@ const transEl=document.getElementById('vehOliTransInterval');
 oliTrans=transEl?(parseFloat(transEl.value)||null):null;
 }
 }
+// Link Buku Aset (S506) — dibaca dari dropdown "🔗 Hubungkan ke Buku Aset",
+// divalidasi via resolveVehicleAssetLink() (asset harus ada DAN jenis===
+// 'Kendaraan'). Pilihan "— Tidak terhubung —" (value kosong) atau asset yang
+// sudah tidak valid -> assetId DIHAPUS dari record (guardrail §2C: "field
+// harus dihapus/di-set undefined sesuai konvensi schema existing", bukan
+// disimpan sbg link yang tidak valid).
+const vehAssetLinkEl=document.getElementById('vehAssetId');
+const linkedAsset=vehAssetLinkEl?resolveVehicleAssetLink(vehAssetLinkEl.value):null;
 if(vehEditIdx!==null&&vehEditIdx!==undefined){
 const v=D.vehicles[vehEditIdx];
 if(!v){vehEditIdx=null;return;}
@@ -164,6 +318,7 @@ if(jenis==='mobil'&&oliTrans)v.oliTransmisiIntervalKm=oliTrans;else delete v.oli
 if(jenis==='listrik'&&batteryCapacity)v.batteryCapacityKwh=batteryCapacity;else delete v.batteryCapacityKwh;
 if(capacityKg)v.capacityKg=capacityKg;else delete v.capacityKg;
 if(capacityM3)v.capacityM3=capacityM3;else delete v.capacityM3;
+if(linkedAsset)v.assetId=linkedAsset.id;else delete v.assetId;
 vehEditIdx=null;
 save();renderVehicleManageList();renderVehicleSelect();renderCarImportVehicleSelect();renderDashboardServisReminder();renderServisList();toast('✅ Kendaraan diperbarui');
 return;
@@ -176,6 +331,7 @@ if(jenis==='mobil'&&oliTrans)newVeh.oliTransmisiIntervalKm=oliTrans;
 if(jenis==='listrik'&&batteryCapacity)newVeh.batteryCapacityKwh=batteryCapacity;
 if(capacityKg)newVeh.capacityKg=capacityKg;
 if(capacityM3)newVeh.capacityM3=capacityM3;
+if(linkedAsset)newVeh.assetId=linkedAsset.id;
 D.vehicles.push(newVeh);
 if(!isNaN(kmAwal)&&kmAwal>0){
 D.kmLogs.push({id:uid(),vehicleId:newId,date:new Date().toISOString().split('T')[0],km:kmAwal,note:'KM awal saat kendaraan ditambahkan'});
@@ -203,15 +359,20 @@ const ownDetail=ownResolved?('<div class="u-fs10 u-t2">Ownership<br>'+escapeHtml
 // kelihatan tanpa nunggu AI Briefing (cooldown 72 jam bisa kelewat).
 const usedInDelivery=typeof D!=='undefined'&&(D.deliveryPlans||[]).some(p=>p.vehicleId===v.id);
 const capTag=(usedInDelivery&&!v.capacityKg&&!v.capacityM3)?' <span class="acc-chip" style="color:var(--warning,#c77700)">⚠️ Kapasitas belum diisi</span>':'';
+// assetBridge — S507 Vehicle ↔ Asset Read-Only Bridge, lihat vehAssetBridgeHtml() di
+// atas. Ditambahkan ke SEMUA jenis kendaraan (motor/mobil/listrik), posisi terakhir
+// (setelah ownDetail) supaya urutan info yg sudah ada di S506 (ownText/capTag/
+// ownDetail) TIDAK berubah — murni tambahan additive.
+const assetBridge=vehAssetBridgeHtml(v);
 if(jenis==='mobil'){
 const mesin=(v.serviceIntervalKm||5000).toLocaleString('id-ID');
 const trans=v.oliTransmisiIntervalKm?(v.oliTransmisiIntervalKm.toLocaleString('id-ID')+' km'):'belum diisi';
-return 'Oli mesin: '+mesin+' km · Oli transmisi: '+trans+ownText+capTag+ownDetail;
+return 'Oli mesin: '+mesin+' km · Oli transmisi: '+trans+ownText+capTag+ownDetail+assetBridge;
 }
 if(jenis==='listrik'){
-return (v.batteryCapacityKwh?('Kapasitas baterai: '+v.batteryCapacityKwh+' kWh'):'Kapasitas baterai belum diisi')+ownText+capTag+ownDetail;
+return (v.batteryCapacityKwh?('Kapasitas baterai: '+v.batteryCapacityKwh+' kWh'):'Kapasitas baterai belum diisi')+ownText+capTag+ownDetail+assetBridge;
 }
-return 'Interval servis: '+(v.serviceIntervalKm||3000).toLocaleString('id-ID')+' km'+ownText+capTag+ownDetail;
+return 'Interval servis: '+(v.serviceIntervalKm||3000).toLocaleString('id-ID')+' km'+ownText+capTag+ownDetail+assetBridge;
 }
 function populateKmVehicleSelect(){
 const sel=document.getElementById('kmVehicle');
