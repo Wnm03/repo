@@ -776,6 +776,26 @@ const DanaTitipanPortfolioPresenter = {
           `).join('')}`;
   },
 
+  // _assetOptionsHtml() — SESI 515 (Owner -> Nominal -> Asset -> Kuota ->
+  // Porsi). Bangun daftar `<option>` `D.assets` utk dropdown picker "Pilih
+  // Aset" per kartu owner — langkah "Asset" di flow, supaya user bisa
+  // lompat dari kartu owner LANGSUNG ke `assetOwnersModal` (aset.js, S392a+,
+  // live Kuota S505) tanpa cari manual di Buku Aset. PURE, hanya baca
+  // `D.assets` — 0 tulis, 0 SSOT baru. Pola SAMA PERSIS
+  // `vehicleAssetLinkOptionsHtml()` (modules/vehicle/vehicle-core.js, S506),
+  // beda sengaja: 0 filter jenis (dana titipan bisa dialokasikan ke aset
+  // jenis apa pun, bukan cuma Kendaraan).
+  // Return: string HTML `<option>` (opsi pertama selalu placeholder kosong).
+  _assetOptionsHtml() {
+    const opts = ['<option value="">— Pilih Aset —</option>'];
+    const list = (typeof D !== 'undefined' && Array.isArray(D.assets)) ? D.assets : [];
+    list.forEach((a) => {
+      if (!a || !a.id) return;
+      opts.push('<option value="' + a.id + '">' + escapeHtml(a.name || '?') + '</option>');
+    });
+    return opts.join('');
+  },
+
   render() {
     this.renderInto('danaTitipanPortfolioList');
   },
@@ -809,7 +829,7 @@ const DanaTitipanPortfolioPresenter = {
 
     el.innerHTML = addBtn + `
       <div class="u-fs11 u-t2 u-mt10 u-mb4">Dana titipan dalam investasi (per pemilik, teralokasi ke instrumen):</div>
-      ${projection.owners.map((o) => `
+      ${projection.owners.map((o, oi) => `
         <details class="u-mb6">
           <summary class="u-flex u-jcb u-fs12 u-pointer">
             <span>${o.allocationStatus === 'OVER_ALLOCATED' ? '⚠️ ' : ''}👤 ${escapeHtml(o.ownerName)}</span>
@@ -831,12 +851,17 @@ const DanaTitipanPortfolioPresenter = {
           </div>
           <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanCommitmentUI.open" data-args='["${o.ownerId}"]'>✏️ Atur Pokok Dana Titipan</button>
           <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanReturnUI.open" data-args='["${o.ownerId}"]'>↩️ Catat Pengembalian</button>
+          <div class="u-flex u-gap4 u-mb6 u-ml10 u-fs11">
+            <select id="titipanAssetPick_${oi}" class="u-flex-1" aria-label="Pilih Aset untuk Atur Porsi">${this._assetOptionsHtml()}</select>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="DanaTitipanCommitmentUI.openAssetPorsi" data-args='[${oi}]'>⚖️ Atur Porsi Aset</button>
+          </div>
           ${this._returnsHistoryHtml(o.ownerId)}
           ${o.holdings.map((hh) => `
             <div class="u-flex u-jcb u-fs11 u-mb2 u-ml10">
               <span>${hh.hasGainTracking === false ? '🏦' : '📈'} ${escapeHtml(hh.name)} <span class="u-t2">(${hh.ownerPct}%)</span></span>
               <span>${hh.hasGainTracking === false ? `
                 <span class="u-t2">Nilai: ${this._money(hh.currentValue)}</span>
+                ${hh.linkedAssetId ? `<button type="button" class="btn btn-ghost btn-sm" data-action="Aset.openOwnersModalById" data-args="${escapeHtml(JSON.stringify([hh.linkedAssetId]))}">⚖️ Atur Porsi</button>` : ''}
               ` : `
                 <span class="u-t2">${this._money(hh.allocatedPrincipal)} → ${this._money(hh.currentValue)}</span>
                 &nbsp;<span class="${this._gainCls(hh.gain)}">${hh.gain >= 0 ? '+' : ''}${this._money(hh.gain)}</span>
@@ -941,6 +966,27 @@ const DanaTitipanCommitmentUI = {
     if (typeof closeModal === 'function') closeModal('titipanCommitmentModal');
     if (typeof DanaTitipanPortfolioPresenter !== 'undefined') DanaTitipanPortfolioPresenter.render();
     if (typeof toast === 'function') toast('✅ Pokok dana titipan tersimpan');
+  },
+
+  // openAssetPorsi(i) — SESI 515 (Owner -> Nominal -> Asset -> Kuota ->
+  // Porsi). Wrapper navigasi TIPIS dari kartu Dana Titipan ke
+  // `assetOwnersModal` (aset.js, S392a+, live Kuota S505) utk aset yang
+  // dipilih dari dropdown picker `renderInto()`
+  // (`DanaTitipanPortfolioPresenter._assetOptionsHtml()`). `i` = index urutan
+  // kartu owner SAAT render() ini — dipakai HANYA utk cari elemen DOM
+  // picker-nya sendiri (`#titipanAssetPick_{i}`), BUKAN identity
+  // owner/aset. 0 logika CRUD/porsi baru di sini — 100% delegasi ke
+  // `Aset.openOwnersModalById()` (baru, aset.js Sesi 515) yang sendiri
+  // 100% reuse `Aset.openOwnersModal()` existing (S392a).
+  openAssetPorsi(i) {
+    const sel = document.getElementById('titipanAssetPick_' + i);
+    const assetId = sel ? sel.value : '';
+    if (!assetId) { if (typeof toast === 'function') toast('⚠️ Pilih aset dulu'); return; }
+    if (typeof Aset === 'undefined' || typeof Aset.openOwnersModalById !== 'function') {
+      if (typeof toast === 'function') toast('⚠️ Fitur Buku Aset belum siap dimuat');
+      return;
+    }
+    Aset.openOwnersModalById(assetId);
   },
 
 };
