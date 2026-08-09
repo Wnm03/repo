@@ -577,6 +577,35 @@ listExistingOwners() {
       result.push({ ownerId: r.id, ownerName });
     });
   }
+  // Sesi 522 (FIX-S521-DANA-TITIPAN-UI-MULTIOWNER, root cause "kamera"
+  // owner tidak ditemukan) — tambahan sumber ketiga: domain Aset
+  // (`D.assets[].owners[]` EKSPLISIT), sumber ke-3, append-only, dedup
+  // gabungan by ownerId, kedua sumber di atas TIDAK diubah sama sekali.
+  // Root cause: dashboard `build()` SUDAH lintas domain (union
+  // Investasi+Aset, lihat komentar `build()` di bawah, Sesi B1/S499),
+  // tapi `listExistingOwners()` (dipakai picker dropdown modal ini)
+  // ketinggalan hanya Investasi+OwnerRegistry — akibatnya owner yang
+  // HANYA pernah diatur porsinya lewat "⚖️ Atur Porsi Kepemilikan" di
+  // Buku Aset (bukan lewat Investasi/Registry) muncul sbg kartu nyata di
+  // dashboard TAPI ditolak "Owner tidak ditemukan" saat Simpan di modal
+  // ini. Reuse 100% `_asetOwnersForTitipan()` (guard existing-owners-
+  // only, isSynthesized-safe, SAMA PERSIS yang dipakai `build()`) — 0
+  // rumus/guard baru ditulis di sini.
+  if (Array.isArray(typeof D !== 'undefined' && D && D.assets)) {
+    D.assets.forEach((a) => {
+      if (!a) return;
+      const owners = this._asetOwnersForTitipan(a);
+      if (!Array.isArray(owners)) return;
+      owners.forEach((o) => {
+        if (!o || o.isSelf) return;
+        if (!o.ownerId) return;
+        if (seen.has(o.ownerId)) return;
+        seen.add(o.ownerId);
+        const ownerName = (o.ownerName && String(o.ownerName).trim()) || 'Pemilik dana titipan';
+        result.push({ ownerId: o.ownerId, ownerName });
+      });
+    });
+  }
   return result;
 },
 
@@ -652,6 +681,27 @@ saveCommitment(input) {
   }
   if (typeof save === 'function') save();
   return record;
+},
+
+// deleteCommitment(ownerId) — Sesi 522 (FIX-S521-DANA-TITIPAN-UI-
+// MULTIOWNER, gap #2: "tidak ada delete function sama sekali" utk
+// commitment — hanya `saveCommitment()`/`getCommitments()` yang ada
+// sebelum sesi ini). Hapus record `D.titipanCommitments` by `ownerId`
+// (bukan by `id` — 1 owner = maksimal 1 record commitment, pola upsert
+// `saveCommitment()` di atas, jadi `ownerId` sudah unik & lebih gampang
+// dipanggil dari UI yang cuma tahu owner yang sedang dibuka). Return
+// `true` kalau ada yang terhapus, `false` kalau tidak ditemukan (TIDAK
+// throw — pola SAMA PERSIS `deleteReturn(id)` di bawah). ISOLASI TOTAL:
+// HANYA menyentuh `D.titipanCommitments` (+ `save()`), 0 sentuhan ke
+// `D.titipanReturns`/holding/aset/akun/transaksi lain.
+deleteCommitment(ownerId) {
+  if (!(D && Array.isArray(D.titipanCommitments))) return false;
+  if (!ownerId) return false;
+  const idx = D.titipanCommitments.findIndex((c) => c && c.ownerId === ownerId);
+  if (idx === -1) return false;
+  D.titipanCommitments.splice(idx, 1);
+  if (typeof save === 'function') save();
+  return true;
 },
 
 // getReturns(ownerId) — Sesi 486 (Case F: Partial Return / Pengembalian
@@ -944,6 +994,16 @@ const DanaTitipanPortfolioPresenter = {
 // yang sudah ada + validasi (SUDAH ADA di saveCommitment()).
 const DanaTitipanCommitmentUI = {
 
+  // editingOwnerId — Sesi 522, pola SAMA PERSIS `InvestmentListUI.editId`
+  // (investasi-list-view.js): ownerId yang SEDANG dibuka di modal ini
+  // dalam mode edit (record commitment sudah ada), `null` kalau mode
+  // tambah baru. Dipakai `deleteCommitment()` supaya tombol 🗑 Hapus
+  // tahu owner mana yang mau dihapus tanpa perlu data-args statis (form
+  // dropdown owner tidak dikunci setelah dibuka, jadi TIDAK aman baca
+  // dari `#titipanCommitOwner` langsung saat delete — orang bisa saja
+  // sempat ganti pilihan dropdown sebelum tap Hapus).
+  editingOwnerId: null,
+
   // open(ownerId) — Sesi 485d. Isi dropdown owner dari
   // listExistingOwners() (bukan free-text — cegah user bikin identity
   // baru yang tidak nyambung ke holding manapun, sama alasan
@@ -974,6 +1034,13 @@ const DanaTitipanCommitmentUI = {
     if (dateEl) dateEl.value = existing ? (existing.committedDate || '') : '';
     const notesEl = document.getElementById('titipanCommitNotes');
     if (notesEl) notesEl.value = existing ? (existing.notes || '') : '';
+    // Sesi 522: tandai mode edit + tampilkan tombol 🗑 Hapus HANYA kalau
+    // record commitment sudah ada utk owner ini (mode tambah baru -> 0
+    // apa pun utk dihapus, tombol tetap disembunyikan, pola sama
+    // `investmentModal`/`investmentDeleteBtn`).
+    DanaTitipanCommitmentUI.editingOwnerId = existing ? ownerId : null;
+    const delBtn = document.getElementById('titipanCommitDelBtn');
+    if (delBtn && delBtn.style) delBtn.style.display = existing ? '' : 'none';
     if (typeof openModal === 'function') openModal('titipanCommitmentModal');
   },
 
@@ -1002,6 +1069,27 @@ const DanaTitipanCommitmentUI = {
     if (typeof closeModal === 'function') closeModal('titipanCommitmentModal');
     if (typeof DanaTitipanPortfolioPresenter !== 'undefined') DanaTitipanPortfolioPresenter.render();
     if (typeof toast === 'function') toast('✅ Pokok dana titipan tersimpan');
+  },
+
+  // deleteCommitment() — Sesi 522 (FIX-S521-DANA-TITIPAN-UI-MULTIOWNER,
+  // gap #2). Hapus record commitment owner yang SEDANG dibuka
+  // (`editingOwnerId`, di-set di `open()` — TIDAK baca ulang dropdown,
+  // lihat komentar `editingOwnerId` di atas), `askConfirm()` dulu (pola
+  // sama `DanaTitipanReturnUI.deleteEntry()`), 100% reuse
+  // `DanaTitipanPortfolioAPI.deleteCommitment()` (0 logic baru).
+  async deleteCommitment() {
+    if (typeof DanaTitipanPortfolioAPI === 'undefined') return;
+    const ownerId = DanaTitipanCommitmentUI.editingOwnerId;
+    if (!ownerId) { if (typeof toast === 'function') toast('⚠️ Belum ada pokok dana titipan tersimpan utk owner ini'); return; }
+    if (typeof askConfirm === 'function') {
+      const ok = await askConfirm('Hapus pokok dana titipan owner ini?', { okText: 'Ya, Hapus' });
+      if (!ok) return;
+    }
+    DanaTitipanPortfolioAPI.deleteCommitment(ownerId);
+    DanaTitipanCommitmentUI.editingOwnerId = null;
+    if (typeof closeModal === 'function') closeModal('titipanCommitmentModal');
+    if (typeof DanaTitipanPortfolioPresenter !== 'undefined') DanaTitipanPortfolioPresenter.render();
+    if (typeof toast === 'function') toast('🗑️ Pokok dana titipan dihapus');
   },
 
   // openAssetPorsi(i) — SESI 515 (Owner -> Nominal -> Asset -> Kuota ->
