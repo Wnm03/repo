@@ -510,6 +510,21 @@ Aset._ownersDraft=res.owners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,
 Aset._renderOwnersList();
 openModal('assetOwnersModal');
 },
+// openOwnersModalById(assetId) -- SESI 515 (Dana Titipan Owner -> Nominal -> Asset ->
+// Kuota -> Porsi): wrapper navigasi TIPIS, dipanggil dari LUAR assetModal (kartu Dana
+// Titipan, dana-titipan-portfolio-presenter.js) supaya user bisa lompat langsung ke
+// assetOwnersModal utk 1 aset tertentu tanpa harus lebih dulu masuk ke Buku Aset & buka
+// assetModal-nya secara manual. 100% REUSE openOwnersModal() existing (S392a) --
+// satu2nya hal baru di sini adalah menyiapkan Aset.editId dari assetId yang dioper
+// (openOwnersModal() sendiri 0 baris diubah). Guard: assetId harus match D.assets
+// existing -- kalau tidak ketemu, toast & batal (tidak pernah membuka modal porsi
+// dgn _ownersModalAsset kosong tanpa pesan ke user).
+openOwnersModalById(assetId){
+const a=assetId?D.assets.find(x=>sameId(x.id,assetId)):null;
+if(!a){if(typeof toast==='function')toast('⚠️ Aset tidak ditemukan');return;}
+Aset.editId=a.id;
+Aset.openOwnersModal();
+},
 // _ownersAssetNilai() -- SESI 429: nilai dasar (Rp) dipakai konversi
 // porsi%<->nominal Rp di modal ini, ambil dari `Aset._ownersModalAsset.nilai`
 // (field `assetNilai` yang SUDAH ADA di aset.js -- 0 field baru). Balik 0
