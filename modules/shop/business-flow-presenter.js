@@ -975,6 +975,34 @@ const BusinessFlowPresenter = {
     el.innerHTML = `<div style="font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 4px">📋 Riwayat Purchase Order (${list.length})</div>${rows}`;
   },
 
+  // renderStockCorrections(productId) — isi container '#productStockCorrectionList'
+  // (di bawah #productMovementList, productModal) dgn RIWAYAT log koreksi stok
+  // (D.productStockCorrections, ditulis dari Etalase._saveInner() saat toggle
+  // "🔍 Ini Koreksi Stok" aktif — Sesi s478). Query: filter by productId, sort by
+  // ts TERBARU dulu, tampilkan SEMUA — pola byte-mirip renderPurchaseOrderHistory()
+  // di atas (container terpisah, guard container/typeof, kosong diam2 kalau
+  // productId null/produk baru atau D.productStockCorrections belum ada).
+  renderStockCorrections(productId) {
+    const el = (typeof document !== 'undefined') ? document.getElementById('productStockCorrectionList') : null;
+    if (!el) return;
+    const esc = typeof escapeHtml === 'function' ? escapeHtml : String;
+    if (!productId || typeof D === 'undefined' || !D.productStockCorrections) { el.innerHTML = ''; return; }
+    const list = D.productStockCorrections
+      .filter((c) => c.productId === productId)
+      .sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0));
+    if (!list.length) { el.innerHTML = ''; return; }
+    const rows = list.map((c) => {
+      const tgl = c.ts ? new Date(c.ts).toLocaleDateString('id-ID') : '-';
+      const deltaLabel = (c.delta > 0 ? '+' : '') + c.delta;
+      const deltaColor = c.delta > 0 ? 'var(--accent3)' : 'var(--accent2)';
+      return `<div class="setting-item" style="padding:6px 0">
+        <div class="setting-label" style="font-weight:600">${esc(c.from)} → ${esc(c.to)} <span style="font-weight:800;color:${deltaColor}">(${esc(deltaLabel)})</span></div>
+        <div class="setting-sub">🔍 Koreksi stok — ${esc(tgl)}</div>
+      </div>`;
+    }).join('');
+    el.innerHTML = `<div style="font-size:11px;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 4px">🔍 Riwayat Koreksi Stok (${list.length})</div>${rows}`;
+  },
+
   // clickCreatePurchaseOrder(productId) — handler WIRE tombol "Buat Purchase
   // Order" di atas: ambil qty dari input #pPoQty (fixed id, pola sama field
   // singleton lain di productModal mis. #pStock), delegasi 100% ke

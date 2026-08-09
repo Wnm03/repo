@@ -55,6 +55,24 @@ tinggi:{el:'pTinggi',field:'tinggi'},
 };
 const Etalase={
 editIdx:null,
+// stockKoreksiState — flag toggle "🔍 Ini Koreksi Stok (Stok Opname)" (checkbox
+// #pStockKoreksiBtn, productModal). Pola PERSIS accIncludeState (akun.js) — state
+// module-level, bukan dibaca langsung dari DOM checkbox biasa krn UI-nya chip-btn
+// toggle (bukan <input type=checkbox>). Direset ke false tiap openModal() dibuka
+// (baris reset field lain, ~openModal()), dibaca sekali di _saveInner() saat submit.
+// TIDAK disimpan ke D — murni switch UI sesaat, tidak perlu persist antar sesi modal.
+stockKoreksiState:false,
+toggleStockKoreksi(){this.stockKoreksiState=!this.stockKoreksiState;this.updateStockKoreksiBtn();},
+updateStockKoreksiBtn(){
+const btn=document.getElementById('pStockKoreksiBtn');
+// Guard btn.classList (bukan cuma !btn) — beberapa test harness pakai stub DOM
+// minimal yg mengembalikan objek utk id yg tidak dikenal tapi TANPA classList
+// asli (pola sama toggleAccInclude() TIDAK punya guard ini krn akun.js tidak
+// pernah dites lewat harness minimal itu; di sini kita perlu lebih defensif).
+if(!btn||!btn.classList)return;
+btn.classList.toggle('active',this.stockKoreksiState);
+btn.textContent=this.stockKoreksiState?'✓ Aktif':'Nonaktif';
+},
 expandedKatId:null,
 // pairKey/parseSizeName (kw206-cobek-size-pairing): banyak produk shop dijual "2 ukuran 1 harga"
 // (mis. "Lumpang 20cm" & "lumpang 19cm" sama-sama masuk bracket harga "19-20cm"). Nama produk
@@ -346,6 +364,12 @@ pOwnSel.value='SELF';
 }
 }
 PriceReko.reset();
+// Reset toggle "🔍 Ini Koreksi Stok" tiap modal dibuka — checkbox chip-btn ini
+// TIDAK ada reset otomatis bawaan (beda dari <input> form biasa yg auto-reset via
+// value assignment di atas), jadi wajib direset manual di sini, pola SAMA PERSIS
+// titik reset field lain di openModal() ini.
+this.stockKoreksiState=false;
+this.updateStockKoreksiBtn();
 // S238 (Inventory Movement): render rantai lokasi barang ke
 // #productMovementList, reuse BusinessFlowPresenter.renderMovement()
 // (S237 lifecycle + D.cobek/D.products yg SUDAH ADA) — kosong/diam2 kalau
@@ -355,6 +379,17 @@ BusinessFlowPresenter.renderMovement(p.id);
 } else {
 const elMv = document.getElementById('productMovementList');
 if (elMv) elMv.innerHTML = '';
+}
+// Sesi s478 (Koreksi Stok / Stok Opname): render riwayat log koreksi stok ke
+// #productStockCorrectionList (tepat di bawah #productMovementList), reuse
+// BusinessFlowPresenter.renderStockCorrections() (pola PERSIS renderMovement()
+// di atas) — kosong/diam2 kalau produk baru (belum punya id, belum ada di
+// D.products), sama guard p/BusinessFlowPresenter yg sudah ada di atas.
+if (typeof BusinessFlowPresenter !== 'undefined' && BusinessFlowPresenter.renderStockCorrections) {
+BusinessFlowPresenter.renderStockCorrections(p ? p.id : null);
+} else {
+const elSc = document.getElementById('productStockCorrectionList');
+if (elSc) elSc.innerHTML = '';
 }
 // S379: entry point UI Purchase Order (lanjutan S378 — createPurchaseOrder()/
 // receivePurchaseOrder() sebelumnya cuma bisa dipanggil programatik). Sama
@@ -505,7 +540,24 @@ else product.hargaByProdusen[produsenId]=hargaBeli;
 const produsenName=produsenId?(D.produsen.find(pr=>pr.id===produsenId)||{}).name:'';
 const kategoriLabel=kategoriName?` · kategori ${kategoriName}`:'';
 const produsenLabel=produsenName?` · dari ${produsenName}`:'';
-if(delta>0&&hargaBeli>0){
+// Sesi s478 (Koreksi Stok / Stok Opname): kalau toggle "🔍 Ini Koreksi Stok" aktif,
+// kenaikan stok BUKAN dianggap beli baru — gate transaksi pengeluaran di bawah
+// (`delta>0&&hargaBeli>0`) sengaja di-skip lewat `&&!isKoreksi` supaya TIDAK ada
+// transaksi tercatat, digantikan 1 entry log ke D.productStockCorrections (array
+// flat baru, pola sama D.purchaseOrders) SELAMA delta!==0 (naik ATAU turun —
+// beda dari transaksi beli yg cuma pernah jalan utk delta>0). Toggle di-reset
+// tiap buka modal (lihat openModal()), jadi default-nya SELALU nonaktif kecuali
+// user sengaja mencentang untuk sesi simpan ini saja.
+const isKoreksi=!!this.stockKoreksiState;
+if(isKoreksi&&delta!==0){
+if(!D.productStockCorrections)D.productStockCorrections=[];
+D.productStockCorrections.push({id:uid(),productId:product.id,from:prevStock,to:stock,delta,ts:new Date().toISOString(),note:`Koreksi stok ${name}${kategoriLabel}`});
+save();closeModal('productModal');this.renderList();
+toast(`✅ Stok dikoreksi (${delta>0?'+':''}${delta}), tanpa transaksi`);
+this.syncPairedPrice(product);
+return;
+}
+if(delta>0&&hargaBeli>0&&!isKoreksi){
 const cost=delta*hargaBeli;
 const txId=uid();
 D.transactions.push({id:txId,type:'expense',amount:cost,category:'Bisnis',subcategory:'Cobek',accountId:accId,payMethod:'tunai',note:`Beli stok ${name} x${delta}${kategoriLabel}${produsenLabel} (modal shop)`,date:new Date().toISOString().split('T')[0],stockProductId:product.id,stockQty:delta,produsenId:produsenId||undefined,kategoriId:kategoriId||undefined});
