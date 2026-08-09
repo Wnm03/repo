@@ -1621,6 +1621,74 @@ Status: **BY DESIGN**
 
 ---
 
+## BUG-S516-001
+
+- Severity: P1 High (blocking — fitur tidak bisa dipakai sama sekali utk
+  owner tertentu, gagal silent-looking dgn pesan error yang MENYESATKAN)
+- Domain: Finance / Dana Titipan (Portfolio) — owner picker modal "💰 Pokok
+  Dana Titipan" & "↩️ Catat Pengembalian"
+- Requirement ID: —
+- File: `modules/finance/dana-titipan-portfolio-presenter.js`
+- Line: 927 (`DanaTitipanCommitmentUI.open()`, populate dropdown), 852-853
+  (`DanaTitipanPortfolioPresenter.render()`, tombol per-owner)
+- Function/component: `DanaTitipanCommitmentUI.open()` +
+  `DanaTitipanPortfolioAPI.saveCommitment()`/`recordReturn()` (validasi
+  existing-owner-only via `listExistingOwners()`)
+- Trigger: `ownerId` (dari `Investment.getOwners()`/`OwnerRegistry`) yang
+  mengandung karakter HTML-sensitif (`"`, `'`, `<`, `>`, `&` — mis. hasil
+  `findOrCreate()` dari nama pemilik yang memuat tanda kutip/apostrof).
+- Actual: `open()` menyuntik `o.ownerId` MENTAH (tanpa `escapeHtml`) ke
+  atribut `<option value="${o.ownerId}">` lewat `innerHTML`. Kalau
+  `ownerId` memuat `"`, atribut HTML pecah di tengah -> browser membaca
+  `sel.value` sbg STRING TERPOTONG (bukan `ownerId` asli). Tombol pemicu
+  per-owner (baris 852-853, `data-args='["${o.ownerId}"]'`) punya lubang
+  serupa: `ownerId` yang memuat `'` merusak delimiter atribut single-quote
+  itu sendiri. Saat `save()` memanggil `saveCommitment()`/`recordReturn()`,
+  `ownerId` yang sudah rusak itu dicocokkan ulang ke `listExistingOwners()`
+  segar -> tidak ketemu -> `throw new Error('Owner tidak ditemukan pada
+  daftar pemilik investasi yang ada')` walau `ownerId` ASLINYA valid & ada
+  di `listExistingOwners()`.
+- Expected: `ownerId` apa pun (termasuk yang memuat karakter HTML-sensitif)
+  harus tetap utuh dari populate dropdown sampai baca `sel.value` saat
+  simpan — modal tidak boleh gagal validasi utk owner yang benar-benar ada.
+- Root cause: `o.ownerId` (identifier internal, BUKAN teks tampilan)
+  di-treat seolah aman disuntik langsung ke atribut HTML, padahal cuma
+  `o.ownerName` (teks tampilan) yang di-escape di baris yang sama
+  (`escapeHtml(o.ownerName)`) — asumsi implisit "ownerId selalu karakter
+  aman" yang tidak divalidasi/didokumentasikan di mana pun.
+- Impact: modal "Catat/Update Pokok Dana Titipan" & "Catat Pengembalian"
+  100% tidak bisa dipakai (selalu gagal "Owner tidak ditemukan...") utk
+  SETIAP owner yang ownerId-nya kebetulan memuat `"`/`'`/`<`/`>`/`&` — bug
+  ini sebelumnya salah didiagnosis (audit statis Sesi 516 sebelum sesi
+  ini) sbg race condition/bundle basi, krn kode `listExistingOwners()`/
+  `saveCommitment()` memang 100% konsisten kalau dibaca terpisah — bug-nya
+  ada di LAPISAN populate-DOM yang tidak ikut diperiksa saat itu.
+- Reproduction: lihat Evidence — `ownerId` sengaja dibuat memuat `"`
+  (`owner_"><script>x</script>` / `owner_"quoted"_id`), panggil
+  `DanaTitipanCommitmentUI.open()`, baca `sel.innerHTML` yang dihasilkan.
+- Evidence: `tests/s516-dana-titipan-commitment-ownerid-escaping.test.js`
+  (2 test baru — dikonfirmasi FAIL di kode SEBELUM fix dgn
+  `actual: 'owner_'` vs `expected` ownerId ter-escape utuh, lalu PASS
+  setelah fix dipasang).
+- Fix: **DIPERBAIKI Sesi 516.** `escapeHtml()` dipasang ke `o.ownerId` di
+  atribut `value=` (baris 927, pola sama yang sudah dipakai `akun.js:175`
+  utk value atribut lain). Tombol per-owner (baris 852-853) disamakan ke
+  pola `data-args="${escapeHtml(JSON.stringify([o.ownerId]))}"` yang SUDAH
+  established di file yang sama (`Aset.openOwnersModalById`, baris 864) —
+  0 pola baru diperkenalkan, murni menerapkan konvensi yang sudah ada scr
+  konsisten ke 3 titik yang sebelumnya terlewat.
+- Regression test:
+  `tests/s516-dana-titipan-commitment-ownerid-escaping.test.js` (2 test
+  baru). `tests/s485d-titipan-commitment-ui.test.js` — 2 assertion lama yg
+  memeriksa format `data-args` mentah diupdate mengikuti format baru yg
+  ter-escape (test #`[gap-check]` & test #7).
+- Verification: `node --test tests/*.test.js` → 3374/3374 pass, 0 fail
+  (3372 sblm sesi ini + 2 baru sesi ini, 2 assertion lama diupdate
+  mengikuti fix, 0 regresi ke file/domain lain).
+- Status: **FIXED (Sesi 516)**
+
+---
+
 # 2. Finding Template
 
 ## BUG-XXXX
