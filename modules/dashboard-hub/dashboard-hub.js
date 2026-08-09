@@ -88,7 +88,7 @@ const PAJAK_TAB_IDX = { zakat: 0, pajak: 1 };
 const ASET_TAB_IDX = { ringkasan: 0, buku: 1, analisis: 2, manajemen: 3, investasi: 4 };
 // Sub-tab nested DI DALAM tab 'laporan' (page keuangan) — lihat setLaporanTab
 // di tx-list-cashflow.js & catatan split 2026-07-17 di CLAUDE.md.
-const LAPORAN_SUBTAB_IDX = { ringkasan: 0, aruskas: 1, transaksi: 2 };
+const LAPORAN_SUBTAB_IDX = { ringkasan: 0, aruskas: 1, transaksi: 2, titipan: 3 };
 // Sub-tab nested DI DALAM tab 'kelola' (page keuangan) — lihat setKelolaTab
 // di tx-list-cashflow.js & catatan split 2026-07-17 (bagian ke-3) di CLAUDE.md.
 const KELOLA_SUBTAB_IDX = { ringkasan: 0, transaksi: 1, pengaturan: 2 };
