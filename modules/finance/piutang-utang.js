@@ -213,6 +213,64 @@ if(!dbt)return false;
 dbt.nilai=Math.max(0,(dbt.nilai||0)+(oldAmount||0)-(newAmount||0));
 return true;
 }
+// maybeCreateTitipanTalanganPiutang(tx) — Sesi 519 (LANJUTKAN-S519, Design
+// Lock S518, Gap #3 lanjutan). Pola SAMA PERSIS
+// maybeCreateSharedPiutangFromBill() (di atas) tapi utk 1 transaksi expense
+// yang ditandai "talangan Dana Titipan" (`tx.titipanLinkId` +
+// `tx.titipanTalangan===true`, field baru transaksi.js S519) -- BUKAN
+// Ditanggung Bersama tagihan (mekanisme TERPISAH, 0 field lama disentuh).
+// Idempotency SAMA PERSIS (skip kalau `tx.id` ini sudah pernah punya entri
+// Piutang otomatis manapun -- Hard Invariant #11 "CREATE ulang/idempotent
+// tidak menghasilkan duplicate").
+// ISOLASI: HANYA menyentuh `D.piutang` (+ `uid()`/`todayStr()` existing,
+// 0 utility baru) -- tidak menyentuh `D.titipanCommitments`/`principalAmount`
+// (Hard Invariant #1-3, "principal immutable").
+function maybeCreateTitipanTalanganPiutang(tx){
+if(!tx||tx.type!=='expense'||!tx.titipanLinkId||tx.titipanTalangan!==true)return;
+if(D.piutang&&D.piutang.some(p=>p.autoTxId===tx.id))return;
+if(!D.piutang)D.piutang=[];
+const known=(typeof DanaTitipanPortfolioAPI!=='undefined'&&typeof DanaTitipanPortfolioAPI.listExistingOwners==='function')?DanaTitipanPortfolioAPI.listExistingOwners().find(o=>o.ownerId===tx.titipanLinkId):null;
+const ownerName=known?known.ownerName:'Pemilik dana titipan';
+D.piutang.push({
+id:uid(),
+name:'Talangan Dana Titipan: '+ownerName,
+nilai:tx.amount,
+tanggal:todayStr(),
+jatuhTempo:'',
+catatan:'Otomatis dari transaksi talangan Dana Titipan ('+(tx.note||'')+')',
+lunas:false,
+autoTxId:tx.id,
+autoTitipanOwnerId:tx.titipanLinkId
+});
+}
+// syncTitipanTalanganPiutangOnEdit(txId,oldAmount,newAmount) — Sesi 519,
+// pola SAMA PERSIS syncSharedPiutangOnPaymentEdit() (di atas) tapi dicari
+// via `autoTxId===txId` langsung (bukan lewat `autoBillId`+"periode
+// terbaru") -- 1 transaksi talangan Dana Titipan SELALU 1:1 dgn maksimal 1
+// piutang otomatis (idempotency di atas), beda dari shared-piutang tagihan
+// yang bisa py banyak entri per periode. Piutang yang SUDAH lunas TIDAK
+// disentuh (Hard Invariant #14).
+function syncTitipanTalanganPiutangOnEdit(txId,oldAmount,newAmount){
+if(!txId||!D.piutang||!D.piutang.length)return false;
+const p=D.piutang.find(x=>x.autoTxId===txId&&!x.lunas);
+if(!p)return false;
+p.nilai=Math.max(0,(p.nilai||0)+(oldAmount||0)-(newAmount||0));
+return true;
+}
+// removeUnpaidTitipanTalanganPiutangForTx(txId) — Sesi 519. Hapus piutang
+// otomatis talangan Dana Titipan (by `autoTxId===txId`) HANYA kalau BELUM
+// lunas -- piutang yang SUDAH lunas dipertahankan sbg historical record
+// (Hard Invariant #16/#18/#20, pola konsisten seluruh lifecycle piutang
+// otomatis di codebase ini). Dipakai jalur EDIT owner/UNLINK (transaksi.js)
+// & DELETE transaksi (tx-list-cashflow.js, delTx()) -- SATU fungsi dipakai
+// kedua jalur (0 duplikasi logic "hapus kalau belum lunas").
+// Return `true` kalau ada yang terhapus.
+function removeUnpaidTitipanTalanganPiutangForTx(txId){
+if(!txId||!D.piutang||!D.piutang.length)return false;
+const before=D.piutang.length;
+D.piutang=D.piutang.filter(p=>!(p.autoTxId===txId&&!p.lunas));
+return D.piutang.length<before;
+}
 const Piutang={
 editId:null,
 _lunasState:false,

@@ -68,6 +68,63 @@ const s=MultiOwnerEngine.splitByPorsi(nilai,info.owners);
 if(!s.ok)return {ok:false,reason:s.reason};
 return {ok:true,asset,splits:s.splits};
 }
+// resolveTxTitipanOwner(ownerId) — Sesi 519 (LANJUTKAN-S519, Design Lock
+// S518). Guard **existing-owner-only** utk `titipanLinkId` transaksi --
+// pola SAMA PERSIS `saveCommitment()`/`recordReturn()`
+// (dana-titipan-portfolio-presenter.js): TIDAK PERNAH mempercayai identity
+// owner yang tidak dikenal `DanaTitipanPortfolioAPI.listExistingOwners()`.
+// Return record `{ownerId,ownerName}` kalau valid, `null` kalau
+// `ownerId` kosong/tidak dikenal/dependency belum dimuat (0 throw --
+// caller yang menentukan reaksinya, pola sama fungsi resolve* murni lain
+// di file ini).
+function resolveTxTitipanOwner(ownerId){
+if(!ownerId||typeof DanaTitipanPortfolioAPI==='undefined')return null;
+if(typeof DanaTitipanPortfolioAPI.listExistingOwners!=='function')return null;
+return DanaTitipanPortfolioAPI.listExistingOwners().find(o=>o.ownerId===ownerId)||null;
+}
+// applyTxTitipanLinkageOnSave(tx,prevTitipanLinkId) — Sesi 519 (LANJUTKAN-S519,
+// Design Lock S518 §5-6, scope resmi: transaksi.js+piutang-utang.js+
+// dana-titipan-portfolio-presenter.js+tx-list-cashflow.js). Fungsi MURNI
+// (0 baca/tulis DOM) -- dipanggil SETELAH `tx.titipanLinkId`/
+// `tx.titipanTalangan` final diset ke `tx` (baik CREATE baru maupun EDIT),
+// `prevTitipanLinkId` = nilai `titipanLinkId` SEBELUM save ini (`null` utk
+// transaksi baru/tanpa tautan sebelumnya).
+//
+// Guard existing-owner-only (Hard Invariant, pola sama saveCommitment()):
+// kalau `tx.titipanLinkId` diisi tapi BUKAN owner yang dikenal
+// (resolveTxTitipanOwner null), field ini DIBUANG (0 identity hantu
+// pernah tersimpan) & `titipanTalangan` ikut direset false.
+//
+// Lifecycle (Design Lock S518, LANJUTKAN-S519 §6 "EDIT OWNER / UNLINK"):
+// owner BERUBAH (termasuk link baru dari kosong, atau unlink ke kosong) --
+// piutang otomatis LAMA (by `tx.id`) yang belum lunas dihapus DULU
+// (`removeUnpaidTitipanTalanganPiutangForTx`, no-op kalau tidak ada), BARU
+// kalau `tx.titipanLinkId` (final) masih ada & `tx.titipanTalangan===true`,
+// piutang baru dibuat (`maybeCreateTitipanTalanganPiutang`) -- urutan ini
+// WAJIB (hapus dulu) supaya guard idempotency `autoTxId` di
+// `maybeCreateTitipanTalanganPiutang` tidak memblokir relink ke owner
+// baru. Owner TIDAK berubah -- 0 hapus, `maybeCreateTitipanTalanganPiutang`
+// dipanggil apa adanya (idempotency internalnya sendiri yang mencegah
+// duplikat kalau piutangnya sudah ada; delta nominal disinkron TERPISAH
+// oleh caller lewat `syncTitipanTalanganPiutangOnEdit()`, 0 logic itu di
+// sini -- pola sama pemisahan create/sync di cabang cicilan shared-piutang
+// existing).
+function applyTxTitipanLinkageOnSave(tx,prevTitipanLinkId){
+if(!tx)return;
+if(!tx.titipanLinkId&&!prevTitipanLinkId)return;
+if(tx.titipanLinkId&&!resolveTxTitipanOwner(tx.titipanLinkId)){
+delete tx.titipanLinkId;
+tx.titipanTalangan=false;
+}
+if(!tx.titipanLinkId)tx.titipanTalangan=false;
+const ownerChanged=(prevTitipanLinkId||null)!==(tx.titipanLinkId||null);
+if(ownerChanged&&typeof removeUnpaidTitipanTalanganPiutangForTx==='function'){
+removeUnpaidTitipanTalanganPiutangForTx(tx.id);
+}
+if(tx.titipanLinkId&&tx.titipanTalangan===true&&typeof maybeCreateTitipanTalanganPiutang==='function'){
+maybeCreateTitipanTalanganPiutang(tx);
+}
+}
 // updateTxAssetWrapVisibility() — show/hide blok "#txAssetWrap" (dropdown
 // "Kaitkan ke Aset Multi-Owner" + preview, modals.js). HANYA tampil utk
 // Pemasukan (curTxType==='income') & ada minimal 1 aset multi-owner
@@ -1076,6 +1133,13 @@ if(existingTx){
 // TIDAK pernah sentuh chip Cara Bayar sendiri selama sesi edit ini, payMethod
 // asli transaksi dipertahankan apa adanya, tidak dipaksa jadi 'tunai'.
 const keepPayMethod=_txPayMethodTouchedByUser?'tunai':(existingTx.payMethod||'tunai');
+// Sesi 519 (LANJUTKAN-S519) — tangkap titipanLinkId/amount LAMA SEBELUM
+// di-Object.assign di bawah (field ini sendiri TIDAK ada di daftar
+// Object.assign, jadi otomatis dipertahankan apa adanya kalau tidak
+// disentuh eksplisit di bawah — dipakai `applyTxTitipanLinkageOnSave()`/
+// `syncTitipanTalanganPiutangOnEdit()` setelahnya).
+const prevTxTitipanLinkId=existingTx.titipanLinkId||null;
+const oldTxAmountForTitipanSync=existingTx.amount;
 Object.assign(existingTx,{type:curTxType,amount:amt,category:cat,subcategory:subCat,accountId:accId,payMethod:keepPayMethod,note,date});
 if(txAssetIdVal)existingTx.assetId=txAssetIdVal;else delete existingTx.assetId;
 delete existingTx.billLinkId;
@@ -1107,6 +1171,20 @@ WorthIt.onLinkedTxEdited(existingTx);
 if(existingTx.sewaKiosLinkId&&typeof SewaKios!=='undefined'){
 SewaKios.onLinkedTxEdited(existingTx);
 }
+// Sesi 519 (LANJUTKAN-S519, Design Lock S518 §6 "EDIT NOMINAL"/"EDIT
+// OWNER / UNLINK") — `titipanLinkId`/`titipanTalangan` sendiri TIDAK
+// dibaca dari form di sesi ini (0 field modal baru ditambah, di luar
+// scope resmi S519 — lihat LANJUTKAN-S519 §13 "JANGAN SENTUH":
+// modals.js/app_production.html), jadi nilainya TIDAK PERNAH berubah di
+// sini secara UI (tetap dipertahankan Object.assign di atas apa adanya).
+// `applyTxTitipanLinkageOnSave()` tetap dipanggil UNCONDITIONAL supaya
+// mekanisme guard/lifecycle-nya SIAP dipakai begitu sesi UI berikutnya
+// menambahkan field form-nya (0 sentuhan file ini lagi diperlukan nanti)
+// — no-op utk transaksi non-titipan (guard awal fungsi itu sendiri).
+applyTxTitipanLinkageOnSave(existingTx,prevTxTitipanLinkId);
+if((prevTxTitipanLinkId||null)===(existingTx.titipanLinkId||null)&&existingTx.titipanLinkId&&typeof syncTitipanTalanganPiutangOnEdit==='function'){
+syncTitipanTalanganPiutangOnEdit(existingTx.id,oldTxAmountForTitipanSync,amt);
+}
 savedTxId=existingTx.id;
 } else {
 savedTxId=uid();
@@ -1118,6 +1196,7 @@ note:note,date
 };
 if(txAssetIdVal)newTx.assetId=txAssetIdVal;
 D.transactions.push(newTx);
+applyTxTitipanLinkageOnSave(newTx,null);
 WorthIt.applyBuyLink(savedTxId);
 if(typeof SewaKios!=='undefined')SewaKios.applyPaymentLink(savedTxId);
 Tukang.applyPendingPayment(savedTxId);

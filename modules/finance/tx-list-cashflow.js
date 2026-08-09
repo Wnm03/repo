@@ -156,6 +156,24 @@ SewaKios.onLinkedTxDeleted(t);
 if(t&&t.tukangPaymentEntryIds&&t.tukangPaymentEntryIds.length){
 Tukang.unmarkPaidEntries(t.tukangPaymentEntryIds);
 }
+// Sesi 519 (LANJUTKAN-S519, Design Lock S518 §7 "tx-list-cashflow.js —
+// DELETE PATH", scope expansion resmi — DELETE cascade Dana Titipan
+// SENGAJA ditaruh di sini, BUKAN transaksi.js, krn delTx() ada di file
+// ini). Pola SAMA PERSIS cascade *LinkId di atas (bbmLinkId/cobekLinkId/
+// servisLinkId dst): kalau transaksi yang dihapus punya `titipanLinkId`
+// (talangan Dana Titipan, `piutang-utang.js` S519), piutang otomatisnya
+// (`autoTxId===t.id`) dihapus HANYA kalau BELUM lunas -- piutang yang
+// SUDAH lunas dipertahankan sbg historical record (Hard Invariant #19/#20,
+// 100% reuse `removeUnpaidTitipanTalanganPiutangForTx()`, 0 cascade
+// architecture baru ditulis di sini). 0 `recordReturn()`/transaksi
+// kompensasi/perubahan `principalAmount`/`D.assets` (Design Lock S518 §7
+// "JANGAN"). `usedTotal`/`available` (dana-titipan-portfolio-presenter.js
+// build()) otomatis turun sendiri begitu `t` hilang dari
+// `D.transactions` di baris filter di bawah -- TIDAK ada counter manual
+// yang perlu di-decrement di sini (Hard Invariant #21/#22).
+if(t&&t.titipanLinkId&&typeof removeUnpaidTitipanTalanganPiutangForTx==='function'){
+removeUnpaidTitipanTalanganPiutangForTx(t.id);
+}
 D.transactions=D.transactions.filter(x=>x.id!==id&&(!pairedTx||x.id!==pairedTx.id));
 save();renderDashboard();renderKeuangan();renderCnTab();renderProductList();
 if(pairedTx)toast('🗑 Transfer dihapus (2 sisi sekaligus, saldo kedua akun ikut disesuaikan)');

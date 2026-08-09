@@ -402,6 +402,26 @@ build() {
     returnedMap.set(r.ownerId, (returnedMap.get(r.ownerId) || 0) + amt);
   });
 
+  // SESI 519 (LANJUTKAN-S519, Design Lock S518) — usedTotal/talanganTotal
+  // per owner, dihitung SEKALI di sini (pola sama returnedMap di atas)
+  // dari `D.transactions` (`tx.titipanLinkId`/`tx.titipanTalangan`,
+  // field baru di `transaksi.js` S519). TIDAK PERNAH disimpan sbg counter
+  // ke `D.titipanCommitments`/entity lain — murni derived ON-READ di
+  // `build()`, supaya CREATE/EDIT/DELETE transaksi (tx-list-cashflow.js)
+  // otomatis tercermin di sini tanpa perlu decrement/increment manual di
+  // manapun (Hard Invariant #21/#22, LANJUTKAN-S519 §7-8).
+  const txList = (D && Array.isArray(D.transactions)) ? D.transactions : [];
+  const usedMap = new Map();
+  const talanganMap = new Map();
+  txList.forEach((tx) => {
+    if (!tx || tx.type !== 'expense' || !tx.titipanLinkId) return;
+    const amt = isFinite(tx.amount) ? Number(tx.amount) : 0;
+    usedMap.set(tx.titipanLinkId, (usedMap.get(tx.titipanLinkId) || 0) + amt);
+    if (tx.titipanTalangan === true) {
+      talanganMap.set(tx.titipanLinkId, (talanganMap.get(tx.titipanLinkId) || 0) + amt);
+    }
+  });
+
   const owners = Array.from(ownersMap.values());
   owners.forEach((o) => {
     o.holdings.sort((x, y) => y.allocatedPrincipal - x.allocatedPrincipal);
@@ -435,6 +455,17 @@ build() {
     const returnedTotal = returnedMap.get(o.ownerId) || 0;
     o.returnedTotal = returnedTotal;
     o.outstandingPrincipal = (principalAmount !== null) ? Math.max(0, principalAmount - returnedTotal) : null;
+    // SESI 519 — usedTotal SELALU angka (pola sama returnedTotal, default 0
+    // — "belum ada transaksi talangan" beda dari "belum ada data pokok").
+    // talanganTotal SUBSET usedTotal (Hard Invariant #8: HANYA expense
+    // dgn titipanTalangan===true, sudah difilter di talanganMap di atas).
+    // available null kalau principalAmount null (konsisten allocationStatus
+    // PRINCIPAL_NOT_SET), kalau tidak max(0, principal-usedTotal-returnedTotal)
+    // (tidak pernah negatif, Design Lock S518 §"dana-titipan-portfolio-presenter.js").
+    const usedTotal = usedMap.get(o.ownerId) || 0;
+    o.usedTotal = usedTotal;
+    o.talanganTotal = talanganMap.get(o.ownerId) || 0;
+    o.available = (principalAmount !== null) ? Math.max(0, principalAmount - usedTotal - returnedTotal) : null;
   });
   owners.sort((a, b) => b.allocatedPrincipal - a.allocatedPrincipal);
 
@@ -822,12 +853,17 @@ const DanaTitipanPortfolioPresenter = {
     // saja dapat porsi holding (jadi listExistingOwners()) tapi belum
     // pernah dicatat pokoknya tetap bisa langsung dicatat dari sini.
     const addBtn = '<button type="button" class="btn btn-ghost btn-full btn-sm u-mb8" data-action="DanaTitipanCommitmentUI.open">💰 Catat/Update Pokok Dana Titipan</button>';
+    // expenseBtn — SESI 521-B2 (DESIGN-S520-DANA-TITIPAN-UI-MULTIOWNER.md):
+    // pemicu modal `titipanExpenseModal` (S521-B1) -> `TitipanExpenseUI.open()`
+    // (S521-B2, murni konsumsi TitipanExpenseFlow S521-A). Selalu ditampilkan
+    // bareng addBtn (bukan cuma saat owners.length>0), pola sama addBtn.
+    const expenseBtn = '<button type="button" class="btn btn-ghost btn-full btn-sm u-mb8" data-action="TitipanExpenseUI.open">💸 Catat Pengeluaran Dana Titipan</button>';
     if (!projection.owners.length) {
-      el.innerHTML = addBtn + '<div class="u-fs11 u-t2 u-mt6">Belum ada porsi dana titipan yang teralokasi ke holding investasi.</div>';
+      el.innerHTML = addBtn + expenseBtn + '<div class="u-fs11 u-t2 u-mt6">Belum ada porsi dana titipan yang teralokasi ke holding investasi.</div>';
       return;
     }
 
-    el.innerHTML = addBtn + `
+    el.innerHTML = addBtn + expenseBtn + `
       <div class="u-fs11 u-t2 u-mt10 u-mb4">Dana titipan dalam investasi (per pemilik, teralokasi ke instrumen):</div>
       ${projection.owners.map((o, oi) => `
         <details class="u-mb6">
@@ -849,8 +885,8 @@ const DanaTitipanPortfolioPresenter = {
             <span class="u-t2">Sudah Dikembalikan</span><span class="u-fw700">${this._money(o.returnedTotal)}</span>
             <span class="u-t2">Pokok Belum Dikembalikan</span><span>${this._outstandingCell(o)}</span>
           </div>
-          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanCommitmentUI.open" data-args='["${o.ownerId}"]'>✏️ Atur Pokok Dana Titipan</button>
-          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanReturnUI.open" data-args='["${o.ownerId}"]'>↩️ Catat Pengembalian</button>
+          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanCommitmentUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">✏️ Atur Pokok Dana Titipan</button>
+          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanReturnUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">↩️ Catat Pengembalian</button>
           <div class="u-flex u-gap4 u-mb6 u-ml10 u-fs11">
             <select id="titipanAssetPick_${oi}" class="u-flex-1" aria-label="Pilih Aset untuk Atur Porsi">${this._assetOptionsHtml()}</select>
             <button type="button" class="btn btn-ghost btn-sm" data-action="DanaTitipanCommitmentUI.openAssetPorsi" data-args='[${oi}]'>⚖️ Atur Porsi Aset</button>
@@ -924,7 +960,7 @@ const DanaTitipanCommitmentUI = {
       if (!owners.length) {
         sel.innerHTML = '<option value="">— Belum ada owner di holding investasi —</option>';
       } else {
-        sel.innerHTML = owners.map((o) => `<option value="${o.ownerId}">${escapeHtml(o.ownerName)}</option>`).join('');
+        sel.innerHTML = owners.map((o) => `<option value="${escapeHtml(o.ownerId)}">${escapeHtml(o.ownerName)}</option>`).join('');
       }
       if (ownerId) sel.value = ownerId;
     }
