@@ -1023,6 +1023,20 @@ const GROUP_B = [
   // MultiOwnerEngine saja), tapi secara konsep melengkapi kartu Dana
   // Kelolaan yang sama.
   'modules/finance/dana-titipan-portfolio-presenter.js',
+
+  // titipan-expense-flow.js (Sesi 521-A) — orkestrasi pencatatan
+  // pengeluaran Dana Titipan (single & multi-owner), reuse
+  // DanaTitipanPortfolioAPI.listExistingOwners()/MultiOwnerEngine.
+  // splitByPorsi()/applyTxTitipanLinkageOnSave() (SEMUA sudah dimuat di
+  // atas). Ditaruh langsung setelah dana-titipan-portfolio-presenter.js
+  // karena bergantung pada DanaTitipanPortfolioAPI dari file itu.
+  'modules/finance/titipan-expense-flow.js',
+  // titipan-expense-ui.js (Sesi 521-B2) — controller DOM tipis modal
+  // `titipanExpenseModal` (HTML: modules/shared/modals.js, S521-B1).
+  // Bergantung pada TitipanExpenseFlow (baris di atas) +
+  // DanaTitipanPortfolioAPI/DanaTitipanPortfolioPresenter — ditaruh
+  // setelah keduanya, 0 forward-reference.
+  'modules/finance/titipan-expense-ui.js',
 ];
 const ALL_SOURCE = [...GROUP_A, ...GROUP_B];
 const HTML_FILES = ['index.html', 'app_production.html'];
