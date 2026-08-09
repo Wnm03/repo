@@ -174,7 +174,11 @@ test('[gap-check] render(): tombol buka modal (data-action=DanaTitipanCommitment
   const renderEnd = presenterSrc.indexOf('};', presenterSrc.indexOf('const DanaTitipanCommitmentUI'));
   const renderCode = presenterSrc.slice(renderStart, presenterSrc.indexOf('const DanaTitipanCommitmentUI'));
   assert.match(renderCode, /data-action="DanaTitipanCommitmentUI\.open"/, 'render() harus punya minimal 1 pemicu DanaTitipanCommitmentUI.open');
-  assert.match(renderCode, /data-args='\["\$\{o\.ownerId\}"\]'/, 'render() per-owner harus kirim ownerId lewat data-args ke DanaTitipanCommitmentUI.open (mode edit)');
+  // Sesi 516 (BUG-S516-001): ownerId sekarang dikirim lewat
+  // escapeHtml(JSON.stringify([...])) (bukan interpolasi mentah dlm
+  // literal '["${o.ownerId}"]') -- ownerId apa pun (termasuk yang
+  // mengandung tanda kutip) tidak lagi merusak atribut data-args.
+  assert.match(renderCode, /data-args="\$\{escapeHtml\(JSON\.stringify\(\[o\.ownerId\]\)\)\}"/, 'render() per-owner harus kirim ownerId lewat data-args ter-escape ke DanaTitipanCommitmentUI.open (mode edit)');
 });
 
 // ============================================================
@@ -238,7 +242,9 @@ test('7. render(): owner PRINCIPAL_NOT_SET -> "Belum dicatat" tampil, tombol edi
   ctx.DanaTitipanPortfolioPresenter.render();
   const html = dom.getElementById('danaTitipanPortfolioList').innerHTML;
   assert.match(html, /Belum dicatat/);
-  assert.match(html, /data-args='\["ayah"\]'/);
+  // Sesi 516 (BUG-S516-001): data-args sekarang escapeHtml(JSON.stringify(...))
+  // dlm atribut double-quote, bukan literal single-quote '["ayah"]'.
+  assert.match(html, /data-args="\[&quot;ayah&quot;\]"/);
   assert.match(html, /Ayah/);
 });
 
