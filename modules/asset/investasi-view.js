@@ -282,6 +282,15 @@ const InvestmentUI = {
   onOwnerIsSelfToggle(i, checked) {
     if (!Array.isArray(InvestmentUI._ownersDraft) || !InvestmentUI._ownersDraft[i]) return;
     InvestmentUI._ownersDraft[i].isSelf = !!checked;
+    // SESI 497 FIX (laporan user, screenshot): _ownerNameFieldHtml() nentuin free-text vs
+    // dropdown lewat o.isSelf, tapi keputusan itu cuma dievaluasi ulang saat _renderOwnersList()
+    // jalan -- toggle checkbox ini sebelumnya TIDAK memanggilnya, jadi field name "macet" di
+    // tipe field lama (mis. baris pertama default isSelf:true -> free-text, user uncheck "Ini
+    // saya" -> dropdown existing-owner TIDAK PERNAH muncul walau OwnerRegistry sudah ada isi).
+    // Event ini diskrit (bukan tiap keystroke spt onOwnerNameInput/onOwnerPorsiInput), jadi aman
+    // render ulang penuh -- porsi tidak ikut ter-reset krn dibaca balik dari draft[i].porsi yang
+    // tidak disentuh di sini.
+    InvestmentUI._renderOwnersList();
   },
 
   // saveOwners() — tulis InvestmentUI._ownersDraft ke holding lewat Investment.setOwners() (SUDAH

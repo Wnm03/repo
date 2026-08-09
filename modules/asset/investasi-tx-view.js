@@ -39,10 +39,22 @@ const InvestmentTxUI = {
     const h = (typeof Investment !== 'undefined') ? Investment.getHolding(holdingId) : null;
     const nameEl = document.getElementById('investmentTxHoldingName');
     if (nameEl) nameEl.textContent = h ? ('💱 ' + h.name + ' — ' + (h.unit || 0) + ' unit') : '';
+    InvestmentTxUI._populateAccOptions();
     InvestmentTxUI._resetForm();
     InvestmentTxUI.setType('beli');
     InvestmentTxUI.render();
     if (typeof openModal === 'function') openModal('investmentTxModal');
+  },
+
+  // _populateAccOptions() — isi dropdown "Akun Sumber Dana" (investTxAcc) dari D.accounts,
+  // pola SAMA PERSIS renovItemAcc (renovasi.js) & pAcc (cobek-etalase.js) -- opsi kosong di
+  // baris pertama supaya default-nya "tidak disinkron" (field ini opsional, beda dari akun
+  // wajib di form lain).
+  _populateAccOptions() {
+    const el = document.getElementById('investTxAcc');
+    if (!el || typeof D === 'undefined' || !D.accounts) return;
+    el.innerHTML = '<option value="">— Tidak disinkronkan —</option>'
+      + D.accounts.map((a) => '<option value="' + a.id + '">' + (a.emoji || '') + ' ' + escapeHtml(a.name) + '</option>').join('');
   },
 
   _resetForm() {
@@ -58,6 +70,12 @@ const InvestmentTxUI = {
     if (amtEl) amtEl.value = '';
     const notesEl = document.getElementById('investTxNotes');
     if (notesEl) notesEl.value = '';
+    // AUD-INV-SRC (sesi ini): "Akun Sumber Dana" SELALU direset ke "" (opsional, bukan
+    // default akun pertama) -- beda dari pola pAcc/renovItemAcc yang default ke
+    // D.accounts[0], supaya user harus SENGAJA pilih akun sebelum tersinkron ke Keuangan
+    // (mencegah transaksi Keuangan ke-buat tanpa disadari).
+    const accEl = document.getElementById('investTxAcc');
+    if (accEl) accEl.value = '';
   },
 
   // setType(type) — toggle 3 tombol Beli/Jual/Dividen (pola type-toggle3 sama persis
@@ -120,7 +138,9 @@ const InvestmentTxUI = {
     const fee = (feeEl && feeEl.value !== '') ? parseDecStr(feeEl.value) : 0;
     const notesEl = document.getElementById('investTxNotes');
     const notes = notesEl ? notesEl.value : '';
-    const payload = { investmentId: InvestmentTxUI.holdingId, type: InvestmentTxUI.type, date, fee, notes };
+    const accEl = document.getElementById('investTxAcc');
+    const accountId = accEl && accEl.value ? accEl.value : '';
+    const payload = { investmentId: InvestmentTxUI.holdingId, type: InvestmentTxUI.type, date, fee, notes, accountId };
     if (InvestmentTxUI.type === 'dividen') {
       const amtEl = document.getElementById('investTxAmount');
       payload.amount = amtEl ? parseDecStr(amtEl.value) : 0;
@@ -130,8 +150,9 @@ const InvestmentTxUI = {
       payload.qty = qtyEl ? parseDecStr(qtyEl.value) : 0;
       payload.price = priceEl ? parseDecStr(priceEl.value) : 0;
     }
+    let tx;
     try {
-      Investment.addTransaction(payload);
+      tx = Investment.addTransaction(payload);
     } catch (e) {
       toast('⚠️ ' + ((e && e.message) ? e.message : 'Gagal menyimpan transaksi'));
       return;
@@ -143,20 +164,37 @@ const InvestmentTxUI = {
     if (typeof InvestmentListUI !== 'undefined') InvestmentListUI.render();
     if (typeof renderKekayaanBersih === 'function') renderKekayaanBersih();
     if (typeof hitungZakatMaal === 'function') hitungZakatMaal();
+    // AUD-INV-SRC (sesi ini): kalau accountId dipilih, Investment.addTransaction() ikut
+    // membuat 1 transaksi Keuangan tertaut (lihat komentar di investasi.js) -- render ulang
+    // Keuangan/Dashboard supaya saldo akun & riwayat transaksi langsung kelihatan update,
+    // pola sama seperti Renov.saveItem()/Tukang.payAsExpense() setelah D.transactions berubah.
+    if (tx && tx.linkedTxId) {
+      if (typeof renderKeuangan === 'function') renderKeuangan();
+      if (typeof renderDashboard === 'function') renderDashboard();
+    }
     if (typeof AIBus !== 'undefined') AIBus.emit('investment.updated', { holdingId: InvestmentTxUI.holdingId });
-    toast('✅ Transaksi tersimpan');
+    toast('✅ Transaksi tersimpan' + (tx && tx.linkedTxId ? ' & tersinkron ke Keuangan' : ''));
   },
 
   // deleteTx(id) — hapus 1 transaksi dari riwayat, 100% reuse Investment.deleteTransaction()
   // (sudah menghitung ulang unit/avgPrice holding via recomputeHolding(), 0 logic baru).
   async deleteTx(id) {
     if (typeof Investment === 'undefined') return;
-    if (!await askConfirm('Hapus transaksi ini? Unit & harga rata-rata holding akan dihitung ulang.', { okText: 'Ya, Hapus' })) return;
+    const existing = Investment.getTransactions({ investmentId: InvestmentTxUI.holdingId }).find((t) => String(t.id) === String(id));
+    const hadLinkedTx = !!(existing && existing.linkedTxId);
+    const msg = hadLinkedTx
+      ? 'Hapus transaksi ini? Unit & harga rata-rata holding akan dihitung ulang, transaksi Keuangan yang tersinkron ikut terhapus.'
+      : 'Hapus transaksi ini? Unit & harga rata-rata holding akan dihitung ulang.';
+    if (!await askConfirm(msg, { okText: 'Ya, Hapus' })) return;
     Investment.deleteTransaction(id);
     InvestmentTxUI.render();
     if (typeof InvestmentListUI !== 'undefined') InvestmentListUI.render();
     if (typeof renderKekayaanBersih === 'function') renderKekayaanBersih();
     if (typeof hitungZakatMaal === 'function') hitungZakatMaal();
+    if (hadLinkedTx) {
+      if (typeof renderKeuangan === 'function') renderKeuangan();
+      if (typeof renderDashboard === 'function') renderDashboard();
+    }
     if (typeof AIBus !== 'undefined') AIBus.emit('investment.updated', { holdingId: InvestmentTxUI.holdingId });
     toast('🗑️ Transaksi dihapus');
   },

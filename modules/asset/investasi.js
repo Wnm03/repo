@@ -315,7 +315,17 @@ const Investment = {
     return list.slice().sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : (b.createdAt || 0) - (a.createdAt || 0)));
   },
 
-  addTransaction({ investmentId, type, date, qty, price, fee, amount, notes } = {}) {
+  // AUD-INV-SRC (sesi ini) — parameter baru `accountId` (OPSIONAL, backward compatible:
+  // pemanggil lama yang tidak mengirim field ini tetap jalan persis seperti sebelumnya, 0
+  // regresi). Kalau diisi, tx Beli/Jual holding ini otomatis bikin 1 transaksi tertaut di
+  // D.transactions (expense utk Beli, income utk Jual) -- pola SAMA PERSIS
+  // Renov.saveItem()/togglePaid() (modules/home/renovasi.js, `accountId` -> D.transactions.push
+  // dgn category/note/date, TANPA update saldo manual krn saldo akun selalu DITURUNKAN dari
+  // D.transactions, bukan field tersendiri). `tx.linkedTxId` menyimpan id transaksi Keuangan
+  // itu (dibaca UI utk refresh renderKeuangan()/renderDashboard() & pesan konfirmasi hapus,
+  // dihapus otomatis oleh deleteTransaction() di bawah). Dividen SENGAJA tidak disinkron di
+  // sesi ini (di luar scope "Beli/Jual" yang diminta) -- accountId utk tipe itu diabaikan.
+  addTransaction({ investmentId, type, date, qty, price, fee, amount, notes, accountId } = {}) {
     const h = Investment.getHolding(investmentId);
     if (!h) throw new Error('Holding tidak ditemukan');
     if (!['beli', 'jual', 'dividen'].includes(type)) throw new Error('Jenis transaksi tidak valid');
@@ -329,19 +339,40 @@ const Investment = {
       throw new Error('Nominal dividen wajib diisi & lebih dari 0');
     }
     D.investmentTx = D.investmentTx || [];
+    const txDate = date || _invToday();
+    const txFee = fee || 0;
     const tx = {
       id: _invUid(),
       investmentId: h.id,
       type,
-      date: date || _invToday(),
+      date: txDate,
       qty: (type === 'beli' || type === 'jual') ? qty : 0,
       price: (type === 'beli' || type === 'jual') ? (price || 0) : 0,
-      fee: fee || 0,
+      fee: txFee,
       amount: type === 'dividen' ? amount : 0,
       notes: notes || '',
       realizedGain: 0,
       createdAt: Date.now(),
+      accountId: accountId || '',
+      linkedTxId: null,
     };
+    if (accountId && (type === 'beli' || type === 'jual') && typeof D !== 'undefined' && D.accounts && D.accounts.some((a) => String(a.id) === String(accountId))) {
+      D.transactions = D.transactions || [];
+      const linked = {
+        id: _invUid(),
+        type: type === 'beli' ? 'expense' : 'income',
+        amount: (qty * (price || 0)) + (type === 'beli' ? txFee : -txFee),
+        category: 'Investasi',
+        subcategory: h.name,
+        accountId,
+        payMethod: 'tunai',
+        note: (type === 'beli' ? 'Beli Investasi: ' : 'Jual Investasi: ') + h.name + (notes ? ' (' + notes + ')' : ''),
+        date: txDate,
+        investmentTxLinkId: tx.id,
+      };
+      D.transactions.push(linked);
+      tx.linkedTxId = linked.id;
+    }
     D.investmentTx.push(tx);
     if (type === 'beli' || type === 'jual') Investment.recomputeHolding(h.id);
     else _invSave();
@@ -351,6 +382,9 @@ const Investment = {
   deleteTransaction(id) {
     const tx = (D.investmentTx || []).find((t) => String(t.id) === String(id));
     if (!tx) return false;
+    if (tx.linkedTxId && typeof D !== 'undefined' && D.transactions) {
+      D.transactions = D.transactions.filter((t) => String(t.id) !== String(tx.linkedTxId));
+    }
     D.investmentTx = (D.investmentTx || []).filter((t) => String(t.id) !== String(id));
     if (tx.type === 'beli' || tx.type === 'jual') Investment.recomputeHolding(tx.investmentId);
     else _invSave();
