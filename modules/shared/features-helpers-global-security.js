@@ -53,8 +53,8 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's515-dana-titipan-owner-nominal-asset-kuota-porsi';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's515-dana-titipan-owner-nominal-asset-kuota-porsi';
+const APP_BUILD_VERSION = 's521-dana-titipan-ui-multiowner';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's521-dana-titipan-ui-multiowner';
 let D = {
 schemaVersion:SCHEMA_VERSION,
 transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],productStockCorrections:[],
