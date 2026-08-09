@@ -1,6 +1,6 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s509c-asset-vehicle-view-action';
+const MODULE_CALC_VERSION='s515-dana-titipan-owner-nominal-asset-kuota-porsi';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){
