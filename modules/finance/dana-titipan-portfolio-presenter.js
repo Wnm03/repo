@@ -1,5 +1,32 @@
 // dana-titipan-portfolio-presenter.js — Dana Titipan dalam Investasi:
-// Portfolio Allocation Projection (Sesi 484 + Sesi 485a-e + Sesi 486).
+// Portfolio Allocation Projection (Sesi 484 + Sesi 485a-e + Sesi 486 +
+// Sesi 499/B1 + Sesi B2 + Sesi E).
+//
+// SESI E (PROMPT-SESI-E-ALLOCATEDEXCLUDING-LINTAS-DOMAIN.md — fondasi
+// utk fitur Kuota Dana Titipan di `assetOwnersModal`, sesi UI-nya
+// BELUM dikerjakan di sini): `allocatedExcluding(ownerId, holdingId)`
+// (S494) tadinya HANYA membaca domain Investment (`_holdingSplits()`),
+// padahal `build()` sudah lintas Investment + Aset sejak Sesi B1/S499
+// — jadi tidak aman dipakai fondasi kuota Aset. Digeneralisasi jadi
+// `allocatedExcluding(ownerId, exclusion)`: `exclusion` boleh tetap
+// string/`holdingId` (BENTUK LAMA, 100% backward-compatible — 0
+// caller lama diubah, `investasi-view.js` tetap manggil apa adanya)
+// ATAU object `{holdingId, assetId}` (BENTUK BARU, exclude instrumen
+// di KEDUA domain sekaligus). 100% REUSE `_holdingSplits()` +
+// `_assetSplits()` yang SAMA PERSIS dipakai `build()` — 0 rumus baru,
+// 0 SSOT baru, 0 sentuhan `assetOwnersModal`/`aset.js`/
+// `investmentOwnersModal`/`OwnershipEngine`/`MultiOwnerEngine`/
+// `OwnerRegistry`/`D.titipanCommitments` schema/`build()` itu sendiri.
+//
+// SESI B2 (F2 Opsi B, lanjutan Sesi 499/B1 — AUDIT-SESI-B-PERLUASAN-ASET.md
+// §3.1): baris `holdings[]` sekarang punya flag `hasGainTracking`
+// (`true` utk baris Investasi, `false` utk baris Aset — Aset tidak
+// punya cost-basis terpisah dari nilai kini, `gain` selalu 0 sejak B1).
+// `renderInto()` pakai flag ini utk SEMBUNYIKAN panah "Pokok → Kini
+// ±gain" khusus baris `hasGainTracking:false`, ganti tampilan "Nilai: Rp
+// X" polos (0 P&L palsu ditampilkan). 0 rumus baru — murni cabang
+// tampilan di markup, `build()`/`_assetSplits()`/`_asetOwnersForTitipan()`
+// (F1) TIDAK disentuh sama sekali.
 //
 // SESI 486 (Case F: Partial Return / Pengembalian Dana Titipan, lihat
 // RENCANA-SESI-CASEF-PARTIAL-RETURN-S486.md — menutup "Remaining
@@ -108,48 +135,138 @@ _holdingSplits(h) {
   return { owners, costSplit: costSplit.splits, valueSplit: valueSplit.splits, gainSplit: gainSplit.splits };
 },
 
-// allocatedExcluding(ownerId, holdingId) — SESI 494 (Gate 2,
-// PLAN-owner-registry-multi-session.md, dikonfirmasi eksplisit sebelum
-// sesi ini mulai: basis nominal = holdingCost, owner belum punya
-// commitment -> prompt "catat pokok dulu" di UI (bukan tampil tanpa
-// batas), pelanggaran kuota = soft warning bukan hard block). Dipakai
-// `investasi-view.js` (`InvestmentUI`) utk hitung "Kuota sisa" LIVE di
-// modal `investmentOwnersModal` — total `holdingCost` yang SUDAH
-// teralokasi ke `ownerId` ini di holding LAIN (semua holding KECUALI
-// `holdingId` yang sedang dibuka di modal, supaya draft porsi yang
-// belum disimpan di holding itu sendiri tidak ganda dihitung — caller
-// yang menjumlah nominal draft holding yang sedang dibuka secara
-// terpisah, lihat `InvestmentUI._ownerQuotaText()`).
+// _asetOwnersForTitipan(a) — SESI B1 (AUDIT-SESI-B-PERLUASAN-ASET.md §2.3,
+// fix F1). Replikasi PERSIS pola guard `Investment.getOwners(h)` (di atas)
+// utk domain Aset: HANYA percaya `a.owners[]` EKSPLISIT (multi-owner,
+// hasil `Aset.saveOwners()`) — TIDAK PERNAH memakai hasil SINTESIS
+// `MultiOwnerEngine.getOwners(a)` dari `a.ownership` (field whole-entity
+// dari OwnershipEngine, S231) sebagai identitas pemilik dana titipan.
+// Kalau dipanggil mentah tanpa guard ini, SEMUA aset lama yang cuma
+// pernah diisi dropdown Kepemilikan (belum pernah buka modal "Atur Porsi
+// Kepemilikan") akan disintesis jadi 1 "owner" palsu ber-ownerId sentinel
+// generik ('THIRD_PARTY'/'INVESTOR'/'CUSTOMER'/'FAMILY') yang TIDAK
+// pernah match identitas nyata di `OwnerRegistry`/`D.titipanCommitments`.
+// 0 rumus baru — guard SAMA PERSIS `Investment.getOwners()`, cuma
+// dipindah lokasinya ke domain Aset.
+// Return: array owners[] (hasil MultiOwnerEngine.getOwners(a).owners
+//   kalau EKSPLISIT/tidak disintesis) — [] kalau tidak ada `a.owners[]`
+//   eksplisit sama sekali (termasuk kalau `a` cuma punya `a.ownership`
+//   legacy, atau MultiOwnerEngine belum dimuat).
+_asetOwnersForTitipan(a) {
+  if (!a || typeof MultiOwnerEngine === 'undefined') return [];
+  if (typeof MultiOwnerEngine.getOwners !== 'function') return [];
+  const res = MultiOwnerEngine.getOwners(a);
+  if (res && res.ok && !res.isSynthesized) return res.owners;
+  return [];
+},
+
+// _assetSplits(a) — helper internal, pola SAMA PERSIS `_holdingSplits(h)`
+// di atas, tapi utk domain Aset (SESI B1, AUDIT-SESI-B-PERLUASAN-ASET.md
+// §3.1, F2 Opsi A — direkomendasikan audit): Aset TIDAK punya cost-basis
+// terpisah dari nilai kini (cuma `a.nilai`, 1 angka, beda dari Investasi
+// yg py holdingCost/holdingValue/holdingGainLoss 3 angka) — jadi
+// `allocatedPrincipal = currentValue = porsi% x a.nilai`, `gain` SELALU
+// 0 (0 info palsu, konsisten scr angka; TIDAK menambah field baru
+// `hasGainTracking` ke kontrak keluaran, itu Opsi B/follow-up, ditunda).
+// Balikin null (caller/build() skip aset itu, tidak throw) kalau
+// dependency belum dimuat ATAU `_asetOwnersForTitipan()` balik [] (aset
+// itu belum pernah diatur porsi majemuk eksplisit — SENGAJA di-skip,
+// bukan bug, lihat komentar `_asetOwnersForTitipan()` di atas).
+_assetSplits(a) {
+  if (!a || typeof MultiOwnerEngine === 'undefined') return null;
+  const owners = this._asetOwnersForTitipan(a);
+  if (!Array.isArray(owners) || !owners.length) return null;
+  const nilai = (typeof a.nilai === 'number' && isFinite(a.nilai)) ? a.nilai : 0;
+  const valueSplit = MultiOwnerEngine.splitByPorsi(nilai, owners);
+  const gainSplit = MultiOwnerEngine.splitByPorsi(0, owners);
+  if (!valueSplit.ok || !gainSplit.ok) return null;
+  return { owners, costSplit: valueSplit.splits, valueSplit: valueSplit.splits, gainSplit: gainSplit.splits };
+},
+
+// allocatedExcluding(ownerId, exclusion) — SESI 494 (Gate 2,
+// PLAN-owner-registry-multi-session.md), digeneralisasi SESI E
+// (PROMPT-SESI-E-ALLOCATEDEXCLUDING-LINTAS-DOMAIN.md) supaya lintas
+// domain Investment + Aset (sebelumnya HANYA Investment — `build()`
+// sudah lintas domain sejak Sesi B1/S499, tapi `allocatedExcluding()`
+// ketinggalan, sehingga tidak aman dipakai `assetOwnersModal` nanti).
 //
-// 100% REUSE `_holdingSplits()` (basis cost, sama seperti `build()`) —
-// 0 rumus baru ditulis di sini, cuma filter+jumlah `costSplit` per
-// owner lintas holding lain. Owner SELF tetap dikecualikan (pola sama
-// `build()`). `holdingId` opsional — kalau tidak diberikan (mis. modal
-// dibuka utk holding baru yang belum tersimpan / `id` kosong), TIDAK
-// ada holding yang dikecualikan (semua holding existing owner itu
-// dihitung, karena tidak ada holding "sedang dibuka" yang perlu
-// dikeluarkan).
+// Dipakai `investasi-view.js` (`InvestmentUI._ownerQuotaText()`) utk
+// hitung "Kuota sisa" LIVE di modal `investmentOwnersModal` — total
+// alokasi Dana Titipan yang SUDAH terpakai `ownerId` ini di instrumen
+// LAIN (semua holding/aset KECUALI instrumen yang sedang dibuka di
+// modal, supaya draft porsi yang belum disimpan di instrumen itu
+// sendiri tidak ganda dihitung — caller menjumlah nominal draft
+// instrumen yang sedang dibuka secara terpisah).
 //
-// Return: angka (0 kalau `ownerId` kosong, holdings tidak terbaca, atau
-// owner ini tidak muncul di holding manapun selain yang dikecualikan).
-allocatedExcluding(ownerId, holdingId) {
+// Parameter `exclusion` (SESI E, backward-compatible dgn caller lama):
+//   - string/falsy (BENTUK LAMA S494) -> diperlakukan sbg `holdingId`
+//     yang dikecualikan dari domain Investment SAJA (caller existing
+//     `investasi-view.js` memanggil `allocatedExcluding(ownerId,
+//     holdingId)` apa adanya, 0 perubahan caller, tetap jalan sama
+//     persis seperti sebelum Sesi E).
+//   - object `{holdingId, assetId}` (BENTUK BARU SESI E) -> exclude
+//     holding ber-`id === holdingId` dari domain Investment DAN/ATAU
+//     aset ber-`id === assetId` dari domain Aset sekaligus (dipakai
+//     fondasi kuota `assetOwnersModal`, belum ada caller UI-nya di
+//     sesi ini — lihat catatan Sesi E di atas file ini).
+//
+// 100% REUSE `_holdingSplits()`/`_assetSplits()` (basis cost/nilai,
+// SAMA PERSIS sumber yang dipakai `build()`) — 0 rumus baru ditulis di
+// sini, cuma filter+jumlah `costSplit` per owner lintas instrumen lain
+// di KEDUA domain. Owner SELF tetap dikecualikan di kedua domain (pola
+// sama `build()`). Kedua domain dibaca independen: kalau salah satu
+// domain tidak terbaca (dependency belum dimuat / kosong), domain yang
+// lain tetap dihitung apa adanya (0 saling menggagalkan).
+//
+// Return: angka (0 kalau `ownerId` kosong, ATAU owner ini tidak muncul
+// di instrumen manapun selain yang dikecualikan di kedua domain).
+allocatedExcluding(ownerId, exclusion) {
   if (!ownerId) return 0;
-  const canReadHoldings = !(typeof Investment === 'undefined' || typeof Investment.getHoldings !== 'function');
-  if (!canReadHoldings) return 0;
-  const holdings = Investment.getHoldings() || [];
+  let excludeHoldingId = null;
+  let excludeAssetId = null;
+  if (exclusion && typeof exclusion === 'object') {
+    excludeHoldingId = exclusion.holdingId || null;
+    excludeAssetId = exclusion.assetId || null;
+  } else if (exclusion) {
+    // Bentuk lama S494: exclusion adalah holdingId literal.
+    excludeHoldingId = exclusion;
+  }
+
   let total = 0;
-  holdings.forEach((h) => {
-    if (!h) return;
-    if (holdingId && h.id === holdingId) return;
-    const splits = this._holdingSplits(h);
-    if (!splits) return;
-    const { owners, costSplit } = splits;
-    owners.forEach((o, idx) => {
-      if (!o || o.isSelf) return;
-      if (o.ownerId !== ownerId) return;
-      total += (costSplit[idx] && costSplit[idx].bagian) || 0;
+
+  const canReadHoldings = !(typeof Investment === 'undefined' || typeof Investment.getHoldings !== 'function');
+  if (canReadHoldings) {
+    const holdings = Investment.getHoldings() || [];
+    holdings.forEach((h) => {
+      if (!h) return;
+      if (excludeHoldingId && h.id === excludeHoldingId) return;
+      const splits = this._holdingSplits(h);
+      if (!splits) return;
+      const { owners, costSplit } = splits;
+      owners.forEach((o, idx) => {
+        if (!o || o.isSelf) return;
+        if (o.ownerId !== ownerId) return;
+        total += (costSplit[idx] && costSplit[idx].bagian) || 0;
+      });
     });
-  });
+  }
+
+  const canReadAssets = Array.isArray(typeof D !== 'undefined' && D && D.assets);
+  if (canReadAssets) {
+    D.assets.forEach((a) => {
+      if (!a) return;
+      if (excludeAssetId && a.id === excludeAssetId) return;
+      const splits = this._assetSplits(a);
+      if (!splits) return;
+      const { owners, costSplit } = splits;
+      owners.forEach((o, idx) => {
+        if (!o || o.isSelf) return;
+        if (o.ownerId !== ownerId) return;
+        total += (costSplit[idx] && costSplit[idx].bagian) || 0;
+      });
+    });
+  }
+
   return total;
 },
 
@@ -201,6 +318,56 @@ build() {
           gain,
           linkedInvestmentId: h.id,
           linkedOwnerId: ownerId,
+          hasGainTracking: true,
+        });
+      });
+    });
+  }
+
+  // SESI B1 (AUDIT-SESI-B-PERLUASAN-ASET.md §4-5) — source ke-2:
+  // Domain Aset (D.assets), UNION ke ownersMap yang SAMA dgn holding
+  // Investasi di atas (kalau 1 orang titip di Investasi & Aset sekaligus,
+  // keduanya jadi 1 kartu owner, `allocatedPrincipal`/`currentValue`
+  // digabung — kontrak `build()` TIDAK berubah, cuma sumber datanya
+  // bertambah). HANYA aset yang lolos `_asetOwnersForTitipan()` (owners[]
+  // EKSPLISIT, F1) yang diproses — aset legacy ber-`ownership` saja TIDAK
+  // muncul di sini (SENGAJA, lihat komentar helper di atas). F2 Opsi A:
+  // `gain` baris Aset SELALU 0 (0 cost-basis terpisah, lihat
+  // `_assetSplits()`).
+  const canReadAssets = Array.isArray(D && D.assets);
+  if (canReadAssets) {
+    D.assets.forEach((a) => {
+      if (!a) return;
+      const splits = this._assetSplits(a);
+      if (!splits) return;
+      const { owners, costSplit, valueSplit, gainSplit } = splits;
+      owners.forEach((o, idx) => {
+        if (!o || o.isSelf) return;
+        if (!(o.porsi > 0)) return;
+        const ownerId = o.ownerId || 'titipan_investor';
+        const ownerName = (o.ownerName && String(o.ownerName).trim()) || 'Pemilik dana titipan';
+        const allocatedPrincipal = (costSplit[idx] && costSplit[idx].bagian) || 0;
+        const currentValue = (valueSplit[idx] && valueSplit[idx].bagian) || 0;
+        const gain = (gainSplit[idx] && gainSplit[idx].bagian) || 0;
+        if (!ownersMap.has(ownerId)) {
+          ownersMap.set(ownerId, { ownerId, ownerName, allocatedPrincipal: 0, currentValue: 0, gain: 0, holdings: [] });
+        }
+        const bucket = ownersMap.get(ownerId);
+        bucket.allocatedPrincipal += allocatedPrincipal;
+        bucket.currentValue += currentValue;
+        bucket.gain += gain;
+        bucket.holdings.push({
+          holdingId: a.id,
+          name: a.name || 'Aset',
+          type: 'aset',
+          ownerPct: o.porsi,
+          allocatedPrincipal,
+          currentValue,
+          gain,
+          linkedInvestmentId: null,
+          linkedOwnerId: ownerId,
+          linkedAssetId: a.id,
+          hasGainTracking: false,
         });
       });
     });
@@ -610,7 +777,20 @@ const DanaTitipanPortfolioPresenter = {
   },
 
   render() {
-    const el = document.getElementById('danaTitipanPortfolioList');
+    this.renderInto('danaTitipanPortfolioList');
+  },
+
+  // renderInto(containerId) — SESI 498 (Tab "Dana Titipan" Terpadu, Sesi A
+  // §2.2 rancangan audit AUDIT-DANA-TITIPAN-TAB-TERPADU.md): generalisasi
+  // render() supaya bisa dipasang ke LEBIH dari satu container sekaligus
+  // (kartu lama #danaTitipanPortfolioList di dalam Dana Kelolaan/Laporan >
+  // Ringkasan, TIDAK diubah/dihapus — plus container baru
+  // #danaTitipanTabList di sub-tab Laporan > Dana Titipan). 0 perubahan
+  // logic/HTML output per container — render() tetap 100% method lama
+  // (delegasi 1 baris ke sini dgn id lama), semua test s484/s485d/s486
+  // existing tidak berubah hasilnya. TIDAK ada agregasi/rumus baru di sini.
+  renderInto(containerId) {
+    const el = document.getElementById(containerId);
     if (!el) return; // container belum ada di halaman ini, aman diam2ny (pola sama presenter lain).
     if (typeof DanaTitipanPortfolioAPI === 'undefined') return;
 
@@ -654,11 +834,13 @@ const DanaTitipanPortfolioPresenter = {
           ${this._returnsHistoryHtml(o.ownerId)}
           ${o.holdings.map((hh) => `
             <div class="u-flex u-jcb u-fs11 u-mb2 u-ml10">
-              <span>📈 ${escapeHtml(hh.name)} <span class="u-t2">(${hh.ownerPct}%)</span></span>
-              <span>
+              <span>${hh.hasGainTracking === false ? '🏦' : '📈'} ${escapeHtml(hh.name)} <span class="u-t2">(${hh.ownerPct}%)</span></span>
+              <span>${hh.hasGainTracking === false ? `
+                <span class="u-t2">Nilai: ${this._money(hh.currentValue)}</span>
+              ` : `
                 <span class="u-t2">${this._money(hh.allocatedPrincipal)} → ${this._money(hh.currentValue)}</span>
                 &nbsp;<span class="${this._gainCls(hh.gain)}">${hh.gain >= 0 ? '+' : ''}${this._money(hh.gain)}</span>
-              </span>
+              `}</span>
             </div>
           `).join('')}
         </details>

@@ -302,8 +302,14 @@ if(t==='laporan'){populateCatFilter();populateAccFilters();renderLaporan();rende
 // murni toggle DOM, tidak ada logic baru. renderLaporan() (dipanggil sekali
 // saat masuk tab Laporan di atas) tetap mengisi semua kartu di ketiga
 // sub-tab sekaligus, terlepas dari sub-tab mana yang lagi aktif.
-const LAPORAN_SUBTAB_ORDER=['ringkasan','aruskas','transaksi'];
-const LAPORAN_SUBTAB_LABEL={ringkasan:'Ringkasan',aruskas:'Arus Kas & Kategori',transaksi:'Transaksi & Export'};
+// SESI 498 (Tab "Dana Titipan" Terpadu, Sesi A) — tambah sub-tab ke-4
+// 'titipan', pola SAMA PERSIS 3 sub-tab lama di atas (murni toggle DOM,
+// 0 logic baru). Konten sub-tab ini diisi DanaTitipanPortfolioPresenter.
+// renderInto('danaTitipanTabList'), dipanggil dari renderLaporan() sama
+// seperti ketiga sub-tab lain (semua sub-tab tetap diisi sekaligus,
+// terlepas mana yang aktif — konsisten pola existing).
+const LAPORAN_SUBTAB_ORDER=['ringkasan','aruskas','transaksi','titipan'];
+const LAPORAN_SUBTAB_LABEL={ringkasan:'Ringkasan',aruskas:'Arus Kas & Kategori',transaksi:'Transaksi & Export',titipan:'Dana Titipan'};
 function setLaporanTab(t,el){
 const lapSubtabBtns=document.querySelectorAll('#keuanganTab-laporan .lap-subtab');
 lapSubtabBtns.forEach(b=>b.classList.remove('active'));
@@ -315,6 +321,8 @@ document.getElementById('laporanTab-aruskas').classList.toggle('u-dnone', t!=='a
 document.getElementById('laporanTab-aruskas').style.display='';
 document.getElementById('laporanTab-transaksi').classList.toggle('u-dnone', t!=='transaksi');
 document.getElementById('laporanTab-transaksi').style.display='';
+const titipanTabEl=document.getElementById('laporanTab-titipan');
+if(titipanTabEl){ titipanTabEl.classList.toggle('u-dnone', t!=='titipan'); titipanTabEl.style.display=''; }
 const lapBc=document.getElementById('laporanBreadcrumbSub');
 if(lapBc)lapBc.textContent=LAPORAN_SUBTAB_LABEL[t]||t;
 }
