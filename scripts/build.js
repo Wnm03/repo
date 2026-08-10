@@ -185,6 +185,13 @@ const GROUP_B = [
   // MultiOwnerEngine). TANPA WIRING sesi ini (0 consumer memanggil
   // OwnerRegistry.*), pola sama persis multi-owner-engine.js S390 sendiri.
   'modules/shared/owner-registry.js',
+  // Sesi S540-A (Tahap 1/4, DESIGN-S540-CUSTODIAN-GROUPING.md): Custodian
+  // Registry — fondasi `custodianId` untuk instrumen investasi (Dana
+  // Titipan holdings), pola identik owner-registry.js di atas (registry
+  // kecil {id,name} + findOrCreate()). Ditaruh SETELAH owner-registry.js
+  // (dependency KONSEPTUAL saja, 0 dependency KODE — file ini pure/
+  // standalone, 0 baca OwnerRegistry).
+  'modules/shared/custodian-registry.js',
   // Sesi 391: split keuntungan aset otomatis per pemilik (lanjutan S390).
   // Ditaruh SETELAH multi-owner-engine.js (dependency wajib: splitFor()/
   // summary() panggil MultiOwnerEngine.getOwners()/splitByPorsi()/
@@ -229,6 +236,7 @@ const GROUP_B = [
   'modules/business/gaji-calc.js',
   'modules/finance/cicilan.js',
   'modules/finance/tx-bbm.js',
+  'modules/finance/tx-servis.js',
   'modules/finance/tx-stok-sparepart.js',
   'modules/finance/tx-renov.js',
   'modules/finance/tx-transfer.js',
