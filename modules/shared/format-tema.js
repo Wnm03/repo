@@ -24,9 +24,31 @@
 // logic), fmt() sekarang 100% REUSE fmtFull() sbg satu-satunya sumber format nominal
 // -- seluruh pemanggil fmt() di 40 file otomatis dapat angka lengkap tanpa disentuh.
 // fmtFull()/fmtFullSigned() itu sendiri TIDAK diubah sama sekali.
+//
+// SESI 544 (audit laporan user: nominal Dana Titipan tampil pecahan aneh,
+// mis. "Rp 10.012.550,539" / owner "mas sihab" pokok tampil "Rp
+// 1.699.999,461" padahal dicatat bulat "Rp 1.700.000"). ROOT CAUSE:
+// pemisah desimal ',' di atas BUKAN sengaja ditulis di sini -- itu output
+// asli `Number.toLocaleString('id-ID')` saat argumennya py sisa desimal
+// (default `maximumFractionDigits` locale id-ID = 3). Sisa desimal itu
+// sendiri numeric drift dari pembagian porsi% (`MultiOwnerEngine.
+// splitByPorsi()`, `bagian = nilai * porsi/100`, SENGAJA tidak dibulatkan
+// di sana -- lihat komentar fungsi itu, "pembulatan tampilan jadi
+// tanggung jawab caller/formatter") -- BUKAN bug di splitByPorsi() itu
+// sendiri. fmtFull()/fmtFullSigned() ADALAH formatter tampilan yang
+// dimaksud comment itu, tapi sebelum sesi ini belum benar2 membulatkan
+// (toLocaleString default cuma MEMBATASI 3 desimal, TIDAK membulatkan ke
+// satuan Rupiah). Rupiah tidak py pecahan resmi yang dipakai user awam
+// (sen sudah lama tidak beredar) & 0 tempat lain di app ini sengaja
+// menampilkan desimal Rupiah -- jadi `Math.round()` di sini SEBELUM
+// `toLocaleString()` aman utk SEMUA pemanggil (900+ titik), 0 pemanggil
+// mengandalkan pecahan tampil (diverifikasi: 0 test existing assert
+// output fmtFull/fmt dgn nilai desimal). Nilai ASLI di `D` (mis.
+// `o.allocatedPrincipal`) TIDAK disentuh sama sekali -- ini murni
+// pembulatan TAMPILAN, kalkulasi/SSOT di tempat lain tetap presisi penuh.
 function fmt(n){return fmtFull(n);}
-function fmtFull(n){return'Rp '+Number(Math.abs(n||0)).toLocaleString('id-ID');}
-function fmtFullSigned(n){n=Number(n||0);return(n<0?'-':'')+'Rp '+Math.abs(n).toLocaleString('id-ID');}
+function fmtFull(n){return'Rp '+Math.round(Number(Math.abs(n||0))).toLocaleString('id-ID');}
+function fmtFullSigned(n){n=Number(n||0);return(n<0?'-':'')+'Rp '+Math.round(Math.abs(n)).toLocaleString('id-ID');}
 // BUGFIX (laporan user: toast pesan error scan sparepart "hilang"/tidak
 // kebaca): dulu tiap panggilan toast() bikin setTimeout sendiri TANPA
 // membatalkan timer dari panggilan sebelumnya -- kalau toast ke-2 (mis.
