@@ -883,7 +883,7 @@ const DanaTitipanPortfolioPresenter = {
   _unallocatedCell(o) {
     if (o.allocationStatus === 'PRINCIPAL_NOT_SET') return '<span class="u-t2">Belum dicatat</span>';
     if (o.allocationStatus === 'OVER_ALLOCATED') {
-      return `<span class="u-fw700 red">⚠️ Lebih ${this._money(o.overAllocatedAmount)}</span>`;
+      return `<span class="titipan-over-badge red">⚠️ Lebih ${this._money(o.overAllocatedAmount)}</span>`;
     }
     return `<span class="u-fw700">${this._money(o.estimatedUnallocated)}</span>`;
   },
@@ -939,8 +939,174 @@ const DanaTitipanPortfolioPresenter = {
     return opts.join('');
   },
 
+  // _holdingCustodianId(hh) — SESI 540-D (Tahap 4/4 DESIGN-S540-
+  // CUSTODIAN-GROUPING.md). Baris `hh` di sini adalah entri hasil
+  // `DanaTitipanPortfolioAPI.build()` (bucket.holdings[]) — build() itu
+  // SENGAJA TIDAK diubah sesi ini (0 field custodianId ditambahkan ke
+  // hasilnya), jadi grouping HARUS baca `custodianId` LANGSUNG dari
+  // sumber aslinya (`Investment.getHolding()`) di layer render ini, bukan
+  // dari `hh`. Hanya baris Investasi (`hh.linkedInvestmentId` terisi)
+  // yang punya kemungkinan custodianId — baris Aset (`linkedAssetId`,
+  // `linkedInvestmentId` null) TIDAK PERNAH punya custodian (scope S540
+  // sengaja cuma `D.investments[]`, lihat Non-goals di Design Lock),
+  // jadi otomatis flat. Guard typeof berlapis pola sama fungsi lain di
+  // file ini — balikin null (bukan throw) kalau dependency belum dimuat
+  // atau holding sumbernya sudah tidak ada (mis. terhapus di antara
+  // build() & render, race kecil yang sudah ditoleransi pola lain di
+  // file ini juga).
+  _holdingCustodianId(hh) {
+    if (!hh || !hh.linkedInvestmentId) return null;
+    if (typeof Investment === 'undefined' || typeof Investment.getHolding !== 'function') return null;
+    const src = Investment.getHolding(hh.linkedInvestmentId);
+    return (src && src.custodianId) ? src.custodianId : null;
+  },
+
+  // _custodianName(custodianId) — lookup nama dari `CustodianRegistry`
+  // (S540-A). Fallback "Kustodian" (BUKAN crash/kosong) kalau id-nya
+  // sudah tidak ada di registry (mis. dihapus manual dari data, out-of-
+  // scope UI hapus kustodian di paket S540) — grup tetap bisa dibuka,
+  // cuma labelnya generic.
+  _custodianName(custodianId) {
+    if (typeof CustodianRegistry === 'undefined' || typeof CustodianRegistry.listAll !== 'function') return 'Kustodian';
+    const found = CustodianRegistry.listAll().find((c) => c && c.id === custodianId);
+    return (found && found.name && String(found.name).trim()) || 'Kustodian';
+  },
+
+  // _groupHoldingsByCustodian(holdings) — SESI 540-D. Kelompokkan array
+  // `o.holdings` (urutan SUDAH terjaga dari build(), sort by
+  // allocatedPrincipal desc — TIDAK diubah di sini) jadi urutan node
+  // campuran: baris flat (0 custodian) apa adanya di posisi asalnya, DAN
+  // grup per `custodianId` (SATU grup per kustodian, dibuka pertama kali
+  // kustodian itu muncul, baris berikutnya dgn custodianId sama masuk ke
+  // grup yang SAMA walau tidak berurutan di array asal). Keputusan Design
+  // Lock: holding tanpa custodianId (null/undefined) TETAP FLAT di luar
+  // grup — BUKAN dikumpulkan ke grup "Lainnya" (data lama tidak boleh
+  // tersembunyi di balik grup baru). Murni reshaping array utk render,
+  // 0 agregasi angka baru (pokok/nilai/gain per grup TIDAK dijumlahkan
+  // sesi ini — non-goal, header grup hanya nama + jumlah instrumen).
+  _groupHoldingsByCustodian(holdings) {
+    const nodes = [];
+    const groupIndexById = new Map();
+    (holdings || []).forEach((hh) => {
+      const custodianId = this._holdingCustodianId(hh);
+      if (!custodianId) {
+        nodes.push({ kind: 'flat', holding: hh });
+        return;
+      }
+      if (!groupIndexById.has(custodianId)) {
+        groupIndexById.set(custodianId, nodes.length);
+        nodes.push({ kind: 'group', custodianId, custodianName: this._custodianName(custodianId), items: [] });
+      }
+      nodes[groupIndexById.get(custodianId)].items.push(hh);
+    });
+    return nodes;
+  },
+
+  // _holdingRowHtml(hh) — SESI 540-D: markup 1 baris holding, DIEKSTRAK
+  // apa adanya dari isi `o.holdings.map()` lama (0 perubahan visual utk
+  // baris flat — dipakai ulang persis sama baik di luar maupun di dalam
+  // grup kustodian, supaya baris di dalam grup tampil identik dgn baris
+  // flat, cuma beda posisi/indentasi lewat markup pembungkus grup).
+  _holdingRowHtml(hh) {
+    return `
+            <div class="titipan-holding-row u-flex u-jcb u-fs11 u-mb2" data-linked-asset-id="${escapeHtml(hh.linkedAssetId || '')}">
+              <span>${hh.hasGainTracking === false ? '🏦' : '📈'} ${escapeHtml(hh.name)} <span class="u-t2">(${hh.ownerPct}%)</span></span>
+              <span>${hh.hasGainTracking === false ? `
+                <span class="u-t2">Nilai: ${this._money(hh.currentValue)}</span>
+                ${hh.linkedAssetId ? `<button type="button" class="btn btn-ghost btn-sm" data-action="Aset.openOwnersModalById" data-args="${escapeHtml(JSON.stringify([hh.linkedAssetId]))}">⚖️ Atur Porsi</button>` : ''}
+              ` : `
+                <span class="u-t2">${this._money(hh.allocatedPrincipal)} → ${this._money(hh.currentValue)}</span>
+                &nbsp;<span class="${this._gainCls(hh.gain)}">${hh.gain >= 0 ? '+' : ''}${this._money(hh.gain)}</span>
+              `}</span>
+            </div>
+          `;
+  },
+
+  // _groupSubtotal(items) — SESI 541 (item ringan #1 dari catatan lanjutan
+  // S540: "header grup kustodian saat ini cuma nama+jumlah instrumen").
+  // Jumlahkan `allocatedPrincipal`/`currentValue`/`gain` dari `items`
+  // (array `hh` yang SUDAH dihasilkan `build()`, dikelompokkan
+  // `_groupHoldingsByCustodian()`) — 0 rumus finansial baru, murni
+  // `reduce()` angka yang SUDAH final per baris holding (sama pola
+  // `totals` di `build()`). `items` di sini SELALU baris Investasi
+  // (`hasGainTracking:true` — holding Aset TIDAK PERNAH masuk grup
+  // kustodian, lihat `_holdingCustodianId()`/test S540D #6), jadi tidak
+  // perlu cabang `hasGainTracking:false` di sini.
+  // Return: {allocatedPrincipal, currentValue, gain} (0 kalau items kosong).
+  _groupSubtotal(items) {
+    return (items || []).reduce((acc, hh) => {
+      acc.allocatedPrincipal += hh.allocatedPrincipal || 0;
+      acc.currentValue += hh.currentValue || 0;
+      acc.gain += hh.gain || 0;
+      return acc;
+    }, { allocatedPrincipal: 0, currentValue: 0, gain: 0 });
+  },
+
+  // _holdingsListHtml(holdings) — SESI 540-D: pengganti isi
+  // `o.holdings.map().join('')` lama, sekarang lewat
+  // `_groupHoldingsByCustodian()` dulu. Baris flat pakai `_holdingRowHtml()`
+  // apa adanya (0 markup baru dibanding sebelum sesi ini). Grup kustodian
+  // dibungkus `<details>` native (pola sama expand/collapse kartu owner
+  // di atasnya) dgn label "🏦 {nama kustodian} ({jumlah instrumen})".
+  // SESI 541: summary grup SEKARANG JUGA tampilkan subtotal pokok→kini
+  // ±gain (via `_groupSubtotal()`) — supaya user bisa lihat total per
+  // kustodian tanpa expand, pola markup SAMA PERSIS baris "Pokok → Kini
+  // ±gain" di summary kartu owner di atasnya (`_gainCls()`/`_money()`
+  // dipakai ulang apa adanya, 0 helper format baru).
+  _holdingsListHtml(holdings) {
+    const nodes = this._groupHoldingsByCustodian(holdings);
+    return nodes.map((node) => {
+      if (node.kind === 'flat') return this._holdingRowHtml(node.holding);
+      const sub = this._groupSubtotal(node.items);
+      return `
+            <details class="titipan-custodian-group u-ml10 u-mb2">
+              <summary class="u-flex u-jcb u-fs11 u-pointer">
+                <span class="u-t2">🏦 ${escapeHtml(node.custodianName)} (${node.items.length})</span>
+                <span class="u-t2">${this._money(sub.allocatedPrincipal)} → ${this._money(sub.currentValue)} <span class="${this._gainCls(sub.gain)}">${sub.gain >= 0 ? '+' : ''}${this._money(sub.gain)}</span></span>
+              </summary>
+              ${node.items.map((hh) => this._holdingRowHtml(hh)).join('')}
+            </details>
+          `;
+    }).join('');
+  },
+
   render() {
     this.renderInto('danaTitipanPortfolioList');
+  },
+
+  // onAssetPickChange(i) — SESI 531 (fix laporan user: dropdown "Pilih
+  // Aset" & tombol "⚖️ Atur Porsi" per-institusi di list holding (mis.
+  // "🏦 Majoris") adalah 2 kontrol independen — dropdown pilih assetId
+  // utk tombol "⚖️ Atur Porsi Aset" DI SEBELAHNYA (openAssetPorsi(), 0
+  // diubah), SEDANGKAN tombol per-institusi di bawahnya pakai
+  // hh.linkedAssetId sendiri (0 diubah juga). User kira 2 kontrol itu 1
+  // alur karena berdekatan tanpa penanda visual. Fix MURNI UI, TIDAK
+  // menyentuh openAssetPorsi()/openOwnersModalById() (keduanya sudah
+  // benar baca id masing2): saat dropdown berubah, highlight+scroll ke
+  // baris holding yang `linkedAssetId`-nya cocok dgn aset terpilih
+  // (kalau ada) di dalam `#titipanHoldingsList_{i}`, supaya user LANGSUNG
+  // lihat baris mana yang berkaitan dgn pilihan dropdown-nya sebelum tap
+  // tombol manapun. 0 aggregasi/CRUD baru, cuma DOM highlight sementara.
+  onAssetPickChange(i) {
+    const sel = document.getElementById('titipanAssetPick_' + i);
+    const list = document.getElementById('titipanHoldingsList_' + i);
+    if (!list) return;
+    const rows = list.querySelectorAll('[data-linked-asset-id]');
+    rows.forEach((row) => { row.style.outline = ''; row.style.borderRadius = ''; row.style.background = ''; });
+    const assetId = sel ? sel.value : '';
+    if (!assetId) return;
+    let matched = null;
+    rows.forEach((row) => {
+      if (row.getAttribute('data-linked-asset-id') === assetId) matched = row;
+    });
+    if (matched) {
+      matched.style.outline = '2px solid var(--accent, #4a9eff)';
+      matched.style.borderRadius = '6px';
+      matched.style.background = 'rgba(74,158,255,0.08)';
+      const card = document.getElementById('titipanOwnerCard_' + i);
+      if (card && 'open' in card) card.open = true;
+      matched.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   },
 
   // renderInto(containerId) — SESI 498 (Tab "Dana Titipan" Terpadu, Sesi A
@@ -952,11 +1118,85 @@ const DanaTitipanPortfolioPresenter = {
   // logic/HTML output per container — render() tetap 100% method lama
   // (delegasi 1 baris ke sini dgn id lama), semua test s484/s485d/s486
   // existing tidak berubah hasilnya. TIDAK ada agregasi/rumus baru di sini.
+  // renderInto() — SESI 539: skeleton state saat `DanaTitipanPortfolioAPI.
+  // build()` (agregasi lintas Investment+Aset) berpotensi lambat kalau
+  // holding banyak, supaya browser sempat paint sesuatu dulu sebelum main
+  // thread diblok proses build()+render string HTML besar (backlog S535).
+  // HANYA aktif kalau `requestAnimationFrame` ada di global (browser
+  // nyata) — di harness test Node (tests/helpers/loadSource.js, vm sandbox
+  // TANPA rAF), `typeof requestAnimationFrame` selalu 'undefined', jadi
+  // fallback ke `_renderNow()` sinkron seperti sebelumnya. Artinya: 0
+  // perubahan perilaku/output/test existing (s484/s485d/s486/s498/dst,
+  // semua panggil renderInto() lalu langsung cek el.innerHTML sinkron) —
+  // skeleton HANYA kelihatan di app nyata, 1 frame doang sebelum konten asli.
   renderInto(containerId) {
     const el = document.getElementById(containerId);
     if (!el) return; // container belum ada di halaman ini, aman diam2ny (pola sama presenter lain).
     if (typeof DanaTitipanPortfolioAPI === 'undefined') return;
 
+    if (typeof requestAnimationFrame === 'function') {
+      el.innerHTML = '<div class="u-fs11 u-t2 u-mt6 titipan-skeleton-row"></div><div class="u-fs11 u-t2 u-mt6 titipan-skeleton-row"></div><div class="u-fs11 u-t2 u-mt6 titipan-skeleton-row"></div>';
+      requestAnimationFrame(() => this._renderNow(el));
+      return;
+    }
+    this._renderNow(el);
+  },
+
+  // _captureAssetPickSelections(el) — SESI 543 (fix laporan user:
+  // dropdown "Pilih Aset" per kartu owner "belum sinkron"). ROOT CAUSE:
+  // _renderNow() mengganti SELURUH el.innerHTML tiap kali dipanggil ulang
+  // (dan dipanggil ulang dari renderLaporan() setiap ada perubahan lain
+  // di halaman, mis. harga investasi live update) — _assetOptionsHtml()
+  // SELALU generate opsi pertama "— Pilih Aset —" TANPA `selected` sesuai
+  // pilihan sebelumnya, jadi pilihan dropdown user diam2 ke-reset ke
+  // placeholder sebelum sempat tap "Atur Porsi Aset". Preservasi PER
+  // ownerId (via `data-owner-id` di tiap <select>, BUKAN cuma index oi —
+  // index bisa berubah antar render kalau urutan owners berubah, mis.
+  // owner baru masuk di tengah / sort ulang). Dipanggil SEBELUM
+  // el.innerHTML ditimpa. Guard `typeof el.querySelectorAll` (pola sama
+  // gaya guard lain di file ini, mis. `typeof D !== 'undefined'`) — aman
+  // di test harness yang pakai DOM mock ringan tanpa querySelectorAll
+  // (getElementById-only, lihat tests/s515-*.test.js), fallback diam2
+  // objek kosong (0 restore, TAPI juga 0 crash).
+  _captureAssetPickSelections(el) {
+    const map = {};
+    if (!el || typeof el.querySelectorAll !== 'function') return map;
+    const selects = el.querySelectorAll('select[id^="titipanAssetPick_"]');
+    selects.forEach((sel) => {
+      const ownerId = sel.getAttribute && sel.getAttribute('data-owner-id');
+      if (ownerId && sel.value) map[ownerId] = sel.value;
+    });
+    return map;
+  },
+
+  // _restoreAssetPickSelections(el, savedByOwner) — SESI 543. Dipanggil
+  // SETELAH el.innerHTML ditimpa dgn markup baru (opsi placeholder
+  // default dari _assetOptionsHtml()). Cocokkan tiap <select> baru via
+  // `data-owner-id` ke hasil _captureAssetPickSelections() SEBELUM
+  // render, lalu set .value. TIDAK divalidasi assetId-nya masih ada di
+  // D.assets atau tidak sebelum di-set — kalau sudah tidak ada di antara
+  // opsi (mis. aset itu terhapus di antara render), browser native diam2
+  // fallback .value ke '' (tidak match opsi manapun), sama seperti
+  // perilaku native <select> lainnya, jadi aman tanpa validasi tambahan.
+  _restoreAssetPickSelections(el, savedByOwner) {
+    if (!el || typeof el.querySelectorAll !== 'function') return;
+    if (!savedByOwner || !Object.keys(savedByOwner).length) return;
+    const selects = el.querySelectorAll('select[id^="titipanAssetPick_"]');
+    selects.forEach((sel) => {
+      const ownerId = sel.getAttribute && sel.getAttribute('data-owner-id');
+      if (ownerId && savedByOwner[ownerId]) sel.value = savedByOwner[ownerId];
+    });
+  },
+
+  // _renderNow(el) — SESI 539: badan asli renderInto() (0 logika diubah,
+  // cuma dipindah ke method terpisah supaya bisa dipanggil sinkron ATAU
+  // via requestAnimationFrame() dari renderInto() di atas). SESI 543:
+  // tambah capture/restore pilihan dropdown `#titipanAssetPick_N` di
+  // sekeliling penggantian el.innerHTML (lihat _captureAssetPickSelections
+  // / _restoreAssetPickSelections di atas) — SATU-SATUNYA perubahan
+  // perilaku sesi ini, 0 logika projection/aggregasi lain disentuh.
+  _renderNow(el) {
+    const savedAssetPicks = this._captureAssetPickSelections(el);
     const projection = DanaTitipanPortfolioAPI.build();
     // Sesi 485d — tombol buka modal "💰 Pokok Dana Titipan" (murni
     // konsumsi API sesi 485a-c: listExistingOwners()/saveCommitment(),
@@ -978,8 +1218,8 @@ const DanaTitipanPortfolioPresenter = {
     el.innerHTML = addBtn + expenseBtn + `
       <div class="u-fs11 u-t2 u-mt10 u-mb4">Dana titipan dalam investasi (per pemilik, teralokasi ke instrumen):</div>
       ${projection.owners.map((o, oi) => `
-        <details class="u-mb6">
-          <summary class="u-flex u-jcb u-fs12 u-pointer">
+        <details class="u-mb6${o.allocationStatus === 'OVER_ALLOCATED' ? ' titipan-owner-alert' : ''}" id="titipanOwnerCard_${oi}">
+          <summary class="u-flex u-jcb u-fs12 u-pointer titipan-summary-sticky">
             <span>${o.allocationStatus === 'OVER_ALLOCATED' ? '⚠️ ' : ''}👤 ${escapeHtml(o.ownerName)}</span>
             <span>
               <span class="u-t2">Pokok</span> <span class="u-fw700">${this._money(o.allocatedPrincipal)}</span>
@@ -988,7 +1228,7 @@ const DanaTitipanPortfolioPresenter = {
               &nbsp;<span class="u-fw700 ${this._gainCls(o.gain)}">${o.gain >= 0 ? '+' : ''}${this._money(o.gain)}</span>
             </span>
           </summary>
-          <div class="u-fs11 u-mb4 u-ml10" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">
+          <div class="titipan-detail-grid u-fs11 u-mb6" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px">
             <span class="u-t2">Pokok Dikomit</span><span>${this._principalCell(o)}</span>
             <span class="u-t2">Teralokasi ke Holding</span><span class="u-fw700">${this._money(o.allocatedPrincipal)}</span>
             <span class="u-t2">Estimasi Belum Teralokasi</span><span>${this._unallocatedCell(o)}</span>
@@ -997,26 +1237,21 @@ const DanaTitipanPortfolioPresenter = {
             <span class="u-t2">Sudah Dikembalikan</span><span class="u-fw700">${this._money(o.returnedTotal)}</span>
             <span class="u-t2">Pokok Belum Dikembalikan</span><span>${this._outstandingCell(o)}</span>
           </div>
-          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanCommitmentUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">✏️ Atur Pokok Dana Titipan</button>
-          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanReturnUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">↩️ Catat Pengembalian</button>
-          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanCommitmentUI.removeOwnerLinkage" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">🔓 Lepas Keterikatan Dana Titipan</button>
+          <div class="btn-row3 u-ml10 u-mb6" style="gap:6px">
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:7px 4px;font-size:10px;line-height:1.2;gap:2px;white-space:normal;text-align:center" data-action="DanaTitipanCommitmentUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">✏️ Atur Pokok Dana Titipan</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:7px 4px;font-size:10px;line-height:1.2;gap:2px;white-space:normal;text-align:center" data-action="DanaTitipanReturnUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">↩️ Catat Pengembalian</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:7px 4px;font-size:10px;line-height:1.2;gap:2px;white-space:normal;text-align:center" data-action="DanaTitipanCommitmentUI.removeOwnerLinkage" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">🔓 Lepas Keterikatan Dana Titipan</button>
+          </div>
           <div class="u-flex u-gap4 u-mb6 u-ml10 u-fs11">
-            <select id="titipanAssetPick_${oi}" class="u-flex-1" aria-label="Pilih Aset untuk Atur Porsi">${this._assetOptionsHtml()}</select>
+            <select id="titipanAssetPick_${oi}" data-owner-id="${escapeHtml(o.ownerId)}" class="fs u-flex-1" style="padding:8px 10px;font-size:11px" aria-label="Pilih Aset untuk Atur Porsi" onchange="DanaTitipanPortfolioPresenter.onAssetPickChange(${oi})">${this._assetOptionsHtml()}</select>
             <button type="button" class="btn btn-ghost btn-sm" data-action="DanaTitipanCommitmentUI.openAssetPorsi" data-args='[${oi}]'>⚖️ Atur Porsi Aset</button>
           </div>
           ${this._returnsHistoryHtml(o.ownerId)}
-          ${o.holdings.map((hh) => `
-            <div class="u-flex u-jcb u-fs11 u-mb2 u-ml10">
-              <span>${hh.hasGainTracking === false ? '🏦' : '📈'} ${escapeHtml(hh.name)} <span class="u-t2">(${hh.ownerPct}%)</span></span>
-              <span>${hh.hasGainTracking === false ? `
-                <span class="u-t2">Nilai: ${this._money(hh.currentValue)}</span>
-                ${hh.linkedAssetId ? `<button type="button" class="btn btn-ghost btn-sm" data-action="Aset.openOwnersModalById" data-args="${escapeHtml(JSON.stringify([hh.linkedAssetId]))}">⚖️ Atur Porsi</button>` : ''}
-              ` : `
-                <span class="u-t2">${this._money(hh.allocatedPrincipal)} → ${this._money(hh.currentValue)}</span>
-                &nbsp;<span class="${this._gainCls(hh.gain)}">${hh.gain >= 0 ? '+' : ''}${this._money(hh.gain)}</span>
-              `}</span>
-            </div>
-          `).join('')}
+          <div id="titipanHoldingsList_${oi}">
+          ${!o.holdings.length ? `
+            <div class="u-fs11 u-t2 u-ml10 titipan-holding-row">Belum ada instrumen terhubung ke owner ini — pilih aset dari dropdown di atas lalu atur porsinya.</div>
+          ` : this._holdingsListHtml(o.holdings)}
+          </div>
         </details>
       `).join('')}
       <div class="u-flex u-jcb u-fs12 u-mt6 u-pt6" style="border-top:1px dashed var(--border,#ddd)">
@@ -1037,10 +1272,11 @@ const DanaTitipanPortfolioPresenter = {
       </div>
       ${projection.totals.overAllocatedTotal > 0 ? `
       <div class="u-flex u-jcb u-fs11 u-mt2">
-        <span class="u-t2">⚠️ Total Kelebihan Alokasi</span>
-        <span class="u-fw700 red">${this._money(projection.totals.overAllocatedTotal)}</span>
+        <span class="u-t2">Total Kelebihan Alokasi</span>
+        <span class="titipan-over-badge red">⚠️ ${this._money(projection.totals.overAllocatedTotal)}</span>
       </div>` : ''}
     `;
+    this._restoreAssetPickSelections(el, savedAssetPicks);
   },
 
 };
