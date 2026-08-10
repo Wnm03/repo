@@ -72,6 +72,7 @@ return code.toUpperCase();
 const Sparepart={
 catEditIdx:null,
 stockEditIdx:null,
+_catalogNameCache:[],
 // isPartForVehicle(part, vehicleId) — bugfix (laporan user): Stok Sparepart
 // & dropdown "Gunakan Stok Sparepart"/"Tambah ke Stok Sparepart" dulu
 // selalu tampil SEMUA item D.partsStock tanpa pandang kendaraan aktif.
@@ -99,34 +100,43 @@ const codeEl=document.getElementById('sparepartCode');
 if(!codeEl||codeEl.dataset.manual==='1')return;
 codeEl.value=codeFromName(document.getElementById('sparepartName').value);
 },
+// populateDatalist() -- BUGFIX (laporan user, Sesi 545): dropdown "Jenis
+// Servis/Item" di modal Catat Servis/Sparepart tidak muncul sama sekali di
+// beberapa mobile WebView (mis. Brave/Chrome Android). Root cause: field ini
+// dulu pakai native <input list="sparepartDatalist"> (HTML5 datalist),
+// tapi popup datalist TIDAK reliable di banyak WebView Android -- kadang
+// tidak tampil apa pun walau opsinya sudah terisi. Field-field lain di app
+// ini (billName, pName, stockName, sparepartName, dst) SEMUA sudah pakai
+// pola autocomplete custom yang terbukti jalan (simpleAutocompleteInput() +
+// div.suggest-box, lihat modules/finance/transaksi.js) -- servisItem
+// dulu-nya satu-satunya field yang masih pakai datalist native. Fix: markup
+// <datalist id="sparepartDatalist"> dihapus dari servisModal (lihat
+// modals.js), diganti div#servisItemSuggestBox yang di-render oleh
+// Servis.onItemInputSuggest()/selectItemSuggestion() (car-notes.js), sumber
+// datanya dari getItemSuggestions() di bawah. Fungsi populateDatalist() ini
+// DIPERTAHANKAN (titik panggilnya di openModal()/renderCatList() TIDAK
+// diubah) tapi isinya sekarang cuma mengisi cache nama part Katalog Suku
+// Cadang (VehicleCatalog, async) yang dipakai getItemSuggestions() --
+// kategori & stok sudah sinkron langsung dari D tiap kali disuggest, tidak
+// perlu di-cache.
 populateDatalist(){
-const dl=document.getElementById('sparepartDatalist');
-if(!dl)return;
-// Sesi 297 (permintaan eksplisit user): datalist ini awalnya HANYA reuse nama
-// Kategori Sparepart -- beda sumber data dari Katalog Suku Cadang
-// (VehicleCatalog), jadi user yang utamanya isi part lewat Katalog sering
-// tidak lihat sarannya di field ini. Fix (tetap 100% reuse, tanpa formula
-// baru): gabungkan (1) nama Kategori Sparepart (dipertahankan, dipakai
-// autofill interval servis di onItemAutofillInterval()), (2) nama item Stok
-// Sparepart yang MASIH ADA STOKNYA (qty>0 saja -- yang qty 0 sengaja
-// dilewati supaya tidak menyarankan part yang sudah pasti tidak bisa
-// dipotong stoknya), dan (3) nama part Katalog Suku Cadang (VehicleCatalog,
-// async) supaya field ini & auto-link exact-match di
-// tryAutoLinkCatalogPart() (car-notes.js) sinkron dari SATU sumber saran
-// yang sama. Dedup case-insensitive; render dulu sinkron (kategori+stok),
-// lalu render ulang setelah catalog termuat (fire-and-forget, pola sama
-// populateCatalogPartSelect()).
-const names=new Map(); // key: lowercase, value: nama asli pertama yang ketemu
-D.sparepartCats.forEach(c=>{ if(c.name) names.set(c.name.toLowerCase(),c.name); });
-D.partsStock.forEach(p=>{ if(p.name&&p.qty>0&&!names.has(p.name.toLowerCase())) names.set(p.name.toLowerCase(),p.name); });
-const renderDl=()=>{ dl.innerHTML=Array.from(names.values()).map(n=>`<option value="${escapeHtml(n)}">`).join(''); };
-renderDl();
 const hasCatalog=typeof VehicleCatalog!=='undefined'&&VehicleCatalog&&typeof VehicleCatalog.getAll==='function';
 if(!hasCatalog)return;
 VehicleCatalog.getAll().then(items=>{
-(items||[]).forEach(it=>{ const n=it.partName; if(n&&!names.has(n.toLowerCase()))names.set(n.toLowerCase(),n); });
-renderDl();
+Sparepart._catalogNameCache=(items||[]).map(it=>it.partName).filter(Boolean);
 }).catch(()=>{});
+},
+// getItemSuggestions() -- gabungan (1) nama Kategori Sparepart, (2) nama
+// item Stok Sparepart yang masih ada stoknya (qty>0), (3) nama part Katalog
+// Suku Cadang (dari cache populateDatalist() di atas). Dedup case-
+// insensitive, sama persis sumber & urutan gabungan datalist lama (Sesi
+// 297) -- cuma cara tampilnya yang berubah (suggest-box, bukan datalist).
+getItemSuggestions(){
+const names=new Map();
+D.sparepartCats.forEach(c=>{ if(c.name) names.set(c.name.toLowerCase(),c.name); });
+D.partsStock.forEach(p=>{ if(p.name&&p.qty>0&&!names.has(p.name.toLowerCase())) names.set(p.name.toLowerCase(),p.name); });
+(Sparepart._catalogNameCache||[]).forEach(n=>{ if(n&&!names.has(n.toLowerCase()))names.set(n.toLowerCase(),n); });
+return Array.from(names.values());
 },
 renderCatList(){
 const el=document.getElementById('sparepartCatList');
@@ -827,6 +837,7 @@ function populateServisPartSelect(selectedPartId){return Servis.populatePartSele
 function onServisPartChange(){return Servis.onPartChange();}
 function onServisCatalogPartChange(){return Servis.onCatalogPartChange();}
 function onServisItemAutofillInterval(){return Servis.onItemAutofillInterval();}
+function onServisItemInput(){return Servis.onItemInputSuggest();}
 function openServisModal(editId,prefillItem){return Servis.openModal(editId,prefillItem);}
 const TORSI_DB=[
 {matchNames:['vario 125'],
