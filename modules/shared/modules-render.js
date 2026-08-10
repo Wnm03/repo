@@ -2,7 +2,7 @@
 // Dipindah ke modules/shared/modules-render.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
 // Semua fungsi ini murni definisi function global (bukan module), jadi tetap bisa dipanggil dari file manapun
 // yang loadnya belakangan (sama seperti modules-calc.js/features-*.js).
-const MODULE_RENDER_VERSION='s542-custodian-registry-rename-remove';
+const MODULE_RENDER_VERSION='s543-custodian-registry-rename-remove';
 
 function renderPageContent(name){
 // KW perf fix: jaring pengaman selain hook di save() -- pastikan cache saldo akun juga fresh
@@ -1608,6 +1608,19 @@ if(typeof FuelCompare!=='undefined')FuelCompare.render();
 // FuelCard/FuelDashboard/FuelCompare).
 if(typeof FuelTrendDashboard!=='undefined')FuelTrendDashboard.render();
 if(typeof VehicleAutomationPresenter!=='undefined')VehicleAutomationPresenter.render();
+// Sesi 532 (fix audit "UI Ride tidak muncul di tab Jalan"): RideUI (S525)
+// sudah lengkap dikoding+ditest tapi render()-nya belum pernah dipanggil
+// dari mana pun (pane #cnTab-jalan juga belum ada di markup -- sudah
+// ditambah sesi ini, lihat index.html/app_production.html). Panggilan
+// ini pola SAMA PERSIS presenter Car Notes lain di atas -- 0 rumus baru,
+// murni sinkron DOM. RideUI.render() sendiri SELALU guard getElementById
+// null, jadi aman dipanggil tiap renderCnTab() walau tab 'jalan' sedang
+// tidak aktif (sama seperti presenter lain di sini yang tetap dipanggil
+// terlepas tab mana yang aktif).
+// RE-APPLIED (Sesi 543, audit): panggilan ini sempat hilang lagi di
+// build v1266-1267 (Sesi 538) karena modules-render.js ter-rebuild dari
+// base lama sebelum Sesi 532 -- dipasang ulang persis sama.
+if(typeof RideUI!=='undefined')RideUI.render();
 const curKmEl=document.getElementById('cnCurKm');
 const curKmSrcEl=document.getElementById('cnCurKmSrc');
 if(curKmEl&&!document.getElementById('cnCurKmInput')){
