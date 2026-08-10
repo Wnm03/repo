@@ -11,8 +11,8 @@
 > file tapi lupa `node build.js`), jalankan ulang generatornya, JANGAN diedit
 > tangan — editan manual bakal ketimpa lagi di build berikutnya.
 
-Terakhir digenerate: 2026-08-09T08:45:21.054Z
-Total file source: 297 · Total identifier global: 2022
+Terakhir digenerate: 2026-08-10T02:36:16.785Z
+Total file source: 304 · Total identifier global: 2107
 
 ## 1. Urutan load & ringkasan tiap file
 
@@ -315,9 +315,16 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 292 | `modules/shop/business-flow-presenter.js` | 2777 | modules/shop/business-flow-presenter.js — Business Flow Presenter (Sesi 205). WIRE ONLY: menyusun 4 tahap alur bisnis Shop — Purchase -> Trip -> Stock -> Sale — dari 2 presenter yang SUDAH ADA: … |
 | 293 | `modules/finance/dana-kelolaan.js` | 276 | Dana Kelolaan / Managed Funds (Sesi 195). TARGET EKSPLISIT USER: "S195 Managed Funds. Reuse OwnershipEngine. Implementasikan Dana Kelolaan... Reuse existing modules. No audit. No refactor. No business logic changes." … |
 | 294 | `modules/finance/dana-kelolaan-presenter.js` | 200 | Dana Kelolaan / Managed Funds Presenter (Sesi 195). Pola SAMA PERSIS PropertyManagementPresenter.render() (modules/asset/property-management-presenter.js, S102/Sesi 132): UI HANYA presenter, 100% reuse … |
-| 295 | `modules/finance/dana-titipan-portfolio-presenter.js` | 1110 | Dana Titipan dalam Investasi: Portfolio Allocation Projection (Sesi 484 + Sesi 485a-e + Sesi 486 + Sesi 499/B1 + Sesi B2 + Sesi E). SESI E (PROMPT-SESI-E-ALLOCATEDEXCLUDING-LINTAS-DOMAIN.md — fondasi utk fitur Kuota … |
+| 295 | `modules/finance/dana-titipan-portfolio-presenter.js` | 1318 | Dana Titipan dalam Investasi: Portfolio Allocation Projection (Sesi 484 + Sesi 485a-e + Sesi 486 + Sesi 499/B1 + Sesi B2 + Sesi E). SESI E (PROMPT-SESI-E-ALLOCATEDEXCLUDING-LINTAS-DOMAIN.md — fondasi utk fitur Kuota … |
 | 296 | `modules/finance/titipan-expense-flow.js` | 239 | Sesi 521 (S521-A, implementasi Design Lock DESIGN-S520-DANA-TITIPAN-UI-MULTIOWNER.md, baseline v1251/S519). Scope: flow pencatatan pengeluaran Dana Titipan (single-owner & multi-owner) yang dipanggil dari modal khusus … |
 | 297 | `modules/finance/titipan-expense-ui.js` | 272 | Sesi 521 (S521-B2, UI ONLY, DESIGN-S520-DANA- TITIPAN-UI-MULTIOWNER.md, baseline v1251/S519 + S521-A/S521-B1). Scope: SATU-SATUNYA hal baru di sesi ini adalah `TitipanExpenseUI` — controller DOM tipis buat modal … |
+| 298 | `modules/vehicle/ride-activity-metrics.js` | 385 | RideActivityMetrics (S522, "Ride Activity Metrics Foundation"). HARD SCOPE sesi ini: PURE deterministic math functions saja — fondasi buat Ride Activity GPS recorder yang akan dibangun sesi-sesi berikutnya (S523+). … |
+| 299 | `modules/vehicle/ride-gps-recorder.js` | 326 | RideGpsRecorder (S523, "GPS Recorder + Permission Foundation"). HARD SCOPE sesi ini: PRODUCER trackpoint via browser Geolocation API + lifecycle permission/start/pause/resume/stop yang deterministic. File ini TIDAK … |
+| 300 | `modules/vehicle/ride-storage.js` | 569 | RideStorage (S524, "Ride Storage & Recovery Foundation"). HARD SCOPE sesi ini: persistence layer IndexedDB murni buat menyimpan & memulihkan ride recording — TIDAK mengubah GPS recorder (S523, ride-gps-recorder.js), … |
+| 301 | `modules/vehicle/ride-ui.js` | 434 | RideUI (S525, "Ride UI Foundation"). HARD SCOPE sesi ini: PRESENTER/orkestrasi tipis yang menyatukan 3 fondasi ride yang sudah ada (S522 RideActivityMetrics, S523 RideGpsRecorder, S524 RideStorage) jadi satu alur … |
+| 302 | `modules/vehicle/ride-map.js` | 404 | RideMap (S526, "Map / Route Foundation"). HARD SCOPE sesi ini: MAP ABSTRACTION murni buat menggambar rute (polyline) + posisi terkini dari trackpoints yang sudah ada (S522 RideActivityMetrics, S523 RideGpsRecorder, S524 … |
+| 303 | `modules/vehicle/ride-history.js` | 310 | RideHistory + RideAnalytics (S527, "Ride History & Analytics"). HARD SCOPE sesi ini: presenter/aggregator TIPIS di atas fondasi ride yang sudah ada (S522 RideActivityMetrics, S524 RideStorage — termasuk listRides() dari … |
+| 304 | `modules/vehicle/ride-vehicle-integration.js` | 210 | RideVehicleIntegration (S528, "Vehicle / Fuel / Maintenance Integration"). HARD SCOPE sesi ini: integration/ orchestration layer MURNI yang menghubungkan data Ride yang sudah ada … |
 
 ## 2. Index fungsi/variabel global → file (urut abjad)
 
@@ -381,6 +388,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `_dashHubSummaryMonthTx` | `modules/dashboard-hub/dashboard-hub.js` |
 | `_dashServisSelfVehicles` | `modules/shared/modules-render.js` |
 | `_dataActionClickHandler` | `modules/shared/features-helpers-global-security.js` |
+| `_dbPromise` | `modules/vehicle/ride-storage.js` |
 | `_deliveryAIRulesRegistered` | `modules/shop/cobek-pricing.js` |
 | `_deliveryLowStockCheck` | `modules/shop/cobek-pricing.js` |
 | `_deliveryThinMarginCheck` | `modules/shop/cobek-pricing.js` |
@@ -419,6 +427,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `_iaFmtRp` | `modules/asset/invest-ai-widget.js` |
 | `_infoModalAnswer` | `modules/shared/modal-navigasi.js` |
 | `_infoStore` | `modules/shared/modal-navigasi.js` |
+| `_instances` | `modules/vehicle/ride-map.js` |
 | `_invSave` | `modules/asset/investasi.js` |
 | `_invToday` | `modules/asset/investasi.js` |
 | `_invUid` | `modules/asset/investasi.js` |
@@ -628,6 +637,8 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `archiveSelectedYears` | `modules/shared/data-archive.js` |
 | `areaAdapterFindOne` | `lifeos/adapters/area-adapter.js` |
 | `areaAdapterList` | `lifeos/adapters/area-adapter.js` |
+| `asArray` | `modules/vehicle/ride-activity-metrics.js` |
+| `asArray` | `modules/vehicle/ride-map.js` |
 | `Aset` | `modules/asset/aset.js` |
 | `ASET_TAB_IDX` | `modules/dashboard-hub/dashboard-hub.js` |
 | `ASET_TAB_ORDER` | `modules/asset/aset.js` |
@@ -703,7 +714,10 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `buildHeaderErrorMsg` | `modules/shop/cobek-io.js` |
 | `buildLaporanExportData` | `laporan-export.js` |
 | `buildModalBodyHtml` | `modules/self-reward/self-reward-view.js` |
+| `buildPolylineAttr` | `modules/vehicle/ride-map.js` |
+| `buildRouteMarkup` | `modules/vehicle/ride-map.js` |
 | `buildSettingsFormHtml` | `modules/self-reward/self-reward-view.js` |
+| `buildSummary` | `modules/vehicle/ride-history.js` |
 | `BUSINESS_LIFECYCLE_STATUSES` | `modules/shop/business-flow-presenter.js` |
 | `BusinessFlowPresenter` | `modules/shop/business-flow-presenter.js` |
 | `byteSize` | `modules/shared/data-archive.js` |
@@ -803,10 +817,15 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `cicilanSharedLastInput` | `modules/shared/features-helpers-global-security.js` |
 | `clamp` | `economic-intelligence/domain/scoring-formulas.js` |
 | `classifyEconomicStatus` | `economic-intelligence/domain/status-classifier.js` |
+| `classifyIntervalSpeed` | `modules/vehicle/ride-activity-metrics.js` |
 | `cleanCatOptText` | `budget.js` |
+| `clear` | `modules/vehicle/ride-map.js` |
 | `clearChat` | `modules/shared/features-helpers-global-security.js` |
+| `clearRideStorage` | `modules/vehicle/ride-storage.js` |
 | `clickAssetImportFile` | `modules/shared/action-wrappers.js` |
 | `clickElById` | `modules/shared/action-wrappers.js` |
+| `cloneSession` | `modules/vehicle/ride-storage.js` |
+| `cloneTrackpoint` | `modules/vehicle/ride-storage.js` |
 | `closeCalc` | `modules/shared/kalkulator-input.js` |
 | `closeModal` | `modules/shared/modal-navigasi.js` |
 | `closeQS` | `modules/shared/modal-navigasi.js` |
@@ -823,6 +842,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `commitImportShopExcel` | `modules/shop/cobek-io.js` |
 | `commitShopCsvImport` | `modules/business/shop-data-io-api.js` |
 | `commitShopJsonImport` | `modules/business/shop-data-io-api.js` |
+| `computeBounds` | `modules/vehicle/ride-map.js` |
 | `computeCashflowForecast` | `modules/finance/tx-list-cashflow.js` |
 | `computeFileSizeStatus` | `diagnostik-versi.js` |
 | `computeModalSweepFnNames` | `self-test.js` |
@@ -841,6 +861,9 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `copySelfTestResults` | `self-test.js` |
 | `countBillFallbackAmbiguousSkipped` | `modules/finance/tagihan-kalender.js` |
 | `countFallbackBillPaymentCandidates` | `modules/finance/tagihan-kalender.js` |
+| `create` | `modules/vehicle/ride-map.js` |
+| `createRecorderInstance` | `modules/vehicle/ride-gps-recorder.js` |
+| `createRide` | `modules/vehicle/ride-storage.js` |
 | `CrossAIHook` | `modules/cross/cross-ai-hook.js` |
 | `CrossDashboardCard` | `modules/cross/cross-dashboard-card.js` |
 | `CrossInsightPresenter` | `modules/cross/cross-insight-presenter.js` |
@@ -896,6 +919,8 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `dateStatusBadge` | `modules/vehicle/vehicle-core.js` |
 | `dateToISO` | `modules/shared/helper-teks.js` |
 | `daysUntilDate` | `modules/vehicle/vehicle-core.js` |
+| `DB_NAME` | `modules/vehicle/ride-storage.js` |
+| `DB_VERSION` | `modules/vehicle/ride-storage.js` |
 | `Debt` | `modules/finance/piutang-utang.js` |
 | `DEBTOPTIMIZER_NAV_TARGETS` | `modules/finance/debt-optimizer-presenter.js` |
 | `DebtOptimizerAPI` | `modules/finance/debt-optimizer-api.js` |
@@ -907,6 +932,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `DEFAULT_ACCOUNTS` | `modules/shared/data-default.js` |
 | `DEFAULT_CATS` | `modules/shared/data-default.js` |
 | `DEFAULT_COBEK_KATEGORI` | `modules/shared/data-default.js` |
+| `DEFAULT_OPTIONS` | `modules/vehicle/ride-activity-metrics.js` |
 | `DEFAULT_OWNERSHIP` | `modules/shared/ownership-engine.js` |
 | `DEFAULT_SPAREPARTS` | `modules/shared/data-default.js` |
 | `delAcc` | `modules/finance/akun.js` |
@@ -920,6 +946,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `deleteBbmFromModal` | `modules/vehicle/vehicle-core.js` |
 | `deleteBillHistoryTx` | `modules/finance/tagihan-kalender.js` |
 | `deleteBudget` | `budget.js` |
+| `deleteRide` | `modules/vehicle/ride-storage.js` |
 | `deleteTxFromModal` | `modules/finance/transaksi.js` |
 | `DeliveryPlanUI` | `modules/shop/delivery-plan-ui.js` |
 | `delPiutang` | `pajak-aset-ui-wrappers.js` |
@@ -935,12 +962,14 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `delWealthSnapshot` | `pajak-aset-ui-wrappers.js` |
 | `delWorkDay` | `modules/business/payroll-absensi.js` |
 | `delZakatLog` | `pajak-aset-ui-wrappers.js` |
+| `destroy` | `modules/vehicle/ride-map.js` |
 | `detectPaylaterDueNextMonth` | `modules/shared/scan-ocr.js` |
 | `detectScreenType` | `modules/shared/scan-ocr.js` |
 | `detectScreenTypeScores` | `modules/shared/scan-ocr.js` |
 | `detectScreenTypeWithConfidence` | `modules/shared/scan-ocr.js` |
 | `dismissBackupReminder` | `modules/shared/modules-render.js` |
 | `downscaleImage` | `modules/shared/scan-ocr.js` |
+| `EARTH_RADIUS_M` | `modules/vehicle/ride-activity-metrics.js` |
 | `editAccIdx` | `modules/finance/akun.js` |
 | `editBillHistoryTx` | `modules/finance/tagihan-kalender.js` |
 | `editChatAction` | `ai-chat.js` |
@@ -975,6 +1004,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `EIEScoringEngine` | `economic-intelligence/engine/scoring-engine.js` |
 | `EIEStore` | `economic-intelligence/eie-store.js` |
 | `eieToggleWatchlistDetail` | `economic-intelligence/ui/eie-dashboard.js` |
+| `emptyStateMarkup` | `modules/vehicle/ride-map.js` |
 | `enableSwipeToDismiss` | `modules/shared/modal-navigasi.js` |
 | `encryptApiKeyWithPin` | `modules/shared/keamanan-pin.js` |
 | `ensurePdfJs` | `modules/vehicle/vehicle-catalog-import.js` |
@@ -1019,6 +1049,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `FILE_SIZE_ACTION_BYTES` | `diagnostik-versi.js` |
 | `FILE_SIZE_WARN_BYTES` | `diagnostik-versi.js` |
 | `filterCat` | `modules/finance/kategori.js` |
+| `filterValidPoints` | `modules/vehicle/ride-map.js` |
 | `fiMonthlySurplus` | `modules/shared/modules-calc.js` |
 | `fiMonthsOfDataAvailable` | `modules/shared/modules-calc.js` |
 | `FinanceDashboard` | `modules/finance/finance-dashboard.js` |
@@ -1098,6 +1129,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `gdriveTrySilentReconnectOnLoad` | `gdrive-backup.js` |
 | `gdriveUserEmail` | `laporan-export.js` |
 | `generateVirtualBillItemsForMonth` | `modules/finance/tagihan-kalender.js` |
+| `geolocationAvailable` | `modules/vehicle/ride-gps-recorder.js` |
 | `getAIAssetZakatMinThreshold` | `modules/asset/aset.js` |
 | `getAIDeliveryLowStockThreshold` | `modules/shop/cobek-pricing.js` |
 | `getAIDeliveryThinMarginThreshold` | `modules/shop/cobek-pricing.js` |
@@ -1127,6 +1159,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `getEffectiveIntervalKm` | `modules/vehicle/sparepart-servis.js` |
 | `getFavoritKeys` | `modules/dashboard-hub/dashboard-hub-favorit.js` |
 | `getHtmlSnapshotForSelfTest` | `diagnostik-versi.js` |
+| `getInstance` | `modules/vehicle/ride-map.js` |
 | `getKeuFilters` | `modules/finance/filter-laporan.js` |
 | `getLaporanFilters` | `modules/finance/filter-laporan.js` |
 | `getLastServiceKm` | `modules/vehicle/sparepart-servis.js` |
@@ -1137,10 +1170,13 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `getProactiveReminders` | `modules/vehicle/vehicle-core.js` |
 | `getPTKP` | `pajak-aset-ui-wrappers.js` |
 | `getRange` | `modules/finance/tx-list-cashflow.js` |
+| `getRecoverableRides` | `modules/vehicle/ride-storage.js` |
+| `getRide` | `modules/vehicle/ride-storage.js` |
 | `getSelectedBudgetCatIds` | `budget.js` |
 | `getSelectedFiCatIds` | `modules/shared/modules-calc.js` |
 | `getSelfTestCases` | `self-test.js` |
 | `getShopRange` | `modules/shop/cobek-io.js` |
+| `getTrackpoints` | `modules/vehicle/ride-storage.js` |
 | `getTxListRange` | `modules/finance/tx-list-cashflow.js` |
 | `getVehicleKm` | `modules/vehicle/vehicle-core.js` |
 | `getVehicleKmSource` | `modules/vehicle/vehicle-core.js` |
@@ -1175,6 +1211,11 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `handleTxRenovBelumDibeli` | `modules/finance/tx-renov.js` |
 | `hashPin` | `modules/shared/keamanan-pin.js` |
 | `hasIntervalOverride` | `modules/vehicle/sparepart-servis.js` |
+| `hasValidAltitude` | `modules/vehicle/ride-activity-metrics.js` |
+| `hasValidCoordinate` | `modules/vehicle/ride-activity-metrics.js` |
+| `hasValidCoordinate` | `modules/vehicle/ride-map.js` |
+| `hasValidSpeed` | `modules/vehicle/ride-activity-metrics.js` |
+| `haversineMeters` | `modules/vehicle/ride-activity-metrics.js` |
 | `HEADER_ALIAS` | `modules/shop/cobek-io.js` |
 | `healFuelStateReferenceKm` | `modules/vehicle/vehicle-core.js` |
 | `hideDashCardEl` | `modules/shared/modules-render.js` |
@@ -1272,11 +1313,20 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `isDebtOwnershipSelf` | `modules/finance/piutang-utang.js` |
 | `isDevMode` | `modules/shared/features-helpers-global-security.js` |
 | `isDueSoon` | `lifeos/adapters/today-adapter.js` |
+| `isFilterAll` | `modules/vehicle/ride-history.js` |
+| `isFiniteNumber` | `modules/vehicle/ride-activity-metrics.js` |
+| `isFiniteNumber` | `modules/vehicle/ride-gps-recorder.js` |
+| `isFiniteNumber` | `modules/vehicle/ride-storage.js` |
+| `isFiniteNumber` | `modules/vehicle/ride-map.js` |
 | `isHoldingOwnershipSelf` | `modules/asset/investasi.js` |
 | `isiPPhDariTransaksi` | `pajak-aset-ui-wrappers.js` |
 | `isKendaraanCatName` | `modules/finance/transaksi.js` |
 | `isLatestBillPaymentTx` | `modules/finance/tagihan-kalender.js` |
+| `isNonEmptyString` | `modules/vehicle/ride-storage.js` |
+| `isNonNegativeInteger` | `modules/vehicle/ride-storage.js` |
 | `isNoSpendDay` | `pajak-aset-ui-wrappers.js` |
+| `isNullish` | `modules/vehicle/ride-gps-recorder.js` |
+| `isNullish` | `modules/vehicle/ride-storage.js` |
 | `isPiutangOwnershipSelf` | `modules/finance/piutang-utang.js` |
 | `isProductOwnershipSelf` | `modules/shop/cobek-etalase.js` |
 | `isRenovCatName` | `modules/finance/transaksi.js` |
@@ -1369,16 +1419,20 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `linkedAssetAccountIds` | `modules/finance/akun.js` |
 | `LinkTx` | `modules/finance/linktx.js` |
 | `linkTxToggleSelectStop` | `modules/shared/action-wrappers.js` |
+| `listRides` | `modules/vehicle/ride-storage.js` |
 | `load` | `modules/shared/features-helpers-global-security.js` |
 | `loadAndMigrateApiKeyOnUnlock` | `modules/shared/keamanan-pin.js` |
 | `loadKeuFilterPrefsIntoDOM` | `modules/finance/filter-laporan.js` |
 | `loadMoreBbmList` | `modules/vehicle/vehicle-core.js` |
 | `loadMoreLapTx` | `modules/finance/filter-laporan.js` |
 | `loadMoreTx` | `modules/finance/filter-laporan.js` |
+| `localBoundingBox` | `modules/vehicle/ride-map.js` |
 | `LogisticsEngine` | `modules/logistics/logistics-engine.js` |
 | `LogisticsService` | `modules/logistics/logistics-service.js` |
 | `MacroDataAdapter` | `economic-intelligence/adapters/macro-data-adapter.js` |
 | `MacroSyncService` | `economic-intelligence/services/macro-sync-service.js` |
+| `makeError` | `modules/vehicle/ride-storage.js` |
+| `MAP_DEFAULT_OPTIONS` | `modules/vehicle/ride-map.js` |
 | `mapAssetJenisToInvestmentType` | `modules/asset/aset.js` |
 | `markBillPaid` | `modules/finance/tagihan-kalender.js` |
 | `markShopDelivered` | `modules/shop/cobek-io.js` |
@@ -1386,6 +1440,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `maybeCreateSharedPiutangFromBill` | `modules/finance/piutang-utang.js` |
 | `maybeCreateTitipanTalanganPiutang` | `modules/finance/piutang-utang.js` |
 | `maybeOfferPaylaterReminder` | `modules/shared/scan-ocr.js` |
+| `mergeOptions` | `modules/vehicle/ride-map.js` |
 | `migrateAssetInvestmentsToHoldings` | `modules/asset/aset.js` |
 | `migrateShopCategory` | `modules/shared/features-helpers-global-security.js` |
 | `MobilInsight` | `modules/ai/feature-insights.js` |
@@ -1394,15 +1449,20 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `MODULE_CALC_VERSION` | `modules/shared/modules-calc.js` |
 | `MODULE_FEATURES_VERSION` | `chat-action-handlers.js` |
 | `MODULE_RENDER_VERSION` | `modules/shared/modules-render.js` |
+| `modulesReady` | `modules/vehicle/ride-history.js` |
 | `MONTHS` | `modules/shared/helper-teks.js` |
 | `MONTHS_FULL` | `modules/shared/helper-teks.js` |
+| `MPS_TO_KMH` | `modules/vehicle/ride-activity-metrics.js` |
 | `MultiOwnerEngine` | `modules/shared/multi-owner-engine.js` |
 | `MY_WRENCH` | `car-notes.js` |
 | `navBillCalendar` | `modules/finance/tagihan-kalender.js` |
 | `navBillFilterMonth` | `modules/finance/tagihan-kalender.js` |
 | `netWorthForecast` | `modules/asset/aset.js` |
 | `normalizeAmtToken` | `modules/shared/kalkulator-input.js` |
+| `normalizeGeoError` | `modules/vehicle/ride-gps-recorder.js` |
 | `normalizeOcrNumber` | `pajak-aset-ui-wrappers.js` |
+| `normalizeOptions` | `modules/vehicle/ride-activity-metrics.js` |
+| `normalizeTrackpoint` | `modules/vehicle/ride-gps-recorder.js` |
 | `NotificationService` | `economic-intelligence/services/notification-service.js` |
 | `OCR_MIN_CONFIDENCE_DEFAULT_PCT` | `modules/shared/scan-ocr.js` |
 | `ocrRecognize` | `modules/shared/scan-ocr.js` |
@@ -1456,6 +1516,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `openCatModalQuick` | `modules/shared/action-wrappers.js` |
 | `openCicilanHistoryFromTx` | `modules/finance/cicilan.js` |
 | `openCustomerDetail` | `modules/shop/cobek-io.js` |
+| `openDatabase` | `modules/vehicle/ride-storage.js` |
 | `openDebtModal` | `pajak-aset-ui-wrappers.js` |
 | `openFiSettingsModal` | `modules/shared/modules-calc.js` |
 | `openGajiCalc` | `modules/business/gaji-calc.js` |
@@ -1505,6 +1566,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `parsePzNum` | `pajak-aset-ui-wrappers.js` |
 | `parseWalletNominal` | `modules/shared/scan-ocr.js` |
 | `parseWalletScreen` | `modules/shared/scan-ocr.js` |
+| `passesAccuracyFilter` | `modules/vehicle/ride-activity-metrics.js` |
 | `PAYLATER_DUE_NEXT_MONTH_RE` | `modules/shared/scan-ocr.js` |
 | `PAYMENT_STATUSES` | `modules/shop/business-flow-presenter.js` |
 | `Payroll` | `modules/business/payroll-absensi.js` |
@@ -1520,6 +1582,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `PersonalOverviewPresenter` | `modules/cross/personal-overview-presenter.js` |
 | `phoneToWaId` | `reminder-notif.js` |
 | `pickAssetScanCandidate` | `modules/shared/scan-ocr.js` |
+| `pickGeoOptions` | `modules/vehicle/ride-gps-recorder.js` |
 | `pilihAsetPBB` | `pajak-aset-ui-wrappers.js` |
 | `PIN_LOCK_DURATIONS_SEC` | `modules/shared/keamanan-pin.js` |
 | `PIN_MAX_ATTEMPTS` | `modules/shared/keamanan-pin.js` |
@@ -1572,6 +1635,8 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `projectAdapterFindOne` | `lifeos/adapters/project-adapter.js` |
 | `projectAdapterLegacyList` | `lifeos/adapters/project-adapter.js` |
 | `projectAdapterList` | `lifeos/adapters/project-adapter.js` |
+| `projectPoint` | `modules/vehicle/ride-map.js` |
+| `projectPoints` | `modules/vehicle/ride-map.js` |
 | `projectServiceAddChecklistItem` | `lifeos/services/project-service.js` |
 | `projectServiceCreate` | `lifeos/services/project-service.js` |
 | `projectServiceDelete` | `lifeos/services/project-service.js` |
@@ -1633,6 +1698,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `RecommendationService` | `economic-intelligence/services/recommendation-service.js` |
 | `recordBbmLog` | `modules/finance/tx-bbm.js` |
 | `recordShopSale` | `modules/shop/cobek-tx-cart.js` |
+| `RECOVERABLE_STATUS` | `modules/vehicle/ride-storage.js` |
 | `RECOVERY_POLL_MS` | `modules/shared/scanner-session.js` |
 | `RECOVERY_STUCK_MS` | `modules/shared/scanner-session.js` |
 | `RefAI` | `modules/finance/pajak-pbb-zakat.js` |
@@ -1751,6 +1817,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `RENTAL_MGMT_CARD_NAV_TARGETS` | `modules/asset/rental-management-presenter.js` |
 | `RentalManagementAPI` | `modules/asset/rental-management-api.js` |
 | `RentalManagementPresenter` | `modules/asset/rental-management-presenter.js` |
+| `reqToPromise` | `modules/vehicle/ride-storage.js` |
 | `requestAIRecommendation` | `modules/shop/cobek-order.js` |
 | `requestNotifPermission` | `reminder-notif.js` |
 | `resetAllBudgetsConfirm` | `modules/shared/action-wrappers.js` |
@@ -1764,6 +1831,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `resetTxPageAndRender` | `modules/finance/filter-laporan.js` |
 | `resetTxShopSaleCart` | `modules/shop/cobek-tx-cart.js` |
 | `resolveAliasValue` | `modules/shop/cobek-io.js` |
+| `resolveElement` | `modules/vehicle/ride-map.js` |
 | `resolveEntryAssetSelfPorsi` | `modules/finance/piutang-utang.js` |
 | `resolveFavoritEntries` | `modules/dashboard-hub/dashboard-hub-favorit-view.js` |
 | `resolveLinkedVehicleAsset` | `modules/vehicle/vehicle-core.js` |
@@ -1789,9 +1857,18 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `reviewServiceStartSession` | `lifeos/services/review-service.js` |
 | `reviewSourceDirect` | `lifeos/adapters/review-adapter.js` |
 | `reviewSourceLastSnapshot` | `lifeos/adapters/review-adapter.js` |
+| `RideActivityMetrics` | `modules/vehicle/ride-activity-metrics.js` |
+| `RideAnalytics` | `modules/vehicle/ride-history.js` |
+| `RideGpsRecorder` | `modules/vehicle/ride-gps-recorder.js` |
+| `RideHistory` | `modules/vehicle/ride-history.js` |
+| `RideMap` | `modules/vehicle/ride-map.js` |
+| `RideStorage` | `modules/vehicle/ride-storage.js` |
+| `RideUI` | `modules/vehicle/ride-ui.js` |
+| `RideVehicleIntegration` | `modules/vehicle/ride-vehicle-integration.js` |
 | `RIPPLE_SELECTOR` | `modules/shared/ripple-position.js` |
 | `RISKY_OPENER_SPECS` | `self-test.js` |
 | `rollbackShopItems` | `modules/shop/cobek-tx-cart.js` |
+| `round2` | `modules/vehicle/ride-map.js` |
 | `RuleEngine` | `economic-intelligence/engine/rule-engine.js` |
 | `runBackup` | `modules/shared/backup-restore.js` |
 | `runDataHealthCheck` | `data-health-check.js` |
@@ -1801,6 +1878,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `runGlobalSearch` | `global-search.js` |
 | `runNavSmokeTest` | `self-test.js` |
 | `runSelfTest` | `self-test.js` |
+| `runTransaction` | `modules/vehicle/ride-storage.js` |
 | `runUniversalScanParser` | `modules/shared/scan-ocr.js` |
 | `safeCalc` | `modules/shared/kalkulator-input.js` |
 | `safeSetItem` | `modules/shared/features-helpers-global-security.js` |
@@ -1837,6 +1915,8 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `saveSim` | `modules/vehicle/vehicle-core.js` |
 | `saveSubCat` | `modules/finance/kategori.js` |
 | `saveTarget` | `modules/finance/tx-target.js` |
+| `saveTrackpoint` | `modules/vehicle/ride-storage.js` |
+| `saveTrackpoints` | `modules/vehicle/ride-storage.js` |
 | `saveTransfer` | `modules/finance/tx-transfer.js` |
 | `saveTx` | `modules/finance/transaksi.js` |
 | `saveVehicle` | `modules/vehicle/vehicle-core.js` |
@@ -1900,6 +1980,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `setDebtStrategyMethod` | `pajak-aset-ui-wrappers.js` |
 | `setImportKatalogTarget` | `modules/shop/cobek-io.js` |
 | `setImportShopExcelTarget` | `modules/shop/cobek-io.js` |
+| `setInner` | `modules/vehicle/ride-map.js` |
 | `setKelolaTab` | `modules/finance/tx-list-cashflow.js` |
 | `setKeuanganTab` | `modules/finance/tx-list-cashflow.js` |
 | `setLaporanPeriode` | `modules/shop/cobek-io.js` |
@@ -1999,6 +2080,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `simJenisFieldsHtml` | `modules/vehicle/vehicle-core.js` |
 | `simpleAutocompleteInput` | `modules/finance/transaksi.js` |
 | `simTarifKey` | `modules/vehicle/vehicle-core.js` |
+| `sortedByTimestamp` | `modules/vehicle/ride-activity-metrics.js` |
 | `Sparepart` | `modules/vehicle/sparepart-servis.js` |
 | `SPAREPART_BRAND_KEYWORDS` | `modules/vehicle/sparepart-ocr-parser.js` |
 | `SPAREPART_LINE_KEYWORDS` | `modules/shared/scan-ocr.js` |
@@ -2072,9 +2154,13 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `stopPropOnly` | `modules/shared/action-wrappers.js` |
 | `STORAGE_BIG_MODULES` | `modules/shared/data-archive.js` |
 | `STORAGE_QUOTA_ESTIMATE` | `modules/shared/data-archive.js` |
+| `STORE_RIDES` | `modules/vehicle/ride-storage.js` |
+| `STORE_TRACKPOINTS` | `modules/vehicle/ride-storage.js` |
 | `subCatParentId` | `modules/shared/features-helpers-global-security.js` |
 | `subNamesForCat` | `modules/finance/kategori.js` |
+| `sumClassifiedIntervalSec` | `modules/vehicle/ride-activity-metrics.js` |
 | `SupplierStore` | `modules/shop/generic/supplier-store.js` |
+| `svgOpenTag` | `modules/vehicle/ride-map.js` |
 | `syncBbmCost` | `modules/vehicle/vehicle-core.js` |
 | `syncBbmHargaChanged` | `modules/vehicle/vehicle-core.js` |
 | `syncBbmLiterFromCost` | `modules/vehicle/vehicle-core.js` |
@@ -2109,6 +2195,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `todaySourceSelfcare` | `lifeos/adapters/today-adapter.js` |
 | `todaySourceTukang` | `lifeos/adapters/today-adapter.js` |
 | `todayStr` | `modules/shared/features-helpers-global-security.js` |
+| `toEpochMs` | `modules/vehicle/ride-activity-metrics.js` |
 | `toggleAccInclude` | `modules/finance/akun.js` |
 | `toggleApiKeyHint` | `modules/shared/profil-pengaturan.js` |
 | `toggleArchiveYear` | `modules/shared/data-archive.js` |
@@ -2179,6 +2266,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `UNIVERSAL_SCAN_PARSERS` | `modules/shared/scan-ocr.js` |
 | `UniversalScan` | `modules/shared/scan-ocr.js` |
 | `UniversalScanHistory` | `modules/shared/scan-ocr.js` |
+| `update` | `modules/vehicle/ride-map.js` |
 | `updateAccIncludeBtn` | `modules/finance/akun.js` |
 | `updateAmtPreview` | `modules/shared/kalkulator-input.js` |
 | `updateArchivePreview` | `modules/shared/data-archive.js` |
@@ -2193,6 +2281,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `updatePinDots` | `modules/shared/keamanan-pin.js` |
 | `updatePinLockUI` | `modules/shared/keamanan-pin.js` |
 | `updateProfilPTKPPreview` | `modules/shared/profil-pengaturan.js` |
+| `updateRide` | `modules/vehicle/ride-storage.js` |
 | `updateSelfTestBadge` | `self-test.js` |
 | `updateSubCatOptions` | `modules/finance/transaksi.js` |
 | `updateTxAssetSplitPreview` | `modules/finance/transaksi.js` |
@@ -2203,7 +2292,10 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `UserFinanceAdapter` | `economic-intelligence/adapters/user-finance-adapter.js` |
 | `validateAIRuleShape` | `modules/ai/ai-decision-engine.js` |
 | `validateCicilanFields` | `modules/finance/cicilan.js` |
+| `validateRideId` | `modules/vehicle/ride-storage.js` |
 | `validateRuleShape` | `economic-intelligence/rules/rule-schema.js` |
+| `validateSession` | `modules/vehicle/ride-storage.js` |
+| `validateTrackpoint` | `modules/vehicle/ride-storage.js` |
 | `validateUniversalScanItem` | `modules/shared/scan-ocr.js` |
 | `VEH_JENIS_DEFAULT_INTERVAL` | `modules/vehicle/vehicle-core.js` |
 | `vehAssetBridgeHtml` | `modules/vehicle/vehicle-core.js` |
