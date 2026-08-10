@@ -80,9 +80,9 @@
 <link rel="preconnect" href="https://accounts.google.com" crossorigin>
 <link rel="dns-prefetch" href="https://accounts.google.com">
 <title>Keluarga W</title>
-<link rel="stylesheet" href="styles.css?v=1275">
-<link rel="stylesheet" href="modern-ui-layer.css?v=1275">
-<script src="nav-scroll.js?v=1275" defer></script>
+<link rel="stylesheet" href="styles.css?v=1276">
+<link rel="stylesheet" href="modern-ui-layer.css?v=1276">
+<script src="nav-scroll.js?v=1276" defer></script>
 <script>
 /* Debug console (Eruda) — aktifkan sekali lewat ?debug=1 di URL, nempel via localStorage.
    Matikan lagi lewat ?debug=0. Tidak aktif buat user biasa. */
@@ -148,17 +148,17 @@ function ensureZXing(){return _loadScriptOnce('https://cdn.jsdelivr.net/npm/@zxi
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn CDN di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // > Proyek Renovasi pertama dibuka.
-function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1275');}
+function ensureRenov(){return _loadScriptOnce('modules/home/renovasi.js?v=1276');}
 // sewakios.js dikeluarkan dari app-bundle-a.min.js (scripts/build.js GROUP_A),
 // dimuat on-demand lewat pola _loadScriptOnce() yang sama dgn Renov di atas.
 // Dipanggil dari setKeuanganTab() (tx-list-cashflow.js) saat tab Aset & Proyek
 // pertama dibuka.
-function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1275');}
+function ensureSewaKios(){return _loadScriptOnce('modules/business/sewakios.js?v=1276');}
 // business-intelligence-presenter.js dikeluarkan dari app-bundle-b.min.js
 // (scripts/build.js GROUP_B), dimuat on-demand lewat pola sama.
 // Dipanggil dari setShopTab() (cobek-io.js) saat tab Shop > Business
 // Intelligence pertama dibuka.
-function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1275');}
+function ensureBusinessIntelligence(){return _loadScriptOnce('modules/shop/business-intelligence-presenter.js?v=1276');}
 </script>
 <script>
 window.__moduleLoadFail=function(name){
@@ -247,8 +247,8 @@ window.location.reload();
 }catch(e){}
 })();
 </script>
-<script src="app-bundle-a.min.js?v=1275" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
-<script src="modules/shared/smoke-test.js?v=1275" defer></script>
+<script src="app-bundle-a.min.js?v=1276" onerror="window.__moduleLoadFail('app-bundle-a.min.js')"></script>
+<script src="modules/shared/smoke-test.js?v=1276" defer></script>
 <link rel="manifest" id="pwaManifestLink" href="manifest.json">
 </head>
 <body data-theme="fresh">
@@ -1610,6 +1610,7 @@ window.location.reload();
     <button class="cn-tab active" data-action="setCnTab" data-args='["bbm", "$el"]'>⛽ BBM</button>
     <button class="cn-tab" data-action="setCnTab" data-args='["servis", "$el"]'>🔧 Servis</button>
     <button class="cn-tab" data-action="setCnTab" data-args='["pajak", "$el"]'>🚦 Pajak &amp; SIM</button>
+    <button class="cn-tab" data-action="setCnTab" data-args='["jalan", "$el"]'>🚴 Jalan</button>
   </div>
 
   <!-- INSIGHT AI TAB (Sesi 157) — kumpulan 6 card AI/dashboard yang dulu
@@ -1809,6 +1810,46 @@ window.location.reload();
   </div>
   </div>
   <!-- /PAJAK & SIM TAB (Sesi 157) -->
+
+  <!-- JALAN (RIDE) TAB (Sesi 532, fix audit: tab 'jalan' sudah lama ada
+       di setCnTab() (vehicle-core.js) & RideUI (S525) sudah lengkap
+       dikoding+ditest, tapi pane #cnTab-jalan ini sendiri belum pernah
+       dibuat -- makanya tab tidak pernah muncul di Car Notes (dead id,
+       lihat catatan "WIRING STATUS" di header ride-ui.js). Pane ini
+       0 logic baru -- 100% markup DOM murni; tombol Start/Pause/Resume/
+       Stop/Discard reuse data-action="RideUI.*" (pola sama semua tombol
+       lain di app ini), field id (rideStatusText/rideDistanceText/dst)
+       mengikuti PERSIS yang sudah dibaca RideUI.render() (lihat file
+       tsb) -- 0 perubahan ke RideUI/RideGpsRecorder/RideStorage/
+       RideActivityMetrics. RideUI.render() sendiri SELALU guard
+       getElementById null, jadi aman ditambah tanpa menyentuh modul
+       Ride sama sekali. RE-APPLIED (Sesi 543, audit): wiring ini sempat
+       hilang lagi di build v1266-1267 (Sesi 538) karena index.html/
+       app_production.html ter-rebuild dari base lama sebelum Sesi 532 —
+       dipasang ulang persis sama seperti versi Sesi 532 asli. -->
+  <div id="cnTab-jalan" class="u-dnone">
+    <div class="card u-mb12">
+      <div class="card-title">🚴 Rekam Perjalanan</div>
+      <div class="u-flex u-jcb u-aic u-mb8">
+        <span class="u-fs13 u-fw700" id="rideStatusText">Siap merekam</span>
+      </div>
+      <div class="u-fs11" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 10px">
+        <span class="u-t2">Jarak</span><span class="u-fw700" id="rideDistanceText">0.00 km</span>
+        <span class="u-t2">Durasi</span><span class="u-fw700" id="rideDurationText">0 dtk</span>
+        <span class="u-t2">Kecepatan Rata-rata</span><span class="u-fw700" id="rideAvgSpeedText">0.0 km/j</span>
+        <span class="u-t2">Kecepatan Maks</span><span class="u-fw700" id="rideMaxSpeedText">0.0 km/j</span>
+      </div>
+      <div class="u-fs11 red u-mt6" id="rideErrorText"></div>
+      <div class="u-flex u-gap6 u-mt10" style="flex-wrap:wrap">
+        <button type="button" class="btn btn-primary btn-sm" id="rideStartBtn" data-action="RideUI.start" aria-label="Mulai rekam perjalanan">▶️ Mulai</button>
+        <button type="button" class="btn btn-ghost btn-sm u-dnone" id="ridePauseBtn" data-action="RideUI.pause" aria-label="Jeda rekaman">⏸ Jeda</button>
+        <button type="button" class="btn btn-ghost btn-sm u-dnone" id="rideResumeBtn" data-action="RideUI.resume" aria-label="Lanjutkan rekaman">▶️ Lanjut</button>
+        <button type="button" class="btn btn-ghost btn-sm u-dnone" id="rideStopBtn" data-action="RideUI.stop" aria-label="Selesai &amp; simpan rekaman">⏹ Selesai</button>
+        <button type="button" class="btn btn-ghost btn-sm u-dnone" id="rideDiscardBtn" data-action="RideUI.discard" aria-label="Buang rekaman">🗑️ Buang</button>
+      </div>
+    </div>
+  </div>
+  <!-- /JALAN (RIDE) TAB (Sesi 532, re-applied Sesi 543) -->
 
   <!-- Sesi 157: periode chips ini cuma relevan buat tab BBM/Servis (filter
        renderBbmList()/renderServisList() lewat cnPeriode) — dibungkus
@@ -3930,6 +3971,6 @@ window.location.reload();
 <script>document.write(MODAL_HTML[97]);</script><!-- modal:titipanReturnModal (S486, Case F: Partial Return) -->
 <script>document.write(MODAL_HTML[98]);</script><!-- modal:titipanExpenseModal (S521-B1, DESIGN-S520-DANA-TITIPAN-UI-MULTIOWNER.md) -->
 
-<script src="app-bundle-b.min.js?v=1275" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
+<script src="app-bundle-b.min.js?v=1276" onerror="window.__moduleLoadFail('app-bundle-b.min.js')"></script>
 </body>
 </html>
