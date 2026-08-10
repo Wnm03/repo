@@ -704,6 +704,68 @@ deleteCommitment(ownerId) {
   return true;
 },
 
+// removeOwnerLinkage(ownerId) — Sesi 523-C (BUG-02/BUG-06,
+// AUDIT-S523-C-COMMITMENT-DELETE-VS-OWNER-LINKAGE.md). Operasi TERPISAH
+// secara KONTRAK dari deleteCommitment() di atas & dari "global owner
+// deletion" (SENGAJA TIDAK dibuat sesi ini, lihat catatan di bawah):
+//
+//   1. deleteCommitment(ownerId) — CRUD "hapus 1 record pokok dana
+//      titipan", dipanggil dari modal edit pokok (tombol 🗑 Hapus,
+//      Sesi 522). Fokusnya: koreksi/hapus ANGKA pokok yang salah catat.
+//   2. removeOwnerLinkage(ownerId) — SCOPED REMOVAL "lepaskan
+//      keterikatan owner ini dari Dana Titipan", dipanggil LANGSUNG dari
+//      kartu owner di dashboard (tombol terpisah, TIDAK perlu buka modal
+//      edit pokok dulu). Fokusnya: owner ini sudah tidak relevan lagi di
+//      Dana Titipan (mis. dana sudah selesai dikembalikan semua & owner
+//      mau "dibersihkan" dari daftar).
+//   3. Global owner deletion (hapus `OwnerRegistry` entry sepenuhnya) —
+//      SENGAJA TIDAK ADA di sesi ini. `OwnerRegistry` (owner-registry.js,
+//      S489) belum punya API delete/remove resmi sama sekali (baru
+//      listAll()/findOrCreate()) — menambah method delete ke situ MASUK
+//      keputusan desain terpisah (lihat §4 dokumen rekomendasi S523,
+//      "logic guard taruh di modul konsumen, BUKAN core registry, kecuali
+//      >1 konsumen pasti butuh") yang TIDAK diambil sesi ini (di luar
+//      fokus BUG-02/06/14, HARD RULE "Jangan global delete owner").
+//
+// SESI INI: (2) dipatch dgn REUSE 100% mekanisme (1) — keduanya
+// menyentuh field `D` yang SAMA (`D.titipanCommitments`, satu-satunya
+// data yang benar-benar dimiliki EKSKLUSIF oleh domain Dana Titipan),
+// jadi 0 rumus/mutasi baru ditulis. Yang beda: nama, kontrak, dan titik
+// panggil (kartu owner vs modal edit) — bukan implementasi. Kalau nanti
+// scoped removal butuh membersihkan lebih dari `titipanCommitments`
+// (mis. `D.titipanReturns`), itu keputusan desain terpisah (BUG-03) yang
+// TIDAK diambil di sini (lihat larangan #7 di bawah).
+//
+// SENGAJA TIDAK disentuh (scoped removal HANYA melepas "keterikatan
+// Dana Titipan", 0 efek samping ke domain lain):
+//   - `D.titipanReturns` — riwayat pengembalian TETAP riwayat, TIDAK
+//     dihapus diam-diam (linked history, beda dari `titipanCommitments`
+//     yang murni angka pokok saat ini — pola sama alasan `deleteReturn()`
+//     dibuat sbg fungsi terpisah eksplisit, bukan efek samping delete
+//     lain).
+//   - `D.assets`/`D.investments` (`owners[]`/porsi kepemilikan) — porsi
+//     di holding/aset lain dikelola LEWAT modul masing-masing ("⚖️ Atur
+//     Porsi Kepemilikan"), bukan di sini. Owner bisa saja tetap muncul
+//     di kartu Dana Titipan setelah linkage dilepas KALAU dia masih
+//     py porsi di suatu holding/aset — itu BUKAN bug (persis temuan
+//     BUG-04 S523-A: isolasi domain yang disengaja).
+//   - `D.transactions` (`tx.titipanLinkId`) — TIDAK dihapus/diubah
+//     massal di sini. Link basi (ownerId yang sudah tidak dikenal)
+//     sudah py mekanisme self-heal SENDIRI di `transaksi.js`
+//     (`applyTxTitipanLinkageOnSave()`/`resolveTxTitipanOwner()`,
+//     Sesi 519) yang otomatis membuang `titipanLinkId` begitu transaksi
+//     itu sendiri disave ulang — 0 duplikasi guard di sini.
+//   - `OwnerRegistry`/`D.ownerRegistry` — identitas global owner TETAP
+//     ADA. "Lepas keterikatan dari Dana Titipan" secara definisi BUKAN
+//     "hapus owner ini dari sistem".
+//
+// Return: `true` kalau ada linkage (record commitment) yang dilepas,
+//   `false` kalau owner ini memang tidak punya commitment sama sekali
+//   (no-op aman, TIDAK throw — pola sama deleteCommitment()/deleteReturn()).
+removeOwnerLinkage(ownerId) {
+  return this.deleteCommitment(ownerId);
+},
+
 // getReturns(ownerId) — Sesi 486 (Case F: Partial Return / Pengembalian
 // Dana Titipan, lihat RENCANA-SESI-CASEF-PARTIAL-RETURN-S486.md).
 // Getter read-only, pola sama getCommitments(). Tanpa `ownerId` -> semua
@@ -937,6 +999,7 @@ const DanaTitipanPortfolioPresenter = {
           </div>
           <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanCommitmentUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">✏️ Atur Pokok Dana Titipan</button>
           <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanReturnUI.open" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">↩️ Catat Pengembalian</button>
+          <button type="button" class="btn btn-ghost btn-sm u-mb6 u-ml10" data-action="DanaTitipanCommitmentUI.removeOwnerLinkage" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">🔓 Lepas Keterikatan Dana Titipan</button>
           <div class="u-flex u-gap4 u-mb6 u-ml10 u-fs11">
             <select id="titipanAssetPick_${oi}" class="u-flex-1" aria-label="Pilih Aset untuk Atur Porsi">${this._assetOptionsHtml()}</select>
             <button type="button" class="btn btn-ghost btn-sm" data-action="DanaTitipanCommitmentUI.openAssetPorsi" data-args='[${oi}]'>⚖️ Atur Porsi Aset</button>
@@ -1044,6 +1107,33 @@ const DanaTitipanCommitmentUI = {
     if (typeof openModal === 'function') openModal('titipanCommitmentModal');
   },
 
+  // addNewOwner() — Sesi 523-B (BUG-01). Modal ini sebelumnya HANYA bisa
+  // pilih owner existing dari listExistingOwners() (dropdown read-only,
+  // Design Lock S485d) -- tidak ada jalan membuat owner baru langsung
+  // dari sini, harus muter dulu lewat "⚖️ Atur Porsi Kepemilikan" di
+  // Investasi/Aset. Fix ini TIDAK melanggar Design Lock: tetap 0 free-text
+  // langsung ke saveCommitment() (ownerId masih wajib dari
+  // listExistingOwners()) -- yang baru cuma jalur MEMBUAT owner itu lebih
+  // dulu via OwnerRegistry.findOrCreate() (S489, API resmi, sama seperti
+  // dipakai assetOwnersModal/investmentOwnersModal), lalu open() dipanggil
+  // ulang supaya dropdown ter-refresh dan owner baru otomatis dipilih
+  // (listExistingOwners() sudah include OwnerRegistry.listAll() sejak
+  // S492, jadi owner baru ini langsung muncul di union).
+  async addNewOwner() {
+    if (typeof OwnerRegistry === 'undefined' || typeof OwnerRegistry.findOrCreate !== 'function') {
+      if (typeof toast === 'function') toast('⚠️ Fitur tambah pemilik belum siap dimuat');
+      return;
+    }
+    const name = typeof showPromptModal === 'function'
+      ? await showPromptModal({ title: 'Tambah Pemilik Baru', message: 'Nama pemilik dana titipan', placeholder: 'Budi, Ibu, dll' })
+      : (typeof prompt === 'function' ? prompt('Nama pemilik dana titipan') : null);
+    const trimmed = (name || '').trim();
+    if (!trimmed) return;
+    const ownerId = OwnerRegistry.findOrCreate(trimmed);
+    DanaTitipanCommitmentUI.open(ownerId);
+    if (typeof toast === 'function') toast('✅ Pemilik "' + trimmed + '" ditambahkan');
+  },
+
   // save() — Sesi 485d. Baca form, panggil
   // `DanaTitipanPortfolioAPI.saveCommitment()` (S485b, validasi
   // existing-owner-only + principal>=0 SUDAH ADA di sana — 0 validasi
@@ -1090,6 +1180,36 @@ const DanaTitipanCommitmentUI = {
     if (typeof closeModal === 'function') closeModal('titipanCommitmentModal');
     if (typeof DanaTitipanPortfolioPresenter !== 'undefined') DanaTitipanPortfolioPresenter.render();
     if (typeof toast === 'function') toast('🗑️ Pokok dana titipan dihapus');
+  },
+
+  // removeOwnerLinkage(ownerId) — Sesi 523-C (BUG-02/BUG-06). Dipanggil
+  // LANGSUNG dari kartu owner di dashboard (tombol "🔓 Lepas Keterikatan
+  // Dana Titipan") — TIDAK perlu buka modal `titipanCommitmentModal`
+  // dulu (beda dari `deleteCommitment()` di atas yang baca
+  // `editingOwnerId`, HANYA valid kalau modal itu sedang terbuka).
+  // `ownerId` diberikan LANGSUNG dari `data-args` kartu (pola sama
+  // `DanaTitipanReturnUI.open(ownerId)`), 0 baca state modal tersembunyi.
+  // 100% reuse `DanaTitipanPortfolioAPI.removeOwnerLinkage()` (0 logic
+  // baru) + `askConfirm()` dulu (pola sama `deleteCommitment()`/
+  // `DanaTitipanReturnUI.deleteEntry()`). Pesan konfirmasi eksplisit
+  // menyebutkan bedanya dari delete commitment biasa (porsi Investasi/
+  // Aset & identitas owner TIDAK ikut hilang) supaya user tidak salah
+  // duga ini "hapus owner".
+  async removeOwnerLinkage(ownerId) {
+    if (typeof DanaTitipanPortfolioAPI === 'undefined') return;
+    if (!ownerId) { if (typeof toast === 'function') toast('⚠️ Owner tidak dikenali'); return; }
+    if (typeof askConfirm === 'function') {
+      const ok = await askConfirm(
+        'Lepas keterikatan owner ini dari Dana Titipan?\nPokok dana titipan yang tercatat akan dihapus. Porsi kepemilikan di Investasi/Aset TIDAK ikut berubah, dan identitas pemilik ini tetap ada (bisa dipakai lagi kapan saja).',
+        { okText: 'Ya, Lepas' },
+      );
+      if (!ok) return;
+    }
+    const removed = DanaTitipanPortfolioAPI.removeOwnerLinkage(ownerId);
+    if (typeof DanaTitipanPortfolioPresenter !== 'undefined') DanaTitipanPortfolioPresenter.render();
+    if (typeof toast === 'function') {
+      toast(removed ? '🔓 Keterikatan Dana Titipan dilepas' : 'ℹ️ Owner ini belum punya pokok dana titipan tercatat');
+    }
   },
 
   // openAssetPorsi(i) — SESI 515 (Owner -> Nominal -> Asset -> Kuota ->
