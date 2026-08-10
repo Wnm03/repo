@@ -1037,6 +1037,42 @@ const GROUP_B = [
   // DanaTitipanPortfolioAPI/DanaTitipanPortfolioPresenter — ditaruh
   // setelah keduanya, 0 forward-reference.
   'modules/finance/titipan-expense-ui.js',
+
+  // S529-CORRECTIVE: registrasi 7 file Ride (S522-S528) yang belum
+  // pernah terdaftar ke GROUP_A/GROUP_B sejak dibuat -- lihat
+  // RIDE-S522-S528-FINAL-AUDIT.md (CRITICAL FINDING). Urutan berikut
+  // diverifikasi langsung dari source (grep `typeof Ride[A-Za-z]+`),
+  // BUKAN ditebak:
+  //   RideActivityMetrics (S522) -- 0 dependency ke module Ride lain.
+  'modules/vehicle/ride-activity-metrics.js',
+  //   RideGpsRecorder (S523) -- 0 dependency runtime ke module Ride lain
+  //   (komentar header menyebut RideActivityMetrics, tapi tidak ada
+  //   `typeof RideActivityMetrics` guard/pemanggilan di file ini).
+  'modules/vehicle/ride-gps-recorder.js',
+  //   RideStorage (S524, S524-C listRides()) -- 0 dependency runtime ke
+  //   module Ride lain (sama seperti ride-gps-recorder.js: disebut di
+  //   komentar header saja).
+  'modules/vehicle/ride-storage.js',
+  //   RideUI (S525) -- ditaruh SETELAH ketiga file di atas (dependency:
+  //   `typeof RideGpsRecorder`/`typeof RideStorage`/
+  //   `typeof RideActivityMetrics` guard di geolocationAvailable()/
+  //   listRides()/dst, baris ~95-97 & ~325 & ~366).
+  'modules/vehicle/ride-ui.js',
+  //   RideMap (S526) -- ditaruh SETELAH ride-activity-metrics.js
+  //   (dependency: `typeof RideActivityMetrics` guard opsional di
+  //   calculateBoundingBox() fallback, baris ~121-122). Tidak
+  //   bergantung pada RideStorage/RideUI meski disebut di komentar.
+  'modules/vehicle/ride-map.js',
+  //   RideHistory/RideAnalytics (S527) -- ditaruh SETELAH RideStorage &
+  //   RideActivityMetrics (dependency: `typeof RideStorage`/
+  //   `typeof RideActivityMetrics` guard di baris ~114 & ~147 & ~206).
+  'modules/vehicle/ride-history.js',
+  //   RideVehicleIntegration (S528) -- ditaruh PALING AKHIR (dependency:
+  //   `typeof RideHistory`/`RideHistory.getRideSummary` guard, baris
+  //   ~81). Dependency ke fuel-cost-analytics.js/fuel-maintenance-
+  //   engine.js (Rp/km, predictService()) sudah dimuat jauh lebih awal
+  //   di GROUP_B (lihat blok fuel di atas) -- 0 forward-reference.
+  'modules/vehicle/ride-vehicle-integration.js',
 ];
 const ALL_SOURCE = [...GROUP_A, ...GROUP_B];
 const HTML_FILES = ['index.html', 'app_production.html'];
