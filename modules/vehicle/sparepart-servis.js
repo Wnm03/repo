@@ -119,22 +119,40 @@ codeEl.value=codeFromName(document.getElementById('sparepartName').value);
 // Cadang (VehicleCatalog, async) yang dipakai getItemSuggestions() --
 // kategori & stok sudah sinkron langsung dari D tiap kali disuggest, tidak
 // perlu di-cache.
+// populateDatalist() -- BUGFIX (audit user, Sesi 549): cache nama part
+// Katalog Suku Cadang dulu diisi dari SEMUA kendaraan tanpa filter, beda
+// dgn dropdown "Part dari Vehicle Catalog" (servisCatalogPartId) di modal
+// yang sama yang SUDAH difilter pakai VehicleCatalog.filterForVehicle().
+// Fix: filter di sini juga pakai fungsi yang sama (0 fungsi baru), pakai
+// curVehicleId (kendaraan aktif) yang saat ini dipilih. Part universal
+// (compatibleVehicleIds kosong/belum diisi) tetap ikut tampil di kendaraan
+// mana pun -- perilaku sama seperti filterForVehicle()/isPartForVehicle()
+// di tempat lain (fail-open, backward compatible, 0 data lama hilang).
 populateDatalist(){
 const hasCatalog=typeof VehicleCatalog!=='undefined'&&VehicleCatalog&&typeof VehicleCatalog.getAll==='function';
 if(!hasCatalog)return;
+const vid=(typeof curVehicleId!=='undefined')?curVehicleId:null;
 VehicleCatalog.getAll().then(items=>{
-Sparepart._catalogNameCache=(items||[]).map(it=>it.partName).filter(Boolean);
+const filtered=(typeof VehicleCatalog.filterForVehicle==='function')?VehicleCatalog.filterForVehicle(items,vid):(items||[]);
+Sparepart._catalogNameCache=(filtered||[]).map(it=>it.partName).filter(Boolean);
 }).catch(()=>{});
 },
 // getItemSuggestions() -- gabungan (1) nama Kategori Sparepart, (2) nama
 // item Stok Sparepart yang masih ada stoknya (qty>0), (3) nama part Katalog
-// Suku Cadang (dari cache populateDatalist() di atas). Dedup case-
+// Suku Cadang (dari cache populateDatalist() di atas, sudah difilter per
+// kendaraan aktif -- lihat catatan di populateDatalist()). Dedup case-
 // insensitive, sama persis sumber & urutan gabungan datalist lama (Sesi
 // 297) -- cuma cara tampilnya yang berubah (suggest-box, bukan datalist).
+// BUGFIX (audit user, Sesi 549): Stok Sparepart (D.partsStock) dulu ikut
+// SEMUA item tanpa pandang kendaraan aktif, padahal Sparepart.isPartForVehicle()
+// sudah ada & dipakai persis utk kasus yang sama di dropdown "Gunakan Stok
+// Sparepart" (lihat baris ~412 di file ini). Fix: reuse fungsi yang sama
+// di sini juga -- 0 fungsi baru, 0 skema data baru.
 getItemSuggestions(){
 const names=new Map();
+const vid=(typeof curVehicleId!=='undefined')?curVehicleId:null;
 D.sparepartCats.forEach(c=>{ if(c.name) names.set(c.name.toLowerCase(),c.name); });
-D.partsStock.forEach(p=>{ if(p.name&&p.qty>0&&!names.has(p.name.toLowerCase())) names.set(p.name.toLowerCase(),p.name); });
+D.partsStock.forEach(p=>{ if(p.name&&p.qty>0&&Sparepart.isPartForVehicle(p,vid)&&!names.has(p.name.toLowerCase())) names.set(p.name.toLowerCase(),p.name); });
 (Sparepart._catalogNameCache||[]).forEach(n=>{ if(n&&!names.has(n.toLowerCase()))names.set(n.toLowerCase(),n); });
 return Array.from(names.values());
 },
