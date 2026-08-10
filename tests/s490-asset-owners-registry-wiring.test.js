@@ -160,12 +160,20 @@ test('8. saveOwners(): baris non-SELF dgn ownerId SUDAH ada (dari dropdown pilih
   assert.equal(savedNonSelf.ownerId, 'r1');
 });
 
-test('9. saveOwners(): baris SELF baru tetap pakai uid() (TIDAK lewat OwnerRegistry, tidak berubah)', () => {
+// SESI 547 (GAP3-AUD-001 poin 4): test ini SEBELUMNYA mengunci baris SELF
+// baru pakai uid() acak (`'gen_1'`) sebagai "TIDAK berubah" -- itu justru
+// bug yang diperbaiki S547 (lihat tests/s547-self-owner-identity-unification.test.js):
+// SELF harus konsisten 1 literal ('SELF') lintas aset/investasi, bukan 2
+// identitas lepas via OwnerRegistry per-nama, itu pun uid() acak. Assertion
+// diupdate mengikuti perilaku BARU yang benar (0 duplikasi test dgn s547 --
+// file ini tetap fokus "TIDAK lewat OwnerRegistry.findOrCreate()", s547
+// fokus "konsistensi ownerId SELF lintas entity").
+test('9. saveOwners(): baris SELF baru pakai literal \'SELF\' (TIDAK lewat OwnerRegistry.findOrCreate())', () => {
   const D = makeD([{ id: 'a1', name: 'Ruko', nilai: 100000000 }]);
   const ctx = makeCtx(D, makeStatefulDom());
   ctx.Aset._ownersModalAsset = D.assets[0];
   ctx.Aset._ownersDraft = [{ ownerId: '', ownerName: 'Aku', porsi: 100, isSelf: true }];
   ctx.Aset.saveOwners();
-  assert.equal(D.ownerRegistry.length, 0);
-  assert.equal(D.assets[0].owners[0].ownerId, 'gen_1');
+  assert.equal(D.ownerRegistry.length, 0, 'SELF tidak masuk OwnerRegistry (registry cuma utk non-SELF)');
+  assert.equal(D.assets[0].owners[0].ownerId, 'SELF');
 });
