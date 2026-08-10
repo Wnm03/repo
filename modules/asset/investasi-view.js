@@ -315,10 +315,21 @@ const InvestmentUI = {
         return;
       }
     }
+    // SESI 547 (GAP3-AUD-001 poin 4, mirror Aset.saveOwners() S547): baris baru
+    // isSelf:true tanpa ownerId existing pakai literal 'SELF' (sama seperti
+    // dipakai getOwners() default & fallback investasi.js) -- bukan uid() acak
+    // lagi -- supaya "Milik Sendiri" konsisten 1 identitas lintas aset/investasi.
+    // 'SELF' cuma dipakai SEKALI per holding (ownerId wajib unik), baris isSelf
+    // ke-2 dst (kalau ada, sama seperti Aset -- lihat onOwnerIsSelfToggle()
+    // di bawah) tetap fallback uid() spt sebelumnya.
+    let selfIdUsed = draft.some((o) => o.ownerId && String(o.ownerId).trim() === 'SELF');
     const owners = draft.map((o) => {
       let ownerId;
       if (o.ownerId && String(o.ownerId).trim()) {
         ownerId = String(o.ownerId).trim();
+      } else if (o.isSelf && !selfIdUsed) {
+        ownerId = 'SELF';
+        selfIdUsed = true;
       } else if (!o.isSelf && typeof OwnerRegistry !== 'undefined') {
         ownerId = OwnerRegistry.findOrCreate(o.ownerName.trim());
       } else {

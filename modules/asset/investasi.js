@@ -131,6 +131,18 @@ const Investment = {
       // rumus/ledger baru — nilai investasi sendiri tetap dicatat penuh & transparan.
       fundSource: fundSource === 'titipan' ? 'titipan' : 'sendiri',
       titipanOwner: titipanOwner || '',
+      // custodianId (S540-B, Tahap 2/4 DESIGN-S540-CUSTODIAN-GROUPING.md):
+      // referensi opsional ke `D.investmentCustodians[].id`
+      // (CustodianRegistry, S540-A) — platform/kustodian tempat instrumen
+      // ini dibeli (mis. semua reksadana yang dibeli lewat 🏦 Majoris).
+      // Default `null` (belum ada kustodian) — TAHAP INI READ-ONLY, 0 UI
+      // untuk mengisinya (itu S540-C). Holding lama otomatis tidak punya
+      // field ini sama sekali (bukan cuma null — field-nya literally tidak
+      // ada di object lama), `getHoldings()` tetap balikin apa adanya
+      // (pass-through, 0 transformasi) — consumer lain yang belum tahu
+      // soal field ini (investasi-list-view.js, invest-ai-widget.js, dana-
+      // titipan-portfolio-presenter.js, dst) TIDAK terpengaruh sama sekali.
+      custodianId: null,
       debtLinkId: null,
       createdAt: Date.now(),
     };
@@ -153,6 +165,17 @@ const Investment = {
     if (patch.purchaseDate !== undefined) h.purchaseDate = patch.purchaseDate || null;
     if (patch.fundSource !== undefined) h.fundSource = patch.fundSource === 'titipan' ? 'titipan' : 'sendiri';
     if (patch.titipanOwner !== undefined) h.titipanOwner = patch.titipanOwner || '';
+    // custodianId (S540-C, Tahap 3/4 DESIGN-S540-CUSTODIAN-GROUPING.md):
+    // jalur tulis BARU yang sengaja belum ada di S540-B (dicatat eksplisit
+    // di komentar sesi itu sbg scope S540-C). Referensi opsional ke
+    // `D.investmentCustodians[].id` (CustodianRegistry, S540-A) — diisi
+    // lewat dropdown "Pilih/Buat Kustodian" di investmentModal
+    // (InvestmentListUI, investasi-list-view.js). Nilai falsy (''/null)
+    // ditulis sbg `null` (lepas kustodian) — pola sama persis
+    // `patch.titipanOwner`/field opsional lain di atas. 0 validasi bahwa
+    // id-nya benar-benar ada di registry (sama seperti `ownerId` di
+    // getOwners() — caller/UI yang menjaga id valid, murni referensi).
+    if (patch.custodianId !== undefined) h.custodianId = patch.custodianId || null;
     Investment._syncTitipanDebt(h);
     _invSave();
     return h;
@@ -267,6 +290,77 @@ const Investment = {
     D.debts = D.debts.filter((d) => !(d.linkedInvestmentId === h.id && !keepIds.has(d.linkedOwnerId || 'titipan_investor')));
     const linkedNow = D.debts.filter((d) => d.linkedInvestmentId === h.id);
     h.debtLinkId = linkedNow.length === 1 ? linkedNow[0].id : null;
+  },
+
+  // migrateLegacyTitipanOwners() — Sesi 545 (GAP3-AUD-001, docs/BUG_REGISTRY.md,
+  // ditutup via audit dokumentasi s485f/PATCH-README-s485f-gap3-audit-closeout.md).
+  // Migrasi SEKALI JALAN: holding legacy fundSource==='titipan' yang BELUM PERNAH
+  // lewat setOwners() (h.owners belum array) selalu balik ownerId LITERAL
+  // 'titipan_investor' dari getOwners() (branch sintesis di atas) — SEMUA holding
+  // titipan legacy beda orang collapse jadi 1 identitas yang sama kalau
+  // dibandingkan lintas holding/lintas domain (Aset pakai OwnerRegistry sejak
+  // S490, baris baru Investasi pakai OwnerRegistry sejak S491 — HANYA jalur
+  // sintesis legacy ini yang belum). Fungsi ini menulis h.owners eksplisit
+  // (derive ownerId per NAMA via OwnerRegistry.findOrCreate(), API resmi S489,
+  // 0 fungsi match baru) supaya holding lama masuk ke jalur MultiOwnerEngine
+  // (cabang 1 getOwners(), bukan sintesis 'titipan_investor' lagi) — pola SAMA
+  // PERSIS Investment.setOwners() yang sudah dipakai user lewat UI "⚖️ Atur
+  // Porsi Kepemilikan", cuma dipanggil otomatis untuk data lama.
+  //
+  // KENAPA TIDAK lazy di DALAM getOwners() itu sendiri (opsi yang ditolak):
+  // getOwners() dipanggil berkali-kali per render (getter murni, 0 side-effect
+  // sejak awal file ini) — OwnerRegistry.findOrCreate() PUNYA side-effect (push
+  // ke D.ownerRegistry + save()), itu pelanggaran kontrak getter kalau ditaruh
+  // di sana. Lebih parah lagi: ownerId hasil sintesis lazy akan BEDA dari
+  // 'titipan_investor' literal yang SUDAH tersimpan di D.debts[].linkedOwnerId
+  // entri lama → _syncTitipanDebt() (dipanggil dari banyak titik) jadi salah
+  // cocok, entri utang lama KEBUANG & dibuat ulang dgn `id` baru tiap kali beda
+  // sesi render. Migrasi eksplisit sekali-jalan (fungsi ini) menghindari itu.
+  //
+  // KONTINUITAS UTANG: entri D.debts hasil _syncTitipanDebt() versi LAMA
+  // tersimpan dgn `linkedOwnerId:'titipan_investor'` literal. Kalau field itu
+  // tidak disesuaikan LEBIH DULU, _syncTitipanDebt() yang dipanggil dari
+  // setOwners() di bawah TIDAK akan menemukan entri lama itu (karena mencari
+  // `linkedOwnerId===ownerId baru dari registry`) → entri lama KEBUANG, entri
+  // baru dibuat dgn `id` baru (histori/status `lunas` hilang). Makanya baris
+  // `linkedOwnerId` di-relabel MANUAL di sini dulu (SEBELUM setOwners()
+  // dipanggil) supaya _syncTitipanDebt() mencocokkan & meng-UPDATE entri
+  // existing, bukan hapus+buat baru — 0 perubahan `id`/histori `lunas` pada
+  // entri utang yang sudah ada.
+  //
+  // IDEMPOTENT: holding yang SUDAH punya `h.owners` (array) di-skip
+  // (`Array.isArray(h.owners)` check) — jalan ulang fungsi ini aman, 0 efek
+  // kalau dipanggil lagi setelah migrasi pertama.
+  //
+  // TIDAK di-wire ke boot/auto-run sesi ini (disiplin "1 task = 1 sesi" sama
+  // persis S489: fondasi dulu, TANPA wiring) — keputusan KAPAN/DI MANA
+  // dipanggil (mis. sekali saat boot, atau tombol manual) sengaja ditunda ke
+  // sesi terpisah yang eksplisit memutuskan itu.
+  //
+  // Return: {migrated, skipped} — jumlah holding yang dimigrasi vs dilewati
+  // (bukan 'titipan' atau sudah punya owners[]).
+  migrateLegacyTitipanOwners() {
+    if (typeof D === 'undefined' || !Array.isArray(D.investments)) return { migrated: 0, skipped: 0 };
+    if (typeof OwnerRegistry === 'undefined' || typeof OwnerRegistry.findOrCreate !== 'function') {
+      throw new Error('OwnerRegistry belum dimuat');
+    }
+    let migrated = 0;
+    let skipped = 0;
+    D.investments.forEach((h) => {
+      if (!h || h.fundSource !== 'titipan' || Array.isArray(h.owners)) { skipped++; return; }
+      const ownerName = (h.titipanOwner && String(h.titipanOwner).trim()) || 'Pemilik dana titipan';
+      const ownerId = OwnerRegistry.findOrCreate(ownerName);
+      if (Array.isArray(D.debts)) {
+        D.debts.forEach((d) => {
+          if (d && d.linkedInvestmentId === h.id && (d.linkedOwnerId || 'titipan_investor') === 'titipan_investor') {
+            d.linkedOwnerId = ownerId;
+          }
+        });
+      }
+      Investment.setOwners(h.id, [{ ownerId, porsi: 100, ownerName, isSelf: false }]);
+      migrated++;
+    });
+    return { migrated, skipped };
   },
 
   // Hitung ulang unit & avgPrice sebuah holding murni dari riwayat transaksi

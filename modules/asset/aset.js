@@ -1117,10 +1117,27 @@ if(!draft[i].ownerName||!draft[i].ownerName.trim()){toast('⚠️ Nama pemilik b
 // OwnerRegistry.findOrCreate() (dedup by nama, konsisten lintas aset), BUKAN uid()
 // langsung lagi. Baris SELF & baris yang ownerId-nya SUDAH ada (dari dropdown pilih
 // existing, atau data lama) TIDAK disentuh -- perilaku persis sebelum S490.
+// SESI 547 (GAP3-AUD-001 poin 4): baris baru isSelf:true SEBELUMNYA jatuh ke uid()
+// acak juga -- beda dari ownerId 'SELF' literal yang dipakai getOwners() default
+// (multi-owner-engine.js) & investasi.js. Akibatnya "Milik Sendiri" yang baru
+// ditambah lewat modal ini (bukan hasil sintesis default) bisa punya ownerId
+// BEDA-BEDA antar aset/investasi -- SELF, yang seharusnya SATU identitas
+// universal (bukan per-nama spt OwnerRegistry), jadi tidak konsisten. Fix: baris
+// isSelf:true tanpa ownerId existing pakai literal 'SELF' -- 0 fungsi baru,
+// cuma menyamakan ke literal yang sudah dipakai di mana-mana. TAPI: modul ini
+// SENGAJA membolehkan >1 baris isSelf:true sekaligus (lihat komentar
+// onOwnerIsSelfToggle() di atas, totalnya dijumlah apa adanya) -- 'SELF' cuma
+// boleh dipakai SEKALI per aset (ownerId wajib unik, validateOwners()), jadi
+// baris isSelf ke-2 dst yang ownerId-nya masih kosong tetap fallback ke uid()
+// spt sebelumnya (0 perubahan utk kasus itu -- kasus umum tetap 1 baris SELF).
+let selfIdUsed=draft.some((o)=>o.ownerId&&String(o.ownerId).trim()==='SELF');
 const owners=draft.map((o)=>{
 let ownerId;
 if(o.ownerId&&String(o.ownerId).trim()){
 ownerId=String(o.ownerId).trim();
+}else if(o.isSelf&&!selfIdUsed){
+ownerId='SELF';
+selfIdUsed=true;
 }else if(!o.isSelf&&typeof OwnerRegistry!=='undefined'){
 ownerId=OwnerRegistry.findOrCreate(o.ownerName.trim());
 }else{
