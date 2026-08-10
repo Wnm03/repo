@@ -4,7 +4,7 @@
 // data-default.js (v79) — file itu HARUS dimuat SEBELUM file ini karena dibaca langsung di `let D = {...}`.
 // PENTING: file ini HARUS dimuat sesuai urutan build.js (GROUP_A/GROUP_B) karena beberapa modul saling referensi. Urutan grup ini: data-default.js, features-helpers-global-security.js, diagnostik-versi.js, format-tema.js, error-handler.js, helper-teks.js, keamanan-pin.js, modal-navigasi.js, reset-gaji-mingguan.js, debug-console.js, pengaturan-search.js, onboarding.js, kalkulator-input.js, scan-ocr.js, akun.js, gaji-calc.js, transaksi.js, profil-pengaturan.js, kategori.js, tagihan-kalender.js, backup-restore.js, payroll-absensi.js, tukang-absensi.js
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const DATA_MIGRATIONS=[
 {toVersion:2,desc:'Tambah kategori baku Investasi & Sedekah/Donasi (pengeluaran) utk user lama',migrate(d){
 if(!d.categories||!d.categories.expense)return;
@@ -30,6 +30,11 @@ if(!Array.isArray(d.transactions)||!d.transactions.length)return;
 const liveIds=new Set([...(d.bills||[]),...(d.billsArchive||[])].map(b=>b.id));
 d.transactions.forEach(t=>{ if(t.billLinkId!=null&&!liveIds.has(t.billLinkId)) delete t.billLinkId; });
 }},
+{toVersion:6,desc:'GAP3-AUD-001 (Sesi 545/546, docs/BUG_REGISTRY.md): holding Investasi legacy fundSource==="titipan" yang belum pernah lewat Investment.setOwners() selalu balik ownerId literal "titipan_investor" dari Investment.getOwners() apa pun titipanOwner-nya -- 2 orang beda jadi 1 identitas kalau dibandingkan lintas holding/domain. Investment.migrateLegacyTitipanOwners() (Sesi 545) derive ownerId real per nama lewat OwnerRegistry.findOrCreate() (idempotent, 0 efek kalau dijalankan ulang -- guard di dalam fungsi itu sendiri lewat Array.isArray(h.owners), bukan lewat SCHEMA_VERSION di sini, jadi aman dipanggil lagi manual/lewat restore JSON versi lama). app-bootstrap.js dimuat PALING TERAKHIR (lihat komentar di file itu) jadi Investment/OwnerRegistry sudah pasti terdefinisi saat migrate() ini jalan.',migrate(d){
+if(typeof Investment!=='undefined'&&typeof Investment.migrateLegacyTitipanOwners==='function'){
+Investment.migrateLegacyTitipanOwners();
+}
+}},
 ];
 function runDataMigrations(fromVersion){
 let v=Number.isFinite(fromVersion)?fromVersion:0;
@@ -53,8 +58,8 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's544-titipan-duplicate-container-scoped-porsi-and-rupiah-rounding';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's544-titipan-duplicate-container-scoped-porsi-and-rupiah-rounding';
+const APP_BUILD_VERSION = 's548-merge-tx-sync-servis-plus-s540bc-s545-548';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's548-merge-tx-sync-servis-plus-s540bc-s545-548';
 let D = {
 schemaVersion:SCHEMA_VERSION,
 transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],productStockCorrections:[],

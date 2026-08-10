@@ -1,6 +1,6 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s544-titipan-duplicate-container-scoped-porsi-and-rupiah-rounding';
+const MODULE_CALC_VERSION='s548-merge-tx-sync-servis-plus-s540bc-s545-548';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){
