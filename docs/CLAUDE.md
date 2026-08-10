@@ -10854,3 +10854,61 @@ sukses, `?v=1098`, `index.html`/`app_production.html` identik.
 
 ## ZIP
 `kw_release_sesi396_akun-multiowner-linked-saldo-filter_v1098.zip`.
+
+# Sesi 543 (2026-08-10) — Fix: dropdown "Pilih Aset" Dana Titipan ter-reset diam-diam ("belum sinkron")
+
+## Konteks
+Laporan user: dropdown "Pilih Aset" per kartu owner (tab Dana Titipan)
+kelihatan sudah terisi (mis. "Sucorinvest"), tapi tombol "⚖️ Atur Porsi
+Aset" tetap toast "Pilih aset dulu". Root cause: `_renderNow()` mengganti
+seluruh `el.innerHTML` tiap dipanggil ulang (dipicu `renderLaporan()`
+setiap ada perubahan lain di halaman, mis. harga investasi live update),
+dan `_assetOptionsHtml()` selalu generate opsi placeholder tanpa
+`selected` — pilihan user diam2 ter-reset sebelum sempat klik tombol.
+
+## Perubahan
+- `modules/finance/dana-titipan-portfolio-presenter.js`:
+  `_captureAssetPickSelections()`/`_restoreAssetPickSelections()` (baru),
+  dipanggil di awal/akhir `_renderNow()`; preservasi PER `ownerId` (via
+  `data-owner-id` baru di tiap `<select id="titipanAssetPick_N">`, BUKAN
+  index — index bisa bergeser antar render kalau urutan owners berubah,
+  `build()` sort by allocatedPrincipal desc). Guard `typeof
+  el.querySelectorAll` — aman di test harness ringan tanpa
+  querySelectorAll. 0 logika projection/aggregasi lain disentuh.
+
+## Test
+Test baru `tests/s543-titipan-asset-pick-preserve-selection.test.js` (4
+test: baseline tanpa interaksi, preservasi setelah render ulang,
+preservasi saat urutan owner bergeser index, guard DOM tanpa
+querySelectorAll).
+`node --test tests/*.test.js` -> **3757/3757 pass** (naik dari 3753, 0
+regresi).
+
+## Build
+`node scripts/build.js s543-titipan-assetpick-dropdown-preserve-selection`
+-> sukses, `?v=1278`, `index.html`/`app_production.html` identik,
+`verify-bundle-freshness.js` konfirmasi segar.
+
+## Status lint & release gate
+Lint & minify: **tidak tersedia, di-override** (eslint/esbuild tidak
+terpasang, sandbox tanpa akses jaringan) — dicatat di
+`docs/RELEASE-GATE-LOG.md`. html-sync: **lolos** murni. Gate akhir:
+**LOLOS**. Detail lengkap di
+`FIX-v1277-to-v1278-s543-titipan-assetpick-dropdown-preserve-selection.md`.
+
+## Progress
+Item #1 laporan user (bug dropdown) selesai penuh. Item #2 (tombol
+"hapus akun pemilik") dikonfirmasi BUKAN bug — keputusan desain S523-C
+sengaja melarang global owner deletion, keputusan produk §4 rekomendasi
+S523 belum diambil. TIDAK dikerjakan sesi ini, menunggu klarifikasi user.
+
+## Next TODO
+Klarifikasi keputusan produk soal "hapus akun pemilik" (scope: apakah
+mau ditambah, dan perilaku terhadap data lintas domain yang masih
+terikat) sebelum menyentuh area ini.
+
+## Known Issue
+Tidak ada known issue baru dari sesi ini.
+
+## ZIP
+`kw_release_sesi543_titipan-assetpick-dropdown-preserve-selection_v1278.zip`.
