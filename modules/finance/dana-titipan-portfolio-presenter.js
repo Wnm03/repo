@@ -1087,9 +1087,55 @@ const DanaTitipanPortfolioPresenter = {
   // (kalau ada) di dalam `#titipanHoldingsList_{i}`, supaya user LANGSUNG
   // lihat baris mana yang berkaitan dgn pilihan dropdown-nya sebelum tap
   // tombol manapun. 0 aggregasi/CRUD baru, cuma DOM highlight sementara.
-  onAssetPickChange(i) {
-    const sel = document.getElementById('titipanAssetPick_' + i);
-    const list = document.getElementById('titipanHoldingsList_' + i);
+  // SESI 544 (audit laporan user: toast "⚠️ Pilih aset dulu" tetap
+  // muncul walau dropdown "Pilih Aset" kelihatan sudah terisi, MASIH
+  // terjadi setelah fix S543 preserve-selection). ROOT CAUSE BARU
+  // (beda dari S543): `renderLaporan()` (modules-render.js) me-render
+  // `DanaTitipanPortfolioPresenter` ke DUA container SEKALIGUS tiap
+  // panggilan -- `#danaTitipanPortfolioList` (kartu lama di tab
+  // Uang/Dana Kelolaan) DAN `#danaTitipanTabList` (sub-tab Laporan >
+  // Dana Titipan, Sesi 498) -- KEDUANYA ada permanen di DOM (index.html,
+  // tidak dilepas/dibuat ulang per tab aktif, cuma disembunyikan via
+  // CSS). Karena isi kedua container 100% SAMA (sumber data sama,
+  // `DanaTitipanPortfolioAPI.build()`), ID `titipanAssetPick_N`/
+  // `titipanHoldingsList_N`/`titipanOwnerCard_N` di render() jadi
+  // DUPLIKAT persis di 2 tempat sekaligus. `document.getElementById()`
+  // SELALU balikin elemen PERTAMA yang match di seluruh dokumen --
+  // kalau user pilih dropdown di container KEDUA (mis. lagi buka
+  // sub-tab Laporan > Dana Titipan), tapi container PERTAMA (kartu tab
+  // Uang, mungkin tidak pernah disentuh) render duluan di HTML, maka
+  // `getElementById('titipanAssetPick_N')` diam2 balikin punya
+  // container PERTAMA (masih placeholder kosong) -- BUKAN yang baru
+  // saja dipilih user. Toast "Pilih aset dulu" muncul walau user MERASA
+  // sudah pilih (S543 preserve-selection sendiri BENAR & tetap berguna
+  // -- ini bug DUPLIKAT ID yang beda lapis, S543 tidak menyentuhnya
+  // krn scope-nya cuma re-render dalam 1 container yang sama).
+  //
+  // FIX: 0 lagi baca id global -- sekarang terima ELEMEN pemicu
+  // langsung (`this` dari <select onchange>, `$el` dari data-action
+  // dispatcher, lihat features-helpers-global-security.js
+  // `_dataActionClickHandler` yang SUDAH mendukung placeholder `$el`),
+  // lalu telusur DOM relatif (`closest('details')` -> `querySelector`)
+  // supaya SELALU dapat elemen di CONTAINER YANG SAMA dgn yang diklik
+  // user, apa pun urutan render 2 container itu. Dual-mode: kalau
+  // dipanggil dgn angka index (pola lama, dipakai test existing/kode
+  // lama mana pun yang belum sempat diupdate) tetap fallback ke
+  // `getElementById()` lama (0 breaking change), TAPI itu tetap rawan
+  // bug duplikat ID yang sama -- jalur BARU (elemen) yang dipakai
+  // markup render() sekarang (lihat perubahan di bawah).
+  onAssetPickChange(target) {
+    let sel = null;
+    let list = null;
+    let card = null;
+    if (target && typeof target === 'object' && typeof target.closest === 'function') {
+      sel = target;
+      card = target.closest('details');
+      list = card && typeof card.querySelector === 'function' ? card.querySelector('[id^="titipanHoldingsList_"]') : null;
+    } else {
+      sel = document.getElementById('titipanAssetPick_' + target);
+      list = document.getElementById('titipanHoldingsList_' + target);
+      card = document.getElementById('titipanOwnerCard_' + target);
+    }
     if (!list) return;
     const rows = list.querySelectorAll('[data-linked-asset-id]');
     rows.forEach((row) => { row.style.outline = ''; row.style.borderRadius = ''; row.style.background = ''; });
@@ -1103,7 +1149,6 @@ const DanaTitipanPortfolioPresenter = {
       matched.style.outline = '2px solid var(--accent, #4a9eff)';
       matched.style.borderRadius = '6px';
       matched.style.background = 'rgba(74,158,255,0.08)';
-      const card = document.getElementById('titipanOwnerCard_' + i);
       if (card && 'open' in card) card.open = true;
       matched.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
@@ -1243,8 +1288,8 @@ const DanaTitipanPortfolioPresenter = {
             <button type="button" class="btn btn-ghost btn-sm" style="padding:7px 4px;font-size:10px;line-height:1.2;gap:2px;white-space:normal;text-align:center" data-action="DanaTitipanCommitmentUI.removeOwnerLinkage" data-args="${escapeHtml(JSON.stringify([o.ownerId]))}">🔓 Lepas Keterikatan Dana Titipan</button>
           </div>
           <div class="u-flex u-gap4 u-mb6 u-ml10 u-fs11">
-            <select id="titipanAssetPick_${oi}" data-owner-id="${escapeHtml(o.ownerId)}" class="fs u-flex-1" style="padding:8px 10px;font-size:11px" aria-label="Pilih Aset untuk Atur Porsi" onchange="DanaTitipanPortfolioPresenter.onAssetPickChange(${oi})">${this._assetOptionsHtml()}</select>
-            <button type="button" class="btn btn-ghost btn-sm" data-action="DanaTitipanCommitmentUI.openAssetPorsi" data-args='[${oi}]'>⚖️ Atur Porsi Aset</button>
+            <select id="titipanAssetPick_${oi}" data-owner-id="${escapeHtml(o.ownerId)}" class="fs u-flex-1" style="padding:8px 10px;font-size:11px" aria-label="Pilih Aset untuk Atur Porsi" onchange="DanaTitipanPortfolioPresenter.onAssetPickChange(this)">${this._assetOptionsHtml()}</select>
+            <button type="button" class="btn btn-ghost btn-sm" data-action="DanaTitipanCommitmentUI.openAssetPorsi" data-args='["$el"]'>⚖️ Atur Porsi Aset</button>
           </div>
           ${this._returnsHistoryHtml(o.ownerId)}
           <div id="titipanHoldingsList_${oi}">
@@ -1458,8 +1503,18 @@ const DanaTitipanCommitmentUI = {
   // owner/aset. 0 logika CRUD/porsi baru di sini — 100% delegasi ke
   // `Aset.openOwnersModalById()` (baru, aset.js Sesi 515) yang sendiri
   // 100% reuse `Aset.openOwnersModal()` existing (S392a).
-  openAssetPorsi(i) {
-    const sel = document.getElementById('titipanAssetPick_' + i);
+  // SESI 544 — sama root cause & fix dgn `onAssetPickChange()` di atas
+  // (duplikat ID `titipanAssetPick_N` di 2 container render bersamaan).
+  // Dual-mode: elemen tombol (`$el`, dipakai markup baru) ATAU angka
+  // index (fallback lama, 0 breaking change utk caller/test existing).
+  openAssetPorsi(target) {
+    let sel = null;
+    if (target && typeof target === 'object' && typeof target.closest === 'function') {
+      const card = target.closest('details');
+      sel = card && typeof card.querySelector === 'function' ? card.querySelector('select[id^="titipanAssetPick_"]') : null;
+    } else {
+      sel = document.getElementById('titipanAssetPick_' + target);
+    }
     const assetId = sel ? sel.value : '';
     if (!assetId) { if (typeof toast === 'function') toast('⚠️ Pilih aset dulu'); return; }
     if (typeof Aset === 'undefined' || typeof Aset.openOwnersModalById !== 'function') {
