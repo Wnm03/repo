@@ -362,8 +362,15 @@ const showStock=isExpense&&!showBbm&&isSparepartSubName(catName,subName);
 const showShop=isExpense&&!showBbm&&!showStock&&isShopStockCatName(catName,subName);
 const showShopSale=!isExpense&&isShopStockCatName(catName,subName);
 const showRenov=isExpense&&isRenovCatName(catName);
+// Sesi ini (sync sparepart -> servis, permintaan user): panel Servis muncul
+// bareng kondisi panel Stok Sparepart (showStock) -- keduanya boleh aktif
+// BERSAMAAN dalam 1 transaksi (mis. beli part sekaligus langsung dipasang),
+// lihat catatan applyTxServisFromTx() di tx-servis.js soal efek stok net.
+const showServis=showStock;
 bbmPanel.style.display=showBbm?'block':'none';
 stockPanel.style.display=showStock?'block':'none';
+const servisPanel=document.getElementById('txServisPanel');
+if(servisPanel)servisPanel.style.display=showServis?'block':'none';
 if(shopPanel)shopPanel.style.display=showShop?'block':'none';
 if(shopSalePanel)shopSalePanel.style.display=showShopSale?'block':'none';
 if(renovPanel)renovPanel.style.display=showRenov?'block':'none';
@@ -380,6 +387,13 @@ populateTxStockSelect();
 const chk=document.getElementById('txAddStock');
 if(chk)chk.checked=false;
 toggleTxStockFields();
+}
+if(showServis){
+if(typeof populateTxServisVehicleSelect==='function')populateTxServisVehicleSelect();
+} else {
+const servisChk=document.getElementById('txSyncServis');
+if(servisChk)servisChk.checked=false;
+if(typeof toggleTxServisFields==='function')toggleTxServisFields();
 }
 if(showShop){
 populateTxShopStockSelect();
@@ -511,6 +525,8 @@ _txAccManuallySet=false;
 _txCatLearnSource=null;
 document.getElementById('txModalTitle').textContent='Tambah Transaksi';
 document.getElementById('txDelBtn').style.display='none';
+const servisEditBtnNew=document.getElementById('txEditServisBtn');
+if(servisEditBtnNew)servisEditBtnNew.style.display='none';
 resetPayMethodLock();
 curTxType=type;
 document.getElementById('txDate').value=new Date().toISOString().split('T')[0];
@@ -653,6 +669,20 @@ if(renovLinkedProject){
 const renovProjSelEdit=document.getElementById('txRenovProject');
 if(renovProjSelEdit)renovProjSelEdit.value=renovLinkedProject.id;
 }
+// Sesi ini (sync sparepart -> servis, permintaan user): pola SAMA PERSIS
+// renovChkEdit tepat di atas -- tombol "✏️ Edit Detail Servis" cuma tampil
+// kalau transaksi ini memang sudah ter-link (t.servisLinkId) & baris
+// D.servisLogs-nya masih ada (bukan sudah dihapus manual dari tab Servis).
+// Checkbox "Sinkron ke Servis" SENGAJA selalu direset ke false di sini
+// (beda dgn renovChkEdit) -- centang itu cuma jalur bikin/re-sync tautan
+// dari Transaksi, sedang utk transaksi yang SUDAH tertaut, editnya lewat
+// tombol Edit Detail Servis (buka modal Servis asli), bukan re-centang.
+const servisEditBtn=document.getElementById('txEditServisBtn');
+const linkedServisLog=(t.servisLinkId&&D.servisLogs)?D.servisLogs.find(s=>s.id===t.servisLinkId):null;
+if(servisEditBtn)servisEditBtn.style.display=linkedServisLog?'block':'none';
+const servisChkEdit=document.getElementById('txSyncServis');
+if(servisChkEdit)servisChkEdit.checked=false;
+if(typeof toggleTxServisFields==='function')toggleTxServisFields();
 const shopChk=document.getElementById('txAddShopStock');
 const hasShopStock=(t.stockItems&&t.stockItems.length)||t.stockProductId;
 if(hasShopStock&&shopChk){
@@ -1202,6 +1232,17 @@ if(typeof SewaKios!=='undefined')SewaKios.applyPaymentLink(savedTxId);
 Tukang.applyPendingPayment(savedTxId);
 }
 applyTxStockFromTx(note,savedTxId,date,amt,existingTx);
+// Sesi ini (sync sparepart -> servis, permintaan user): dipanggil SETELAH
+// applyTxStockFromTx() persis di atas (bukan menggantikan) -- kalau checkbox
+// "Tambah ke Stok Sparepart" & "Sinkron ke Servis" dicentang bersamaan,
+// urutannya SELALU stok ditambah dulu baru servis dicatat, net effect
+// stoknya tetap benar krn applyStockUsage() (car-notes.js, dipanggil kalau
+// user juga pilih "Gunakan Stok Sparepart" lewat Edit Detail Servis nanti)
+// baca D.partsStock APA ADANYA saat itu dijalankan, bukan snapshot lama.
+if(typeof applyTxServisFromTx==='function'){
+const txObjForServis=existingTx||(D.transactions||[]).find(t=>t.id===savedTxId);
+applyTxServisFromTx(savedTxId,amt,date,accId,note,txObjForServis,existingTx);
+}
 applyTxBbmFromTx(savedTxId,amt,date,accId,note,existingTx);
 applyTxShopStockFromTx(savedTxId,note,existingTx);
 applyTxShopSaleFromTx(savedTxId,date,accId,note,existingTx);
