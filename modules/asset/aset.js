@@ -1498,7 +1498,12 @@ el.innerHTML=migratedBanner+list.map(a=>{
 // closure, jadi TIDAK ada variabel sisa yang dihitung di sini tapi tidak dipakai.
 const jenisChip=`<span class="acc-chip">${escapeHtml(a.jenis)}</span>`;
 const lokasiChip=a.lokasi?` <span class="acc-chip">📍 ${escapeHtml(a.lokasi)}</span>`:'';
-return `<div class="tx-item u-pointer" data-action="openAssetModal" data-args="${escapeHtml(JSON.stringify([a.id]))}"><div class="tx-icon u-bgaccsoft">${Aset.ICON[a.jenis]||'📦'}</div><div class="tx-info"><div class="tx-name">${escapeHtml(a.name)}${a.zakatable?' <span class="u-fs10 u-cacc3 u-r6 u-ml4" style="border:1px solid var(--accent3);padding:1px 5px">Zakat</span>':''}</div><div class="tx-meta">${jenisChip}${lokasiChip}</div></div><div class="tx-amount">${fmt(a.nilai)}</div><button class="tx-del" data-stop="1" data-action="Aset.openActionsMenu" data-args="${escapeHtml(JSON.stringify([a.id]))}" aria-label="Aksi lainnya">⋮</button></div>`;
+// crossWarn (S552, generalisasi rekomendasi B.3 audit S551) -- badge di LEVEL LIST
+// (bukan cuma dalam Data Health Check modal), reuse assetCrossCheckWarning()
+// (investasi.js) apa adanya, 0 rumus baru. Sisi balik dari badge InvestmentListUI.
+const crossWarn=(typeof assetCrossCheckWarning==='function')?assetCrossCheckWarning(a):null;
+const crossWarnChip=crossWarn?` <span class="u-fs10 u-r6 u-ml4" style="border:1px solid var(--warning,#c77700);color:var(--warning,#c77700);padding:1px 5px" title="${escapeHtml(crossWarn)}">⚠️</span>`:'';
+return `<div class="tx-item u-pointer" data-action="openAssetModal" data-args="${escapeHtml(JSON.stringify([a.id]))}"><div class="tx-icon u-bgaccsoft">${Aset.ICON[a.jenis]||'📦'}</div><div class="tx-info"><div class="tx-name">${escapeHtml(a.name)}${a.zakatable?' <span class="u-fs10 u-cacc3 u-r6 u-ml4" style="border:1px solid var(--accent3);padding:1px 5px">Zakat</span>':''}${crossWarnChip}</div><div class="tx-meta">${jenisChip}${lokasiChip}</div></div><div class="tx-amount">${fmt(a.nilai)}</div><button class="tx-del" data-stop="1" data-action="Aset.openActionsMenu" data-args="${escapeHtml(JSON.stringify([a.id]))}" aria-label="Aksi lainnya">⋮</button></div>`;
 }).join('');
 Aset.renderDashboard();
 Aset.renderInvestasi();

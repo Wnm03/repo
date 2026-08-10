@@ -143,6 +143,15 @@ const Investment = {
       // soal field ini (investasi-list-view.js, invest-ai-widget.js, dana-
       // titipan-portfolio-presenter.js, dst) TIDAK terpengaruh sama sekali.
       custodianId: null,
+      // assetId (S552, generalisasi rekomendasi B.2 dari audit S551 -- lihat
+      // FIX-s551-asset-investasi-duplicate-name-owner-mismatch-audit.md &
+      // FIX-s552-asset-investasi-link-badge.md): referensi opsional satu arah ke
+      // D.assets[].id, mirror PERSIS pola D.vehicles[].assetId (S506
+      // resolveVehicleAssetLink). TIDAK ada snapshot nilai/owners dari aset ke holding
+      // ini -- murni pointer, supaya kedua sisi (Aset & Investasi) bisa saling
+      // resolveInvestmentByAssetId()/resolveLinkedInvestmentAsset() (di bawah) & saling
+      // tampilkan warning kepemilikan beda otomatis, tanpa harus buka 2 modal manual.
+      assetId: null,
       debtLinkId: null,
       createdAt: Date.now(),
     };
@@ -176,6 +185,9 @@ const Investment = {
     // id-nya benar-benar ada di registry (sama seperti `ownerId` di
     // getOwners() — caller/UI yang menjaga id valid, murni referensi).
     if (patch.custodianId !== undefined) h.custodianId = patch.custodianId || null;
+    // assetId (S552) -- falsy ('' / null / '__unlinked__') dinormalisasi jadi null (lepas
+    // tautan), pola sama persis custodianId di atas & saveVehicle() (S506).
+    if (patch.assetId !== undefined) h.assetId = patch.assetId || null;
     Investment._syncTitipanDebt(h);
     _invSave();
     return h;
@@ -674,7 +686,122 @@ const Investment = {
   },
 };
 
+// ============================================================================
+// S552 -- Aset ↔ Investasi Link Resmi + Cross-Check Badge (generalisasi
+// rekomendasi B hasil audit S551, lihat
+// FIX-s551-asset-investasi-duplicate-name-owner-mismatch-audit.md &
+// FIX-s552-asset-investasi-link-badge.md). Pola SAMA PERSIS S506 Vehicle<->Asset
+// Identity Link (vehicle-core.js: resolveVehicleAssetLink/resolveVehicleByAssetId/
+// vehicleAssetLinkOptionsHtml) -- 1 field referensi opsional satu arah
+// (D.investments[].assetId -> D.assets[].id), TIDAK ada snapshot nilai/owners, TIDAK
+// ada SSOT baru. Beda dari S506: assetId investasi TIDAK dibatasi
+// jenis==='Kendaraan' (investasi bisa link ke aset jenis apa pun -- Saham/Reksadana/
+// Deposito/Tanah/dll, sesuai kasus laporan user "Schorder").
+// ============================================================================
+
+// resolveInvestmentAssetLink(assetId) -- validasi PURE: assetId harus merujuk entry
+// D.assets yang benar-benar ada, selain itu (kosong/tidak ditemukan) -> null.
+// Dipanggil SEBELUM disimpan sbg h.assetId (InvestmentListUI.save()).
+function resolveInvestmentAssetLink(assetId) {
+  if (!assetId || typeof D === 'undefined') return null;
+  return (D.assets || []).find((x) => x && sameId(x.id, assetId)) || null;
+}
+// resolveLinkedInvestmentAsset(h) -- delegasi tipis, pola sama persis
+// resolveLinkedVehicleAsset() (vehicle-core.js, S507).
+function resolveLinkedInvestmentAsset(h) {
+  if (!h) return null;
+  return resolveInvestmentAssetLink(h.assetId);
+}
+// resolveInvestmentByAssetId(assetId) -- arah BALIK (Asset -> Investment), pola sama
+// persis resolveVehicleByAssetId() (S509c). Dipakai badge/cross-check dari sisi Buku
+// Aset. Match pertama yang ditemukan kalau ada >1 (edge case, tidak seharusnya
+// terjadi lewat alur UI normal -- lihat komentar pola sama di vehicle-core.js).
+function resolveInvestmentByAssetId(assetId) {
+  if (!assetId || typeof D === 'undefined') return null;
+  return (D.investments || []).find((h) => h && sameId(h.assetId, assetId)) || null;
+}
+// investmentAssetLinkOptionsHtml(currentAssetId) -- bangun <option> list utk dropdown
+// "🔗 Hubungkan ke Buku Aset" di investmentModal. BEDA dari
+// vehicleAssetLinkOptionsHtml(): TIDAK difilter jenis (investasi bisa link ke aset
+// jenis apa pun), tapi entry yang SUDAH ditautkan ke holding LAIN disembunyikan (1
+// aset cuma boleh 1 holding tertaut resmi -- guard sisi UI, data lama yang kebetulan
+// sudah dobel tetap kebaca apa adanya lewat resolveInvestmentByAssetId(), tidak
+// dipaksa).
+function investmentAssetLinkOptionsHtml(currentAssetId) {
+  const opts = ['<option value="">— Tidak terhubung —</option>'];
+  (D.assets || []).forEach((a) => {
+    if (!a) return;
+    if (!sameId(a.id, currentAssetId)) {
+      if (resolveInvestmentByAssetId(a.id)) return;
+    }
+    opts.push('<option value="' + a.id + '"' + (sameId(a.id, currentAssetId) ? ' selected' : '') + '>' + escapeHtml(a.name || '?') + ' (' + escapeHtml(a.jenis || '?') + ')</option>');
+  });
+  return opts.join('');
+}
+// _aiOwnerSig(entity) -- signature pemilik efektif via MultiOwnerEngine.getOwners()
+// (0 rumus baru, reuse persis pola data-health-check.js rule S551). null kalau engine
+// belum dimuat/gagal resolve.
+function _aiOwnerSig(entity) {
+  if (typeof MultiOwnerEngine === 'undefined' || typeof MultiOwnerEngine.getOwners !== 'function') return null;
+  const res = MultiOwnerEngine.getOwners(entity);
+  if (!res || !res.ok) return null;
+  return (res.owners || []).map((o) => (o.isSelf ? 'SELF' : ('ID:' + (o.ownerId || o.ownerName || '?'))) + ':' + (Math.round((o.porsi || 0) * 100) / 100)).sort().join('|');
+}
+// assetInvestmentMismatch(a, h) -- true kalau owner signature aset & holding BEDA
+// (a/h null atau signature tidak terhitung -> false, tidak dianggap mismatch).
+// Dipakai baik oleh link resmi (assetId) maupun fallback name-match (badge list &
+// data-health-check rule S551) -- 1 titik baca yang sama utk kedua jalur.
+function assetInvestmentMismatch(a, h) {
+  if (!a || !h) return false;
+  const sa = _aiOwnerSig(a);
+  const sh = _aiOwnerSig(h);
+  if (sa === null || sh === null) return false;
+  return sa !== sh;
+}
+// investmentCrossCheckWarning(h) -- dipakai badge list Investasi
+// (InvestmentListUI._renderList()) & bridge di investmentModal. Prioritas: (1) link
+// resmi h.assetId -- kalau ada & resolve sukses, bandingkan langsung; (2) fallback
+// name-match (SAMA PERSIS rule S551 data-health-check, exact match trim+lowercase)
+// -- kalau holding belum ditautkan resmi tapi ada aset nama sama dgn owner beda.
+// Return: null (aman) atau string pesan singkat siap tampil di badge.
+function investmentCrossCheckWarning(h) {
+  if (!h) return null;
+  const linked = resolveLinkedInvestmentAsset(h);
+  if (linked) {
+    return assetInvestmentMismatch(linked, h) ? '⚠️ Kepemilikan beda dgn Buku Aset yang ditautkan' : null;
+  }
+  // assetId ada tapi orphan (aset sudah dihapus) -- itu tanggung jawab
+  // data-health-check (cek orphan terpisah), badge kepemilikan tidak relevan di sini.
+  if (h.assetId) return null;
+  const key = (h.name || '').trim().toLowerCase();
+  if (!key || typeof D === 'undefined') return null;
+  const match = (D.assets || []).find((a) => a && (a.name || '').trim().toLowerCase() === key);
+  if (!match) return null;
+  return assetInvestmentMismatch(match, h) ? '⚠️ Nama sama dgn 1 entri Buku Aset, kepemilikan beda' : null;
+}
+// assetCrossCheckWarning(a) -- arah BALIK, dipakai badge list Buku Aset
+// (Aset.renderList()). Pola sama persis investmentCrossCheckWarning() di atas.
+function assetCrossCheckWarning(a) {
+  if (!a) return null;
+  const linked = resolveInvestmentByAssetId(a.id);
+  if (linked) {
+    return assetInvestmentMismatch(a, linked) ? '⚠️ Kepemilikan beda dgn holding Investasi yang ditautkan' : null;
+  }
+  const key = (a.name || '').trim().toLowerCase();
+  if (!key || typeof D === 'undefined') return null;
+  const match = (D.investments || []).find((h) => h && (h.name || '').trim().toLowerCase() === key);
+  if (!match) return null;
+  return assetInvestmentMismatch(a, match) ? '⚠️ Nama sama dgn 1 holding Investasi, kepemilikan beda' : null;
+}
+
 if (typeof window !== 'undefined') {
   window.Investment = Investment;
   window.INVESTMENT_TYPES = INVESTMENT_TYPES;
+  window.resolveInvestmentAssetLink = resolveInvestmentAssetLink;
+  window.resolveLinkedInvestmentAsset = resolveLinkedInvestmentAsset;
+  window.resolveInvestmentByAssetId = resolveInvestmentByAssetId;
+  window.investmentAssetLinkOptionsHtml = investmentAssetLinkOptionsHtml;
+  window.assetInvestmentMismatch = assetInvestmentMismatch;
+  window.investmentCrossCheckWarning = investmentCrossCheckWarning;
+  window.assetCrossCheckWarning = assetCrossCheckWarning;
 }
