@@ -414,6 +414,34 @@ intervalEl.value=matched?matched.intervalKm:'';
 Servis.tryAutoLinkCatalogPart(item);
 Servis.renderCatalogRecommendations();
 },
+/** BUGFIX (laporan user, Sesi 545): render suggest-box custom untuk
+ * "Jenis Servis/Item" (reuse pola simpleAutocompleteInput() yang sudah
+ * dipakai field lain di app ini -- lihat catatan lengkap di
+ * Sparepart.populateDatalist(), modules/vehicle/sparepart-servis.js).
+ * Dipanggil dari oninput & onfocus field servisItem. Sumber data dari
+ * Sparepart.getItemSuggestions() (kategori+stok+katalog, sama seperti
+ * datalist lama). Maks 8 saran spy list tidak kepanjangan di layar HP. */
+onItemInputSuggest(){
+const el=document.getElementById('servisItem');
+const box=document.getElementById('servisItemSuggestBox');
+if(!el||!box)return;
+const q=el.value.trim().toLowerCase();
+const names=(typeof Sparepart!=='undefined'&&Sparepart.getItemSuggestions)?Sparepart.getItemSuggestions():[];
+const matches=(q?names.filter(n=>n.toLowerCase().includes(q)):names).slice(0,8);
+if(!matches.length){box.style.display='none';box.innerHTML='';return;}
+box.innerHTML=matches.map(n=>`<div class="suggest-item" onmousedown="event.preventDefault();Servis.selectItemSuggestion('${jsAttrEscape(n)}')">${escapeHtml(n)}</div>`).join('');
+box.style.display='block';
+},
+/** User tap 1 saran dari suggest-box -> isi field servisItem & tutup
+ * suggest-box, lalu jalankan lagi alur autofill interval/auto-link katalog
+ * yang sama seperti user ngetik manual persis nama itu (reuse
+ * onItemAutofillInterval() apa adanya -- TIDAK ada logic baru). */
+selectItemSuggestion(name){
+const el=document.getElementById('servisItem');
+if(el)el.value=name;
+if(typeof hideSuggestBox==='function')hideSuggestBox('servisItemSuggestBox');
+Servis.onItemAutofillInterval();
+},
 /** Sesi 297 (permintaan eksplisit user, sinkron "Jenis Servis/Item" <-> Katalog Suku
  * Cadang supaya stok otomatis kepotong tanpa perlu pilih dua kali): kalau user
  * mengetik/pilih teks di "Jenis Servis/Item" yang PERSIS (case-insensitive) cocok
@@ -584,8 +612,16 @@ return true;
 save(){return withSaveGuardAsync('servis','servisModal',Servis._saveInner);},
 async _saveInner(){
 const item=document.getElementById('servisItem').value.trim();
-const cost=parseFloat(document.getElementById('servisCost').value);
-if(!item||!cost){toast('⚠️ Lengkapi jenis servis dan biaya');return;}
+// BUGFIX (laporan user, Sesi 545): dulu `!cost` menolak simpan kalau Biaya
+// diisi 0 (mis. servis gratis/klaim garansi) karena 0 falsy di JS -- field
+// biaya jadi WAJIB diisi angka >0 padahal seharusnya boleh 0/kosong. Fix:
+// treat kolom kosong sbg 0 (bukan wajib diisi), validasi eksplisit pakai
+// isNaN() (nilai bukan angka valid) & cost<0 (negatif tidak masuk akal utk
+// biaya) -- item (Jenis Servis) tetap wajib diisi, cuma Biaya yang
+// sekarang boleh 0.
+const costRaw=document.getElementById('servisCost').value.trim();
+const cost=costRaw===''?0:parseFloat(costRaw);
+if(!item||isNaN(cost)||cost<0){toast('⚠️ Lengkapi jenis servis (cek juga Biaya, harus 0 atau lebih)');return;}
 let matched=D.sparepartCats.find(c=>c.name.toLowerCase()===item.toLowerCase());
 const date=document.getElementById('servisDate').value;
 const note=document.getElementById('servisNote').value;
