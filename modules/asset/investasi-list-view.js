@@ -138,6 +138,15 @@ const InvestmentListUI = {
     // opsional di Buku Aset lama).
     const dateEl = document.getElementById('investPurchaseDate');
     if (dateEl) dateEl.value = h ? (h.purchaseDate || '') : '';
+    // investCustodian (S540-C, Tahap 3/4 DESIGN-S540-CUSTODIAN-GROUPING.md):
+    // dropdown "Pilih/Buat Kustodian", pola dropdown SAMA PERSIS
+    // InvestmentUI._ownerNameFieldHtml() (S491) tapi disederhanakan jadi
+    // <select> statis (elemen ini sudah ada di modals.js, bukan
+    // di-render ulang per baris spt owners list) -- opsi diisi ulang tiap
+    // openModal() dari CustodianRegistry.listAll() (S540-A). Holding tanpa
+    // custodianId (h.custodianId null/undefined, termasuk SEMUA data lama)
+    // -> value kosong terpilih ("— Tidak ada —"), 0 dipaksa assign apa pun.
+    InvestmentListUI._renderCustodianOptions(h ? h.custodianId : null);
     // Tombol "⚖️ Atur Porsi Kepemilikan" & "🗑️ Hapus Holding" cuma masuk akal utk holding
     // yang SUDAH tersimpan (butuh id) — disembunyikan di mode Tambah, pola sama persis
     // assetModal (openOwnersModal cuma jalan kalau Aset.editId terisi).
@@ -152,6 +161,132 @@ const InvestmentListUI = {
     const delBtn = document.getElementById('investmentDeleteBtn');
     if (delBtn) delBtn.classList.toggle('u-dnone', !h);
     openModal('investmentModal');
+  },
+
+  // _renderCustodianOptions(selectedId) — S540-C. Isi ulang <select id="investCustodian">
+  // dari CustodianRegistry.listAll() (S540-A) + 1 opsi kosong ("— Tidak ada —", default,
+  // dipilih otomatis utk holding tanpa custodianId -- termasuk SEMUA holding lama, S540-B)
+  // + 1 opsi "➕ Buat kustodian baru..." (value "__new__", ditangani onCustodianSelectChange()
+  // di bawah). Kalau holding SUDAH punya custodianId yang custodian-nya sudah dihapus dari
+  // registry (kasus tepi, belum ada fitur hapus kustodian sesi ini tapi dijaga defensif) --
+  // tetap disertakan sbg opsi tersendiri (pola sama persis InvestmentUI._ownerNameFieldHtml()
+  // utk ownerId legacy yang tidak ketemu di registry) supaya buka modal tidak diam-diam
+  // "melepas" kustodian yang sudah tersimpan.
+  _renderCustodianOptions(selectedId) {
+    const sel = document.getElementById('investCustodian');
+    if (!sel) return;
+    const list = (typeof CustodianRegistry !== 'undefined') ? CustodianRegistry.listAll() : [];
+    let matched = false;
+    let opts = '<option value="">— Tidak ada / belum dikelompokkan —</option>';
+    list.forEach((c) => {
+      const sel2 = (selectedId && String(selectedId) === String(c.id)) ? ' selected' : '';
+      if (sel2) matched = true;
+      opts += '<option value="' + escapeHtml(c.id) + '"' + sel2 + '>' + escapeHtml(c.name) + '</option>';
+    });
+    if (selectedId && !matched) {
+      opts += '<option value="' + escapeHtml(selectedId) + '" selected>(kustodian tidak ditemukan)</option>';
+    }
+    opts += '<option value="__new__">➕ Buat kustodian baru…</option>';
+    sel.innerHTML = opts;
+    if (!selectedId) sel.value = '';
+    InvestmentListUI._syncCustodianActionButtons();
+  },
+
+  // _syncCustodianActionButtons() — S542 (follow-up ringan #2 pasca-S541,
+  // lihat s541-SESSION-NOTE.md §Non-goals: rename/hapus kustodian dari
+  // registry). Tampilkan link "✏️ Ubah Nama Kustodian" / "🗑️ Hapus
+  // Kustodian" (#investCustodianActions di modals.js) HANYA kalau dropdown
+  // #investCustodian sedang terpilih ke entri kustodian yang NYATA ADA di
+  // registry -- bukan opsi kosong ("— Tidak ada —"), bukan "__new__" yang
+  // belum ke-resolve, dan bukan id legacy yang custodian-nya sudah pernah
+  // dihapus (opsi "(kustodian tidak ditemukan)" di _renderCustodianOptions()
+  // di atas -- 0 tombol aksi utk entri yang memang sudah tidak ada).
+  // Dipanggil dari _renderCustodianOptions() (tiap kali dropdown di-render
+  // ulang: buka modal & sesudah pilih/buat kustodian baru).
+  _syncCustodianActionButtons() {
+    const sel = document.getElementById('investCustodian');
+    const wrap = document.getElementById('investCustodianActions');
+    if (!sel || !wrap) return;
+    const val = sel.value;
+    const list = (typeof CustodianRegistry !== 'undefined') ? CustodianRegistry.listAll() : [];
+    const isReal = !!val && val !== '__new__' && list.some((c) => c && String(c.id) === String(val));
+    wrap.classList.toggle('u-dnone', !isReal);
+  },
+
+  // renameCustodian() — S542. Prompt nama baru (prefill nama lama lewat
+  // showPromptModal defaultValue) utk entri kustodian yang SEDANG terpilih
+  // di dropdown, delegasi ke CustodianRegistry.rename() (S542, id TIDAK
+  // berubah -- 0 holding lain perlu di-update krn semua baca nama lewat
+  // lookup id, bukan salinan string). Setelah sukses, render ulang dropdown
+  // supaya label baru langsung kelihatan di opsi yang sedang terpilih.
+  async renameCustodian() {
+    const sel = document.getElementById('investCustodian');
+    if (!sel || !sel.value || sel.value === '__new__') return;
+    if (typeof CustodianRegistry === 'undefined' || typeof CustodianRegistry.rename !== 'function') {
+      if (typeof toast === 'function') toast('⚠️ Fitur kustodian belum siap dimuat');
+      return;
+    }
+    const current = (CustodianRegistry.listAll().find((c) => c && String(c.id) === String(sel.value)) || {}).name || '';
+    const name = typeof showPromptModal === 'function'
+      ? await showPromptModal({ title: 'Ubah Nama Kustodian', message: 'Nama baru utk platform/institusi kustodian ini', defaultValue: current, placeholder: 'Majoris, Bibit, IPOT, dll' })
+      : (typeof prompt === 'function' ? prompt('Nama baru kustodian', current) : null);
+    const trimmed = (name || '').trim();
+    if (!trimmed) return;
+    const ok = CustodianRegistry.rename(sel.value, trimmed);
+    if (!ok) { if (typeof toast === 'function') toast('⚠️ Kustodian tidak ditemukan'); return; }
+    InvestmentListUI._renderCustodianOptions(sel.value);
+    if (typeof toast === 'function') toast('✅ Nama kustodian diubah ke "' + trimmed + '"');
+  },
+
+  // deleteCustodian() — S542. Hapus entri kustodian yang SEDANG terpilih di
+  // dropdown dari registry (CustodianRegistry.remove(), S542) SETELAH
+  // konfirmasi eksplisit yang menjelaskan holding terkait TIDAK ikut
+  // terhapus (cuma "lepas" dari grup & fallback label "Kustodian" -- pola
+  // aman yang sudah ada sejak S540-D, lihat catatan di
+  // custodian-registry.js). Setelah sukses, render ulang dropdown
+  // (kustodian yang baru dihapus otomatis hilang dari daftar opsi, holding
+  // yang tadinya terpilih ke situ balik ke opsi kosong).
+  async deleteCustodian() {
+    const sel = document.getElementById('investCustodian');
+    if (!sel || !sel.value || sel.value === '__new__') return;
+    if (typeof CustodianRegistry === 'undefined' || typeof CustodianRegistry.remove !== 'function') {
+      if (typeof toast === 'function') toast('⚠️ Fitur kustodian belum siap dimuat');
+      return;
+    }
+    const current = (CustodianRegistry.listAll().find((c) => c && String(c.id) === String(sel.value)) || {}).name || 'kustodian ini';
+    const confirmed = typeof askConfirm === 'function'
+      ? await askConfirm('Hapus "' + current + '" dari daftar kustodian? Holding investasi yang masih terkait TIDAK ikut terhapus & tetap tersimpan normal -- hanya labelnya berubah jadi "Kustodian" (generik) & tidak lagi terkelompok di grup ini.', { title: 'Hapus Kustodian', okText: 'Ya, Hapus' })
+      : (typeof confirm === 'function' ? confirm('Hapus kustodian "' + current + '"?') : true);
+    if (!confirmed) return;
+    const removedId = sel.value;
+    const ok = CustodianRegistry.remove(removedId);
+    if (!ok) { if (typeof toast === 'function') toast('⚠️ Kustodian tidak ditemukan'); return; }
+    InvestmentListUI._renderCustodianOptions(null);
+    if (typeof toast === 'function') toast('🗑️ Kustodian "' + current + '" dihapus');
+  },
+
+  // onCustodianSelectChange(val) — S540-C. Dipanggil dari onchange dropdown
+  // #investCustodian. val==="__new__" -> prompt nama kustodian baru (pola sama persis
+  // DanaTitipanCommitmentUI.addNewOwner(), S523-B), CustodianRegistry.findOrCreate()
+  // (S540-A, dedup by nama), lalu render ulang dropdown dgn entri baru itu terpilih.
+  // Batal/nama kosong -> dropdown dikembalikan ke opsi kosong (tidak nyangkut di
+  // "__new__"). Murni UI state -- 0 tulis ke holding di sini, penulisan sesungguhnya
+  // terjadi saat InvestmentListUI.save() (custodianId dibaca dari value select ini).
+  async onCustodianSelectChange(val) {
+    if (val !== '__new__') { InvestmentListUI._syncCustodianActionButtons(); return; }
+    if (typeof CustodianRegistry === 'undefined' || typeof CustodianRegistry.findOrCreate !== 'function') {
+      if (typeof toast === 'function') toast('⚠️ Fitur kustodian belum siap dimuat');
+      InvestmentListUI._renderCustodianOptions(null);
+      return;
+    }
+    const name = typeof showPromptModal === 'function'
+      ? await showPromptModal({ title: 'Tambah Kustodian Baru', message: 'Nama platform/institusi kustodian', placeholder: 'Majoris, Bibit, IPOT, dll' })
+      : (typeof prompt === 'function' ? prompt('Nama platform/institusi kustodian') : null);
+    const trimmed = (name || '').trim();
+    if (!trimmed) { InvestmentListUI._renderCustodianOptions(null); return; }
+    const id = CustodianRegistry.findOrCreate(trimmed);
+    InvestmentListUI._renderCustodianOptions(id);
+    if (typeof toast === 'function') toast('✅ Kustodian "' + trimmed + '" ditambahkan');
   },
 
   // openOwnersModalForEdit() — wrapper tipis yang membaca InvestmentListUI.editId lalu
@@ -188,10 +323,17 @@ const InvestmentListUI = {
     const notes = notesEl ? notesEl.value : '';
     const dateEl = document.getElementById('investPurchaseDate');
     const purchaseDate = dateEl ? (dateEl.value || null) : null;
+    // custodianId (S540-C) -- dibaca dari dropdown #investCustodian. "" (opsi kosong)
+    // atau "__new__" yang kebetulan belum ke-resolve (mis. user submit form tanpa
+    // menunggu prompt "Buat kustodian baru" selesai) DIPERLAKUKAN sbg "tidak ada
+    // kustodian" (updateHolding() sendiri sudah menormalkan falsy -> null, lihat
+    // investasi.js) -- 0 kemungkinan literal string "__new__" tersimpan sbg id.
+    const custodianEl = document.getElementById('investCustodian');
+    const custodianId = (custodianEl && custodianEl.value !== '__new__') ? custodianEl.value : '';
     let h;
     try {
       if (InvestmentListUI.editId) {
-        h = Investment.updateHolding(InvestmentListUI.editId, { name, type, currentPrice, notes, purchaseDate });
+        h = Investment.updateHolding(InvestmentListUI.editId, { name, type, currentPrice, notes, purchaseDate, custodianId });
       } else {
         h = Investment.addHolding({ name, type, unit, avgPrice, currentPrice: currentPrice || avgPrice, notes, purchaseDate });
       }
@@ -203,6 +345,14 @@ const InvestmentListUI = {
       h.unit = unit;
       h.avgPrice = avgPrice;
       if (typeof save === 'function') save();
+    } else if (h) {
+      // addHolding() (investasi.js) belum menerima custodianId lewat argumen resmi
+      // (holding baru selalu mulai custodianId:null, sesuai default S540-B) -- kustodian
+      // yang dipilih di form Tambah Holding ditulis lewat updateHolding() TERPISAH
+      // langsung setelah addHolding() sukses, supaya jalur normalisasi falsy->null
+      // (investasi.js) tetap 1 sumber kebenaran, bukan assignment manual field mentah
+      // spt unit/avgPrice di atas (yang memang belum ada jalur updateHolding()-nya).
+      if (custodianId) Investment.updateHolding(h.id, { custodianId });
     }
     closeModal('investmentModal');
     InvestmentListUI.render();
