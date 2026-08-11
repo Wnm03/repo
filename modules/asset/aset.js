@@ -294,6 +294,26 @@ box.innerHTML=`<div class=\"u-fs20 u-fw700 u-mb4\">${fmtFull(totalNilai)}</div><
 (insights.length?insights.map(t=>`<div class=\"u-fs12 u-lh15 u-mb8\">${t}</div>`).join(''):'<div class=\"u-fs12 u-t2 u-lh15\">Belum ada insight khusus — data aset kamu sejauh ini terlihat wajar.</div>');
 }
 };
+// assetInvestmentLinkOptionsHtml(currentInvestmentId) -- Sesi B1: bangun <option> list utk
+// dropdown "🔗 Hubungkan ke Holding Investasi" (assetModal), pola PERSIS
+// vehicleAssetLinkOptionsHtml() (vehicle-core.js, S506) -- opsi pertama selalu "— Tidak
+// terhubung —", sisanya HANYA D.investments yang ada (semua jenis, tidak difilter kategori
+// krn holding investasi tidak punya sub-kategori kayak Aset.jenis). PURE function, hanya
+// baca D.investments. Sesi ini CUMA field+dropdown (skema investmentId di Aset) -- 0 logic
+// bridging/read-only lain, itu scope Sesi B2+.
+function assetInvestmentLinkOptionsHtml(currentInvestmentId){
+const opts=['<option value="">— Tidak terhubung —</option>'];
+(D.investments||[]).forEach(h=>{
+opts.push('<option value="'+h.id+'"'+(sameId(h.id,currentInvestmentId)?' selected':'')+'>'+escapeHtml(h.name||'?')+'</option>');
+});
+return opts.join('');
+}
+// _normalizeInstrumentName(s) -- SESI B4: normalisasi nama utk pencocokan name-similarity,
+// pola PERSIS _normalizeAccNameForMatch() (scan-ocr.js, fuzzy account matcher) -- lowercase
+// + buang semua selain a-z0-9. Dipakai Aset._findInvestmentMigrationCandidates() di bawah.
+function _normalizeInstrumentName(s){
+return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'').trim();
+}
 const Aset={
 editId:null,
 _zakatableState:false,
@@ -345,6 +365,8 @@ btn.className='chip-btn'+(Aset._zakatableState?' active':'');
 // gampang divergen satu sama lain.
 Aset._renderTitipanSummary(a);
 Aset._renderVehicleLinkAction(a);
+Aset._populateInvestmentLinkSelect(a);
+Aset._updateOwnersButtonLabel(a);
 Aset.renderJenisFields(a);
 Aset.updateProfitPreview();
 // Ownership (S231) — reuse OwnershipEngine, sama pola dgn Akun/Kendaraan. Aset lama tanpa
@@ -456,6 +478,27 @@ if(!v){box.innerHTML='';box.classList.add('u-dnone');return;}
 box.innerHTML='<button type="button" class="btn btn-ghost btn-full btn-sm" data-action="assetActionViewVehicle" data-args="'+escapeHtml(JSON.stringify([v.id]))+'">🚗 Lihat di Kendaraan</button>';
 box.classList.remove('u-dnone');
 },
+// _populateInvestmentLinkSelect(a) -- Sesi B1: helper DOM dipanggil openModal() (tambah
+// baru, a=null -> dropdown "Tidak terhubung"; edit, a=aset existing -> investmentId-nya
+// kalau ada otomatis ke-select), pola sama persis _populateVehAssetLinkSelect() (S506,
+// vehicle-core.js). Field a.investmentId dibaca-tulis di sini & di _saveInner() SAJA --
+// 0 logic bridging/tampilan lain di sesi ini (itu scope B2/B3).
+_populateInvestmentLinkSelect(a){
+const sel=document.getElementById('assetInvestmentId');
+if(!sel)return;
+sel.innerHTML=assetInvestmentLinkOptionsHtml(a&&a.investmentId);
+},
+// onInvestmentLinkChange() -- SESI B2b: dipanggil dari onchange dropdown "🔗 Hubungkan
+// ke Holding Investasi" (assetModal) supaya label tombol "Atur Porsi" di bawahnya ikut
+// update LIVE begitu user ganti tautan (belum sempat Simpan Aset) -- baca langsung dari
+// value dropdown saat ini, BUKAN dari a.investmentId tersimpan (beda dgn
+// _updateOwnersButtonLabel(a) yang dipanggil openModal() saat modal baru dibuka).
+onInvestmentLinkChange(){
+const sel=document.getElementById('assetInvestmentId');
+const id=sel?sel.value:'';
+const h=id?(D.investments||[]).find(x=>sameId(x.id,id)):null;
+Aset._applyOwnersButtonLabel(!!h);
+},
 // openOwnersModal(id) -- SESI 392a+392b ("atur porsi kepemilikan majemuk"): baca
 // pemilik aset yang sedang tercatat lewat MultiOwnerEngine.getOwners() (S390, 100%
 // reuse), disalin ke Aset._ownersDraft (array di memori, BUKAN referensi ke D.assets
@@ -479,9 +522,133 @@ selfOwnedNilai(a){
 if(typeof MultiOwnerEngine==='undefined')return(a&&a.nilai)||0;
 return MultiOwnerEngine.selfOwnedValue(a,(a&&a.nilai)||0);
 },
+// _resolveLinkedInvestmentOwners(a) -- SESI B2a: PURE, dipanggil openOwnersModal().
+// Balikin null kalau aset TIDAK terhubung ke Holding Investasi (a.investmentId kosong,
+// lihat field baru B1) ATAU holding yang ditautkan sudah tidak ada lagi di D.investments
+// (tautan orphan, mis. holding-nya dihapus) ATAU module investasi.js belum dimuat --
+// dalam ketiga kasus itu caller FALLBACK ke jalur editable lama (SAMA PERSIS perilaku
+// sebelum sesi ini, 0 regresi). Balikin array owners (format sama persis
+// MultiOwnerEngine.getOwners(): {ownerId,ownerName,porsi,isSelf}) kalau tautan valid --
+// dibaca LIVE lewat Investment.getOwners() (AUD-008/S462, SUDAH ADA & 100% reuse), BUKAN
+// disalin/snapshot ke a.owners -- porsi aset yang tertaut jadi SATU sumber kebenaran di
+// holding investasi, mencegah dobel-catat 2 draft porsi berbeda utk instrumen yang sama.
+// _resolveLinkedInvestment(a) -- SESI B2b: PURE, versi lebih ringan dari
+// _resolveLinkedInvestmentOwners() di bawah -- CUMA cari holding-nya (tanpa syarat
+// module investasi.js/Investment sudah dimuat, tanpa baca owners), dipakai
+// _updateOwnersButtonLabel()/onInvestmentLinkChange()/openOwnersModal() (redirect) yang
+// semuanya cuma butuh tahu "aset ini tertaut ke holding yang MASIH ADA atau tidak",
+// bukan porsinya. Balikin objek holding (h) kalau tertaut & valid, null kalau tidak
+// (investmentId kosong ATAU orphan/holding sudah dihapus).
+_resolveLinkedInvestment(a){
+if(!a||!a.investmentId)return null;
+return(D.investments||[]).find(x=>sameId(x.id,a.investmentId))||null;
+},
+_resolveLinkedInvestmentOwners(a){
+if(typeof Investment==='undefined')return null;
+const h=Aset._resolveLinkedInvestment(a);
+if(!h)return null;
+return Investment.getOwners(h)||[];
+},
+// _investmentBridgeMeta(a) -- SESI B3: bangun 1 baris teks read-only "🔗 Terhubung ke
+// Investasi: <nama holding> · Porsi: 70% Budi · 30% Ayah" utk kartu Aset (dipakai
+// openActionsMenu() di bawah, digabung ke metaRows yang SUDAH ADA -- pola desain S306
+// "detail dipindah ke overflow menu, kartu tetap ringkas"). Pola PERSIS
+// vehAssetBridgeHtml() (S507, vehicle-core.js): PURE, READ-ONLY, baca LIVE dari
+// D.investments/Investment.getOwners() tiap panggilan (bukan snapshot/cache di a).
+// Balikin null kalau aset TIDAK tertaut (a.investmentId kosong) ATAU tautan orphan
+// (holding sudah dihapus) -- caller menyembunyikan baris ini sepenuhnya kalau null,
+// sama disiplin dgn extraMeta/linkMeta/dst di metaRows. Owners line HANYA tampil kalau
+// ADA porsi>0 tercatat (guard typeof Investment, pola sama _resolveLinkedInvestmentOwners)
+// -- holding yang belum diatur porsinya sama sekali cukup tampilkan nama holding saja.
+_investmentBridgeMeta(a){
+const h=Aset._resolveLinkedInvestment(a);
+if(!h)return null;
+let ownersLine='';
+if(typeof Investment!=='undefined'){
+const owners=Investment.getOwners(h);
+if(owners&&owners.length){
+ownersLine=owners.filter(o=>o.porsi>0).map(o=>Math.round(o.porsi)+'% '+escapeHtml(o.ownerName||'?')).join(' · ');
+}
+}
+return '🔗 Terhubung ke Investasi: '+escapeHtml(h.name||'?')+(ownersLine?(' · Porsi: '+ownersLine):'');
+},
+// _findInvestmentMigrationCandidates() -- SESI B4 (alat bantu migrasi Data Health Check):
+// cari PASANGAN Aset (belum tertaut, investmentId kosong) & Holding Investasi (belum
+// ditautkan aset manapun) yang namanya mirip -- kandidat instrumen dobel-catat (1x manual
+// di Buku Aset lama, 1x lagi di Holding Investasi baru) yang belum ditautkan lewat dropdown
+// "🔗 Hubungkan ke Holding Investasi" (B1). PURE, READ-ONLY -- SENGAJA cuma SARAN, BUKAN
+// auto-link (nama mirip tidak selalu berarti instrumen sama), keputusan link tetap manual
+// di modal Aset. Pencocokan pola PERSIS _fuzzyAccountMatch() (scan-ocr.js): normalisasi lalu
+// exact match ATAU substring 1 arah, guard panjang min 4 karakter (cegah false-positive nama
+// pendek generik). Dipanggil dari data-health-check.js (guard typeof Aset).
+_findInvestmentMigrationCandidates(){
+const linkedHoldingIds=new Set((D.assets||[]).filter(a=>a.investmentId).map(a=>String(a.investmentId)));
+const candidates=[];
+(D.assets||[]).forEach(a=>{
+if(a.investmentId)return;
+const an=_normalizeInstrumentName(a.name);
+if(an.length<4)return;
+(D.investments||[]).forEach(h=>{
+if(linkedHoldingIds.has(String(h.id)))return;
+const hn=_normalizeInstrumentName(h.name);
+if(hn.length<4)return;
+if(an!==hn && !an.includes(hn) && !hn.includes(an))return;
+candidates.push({
+assetId:a.id,assetName:a.name||'?',assetNilai:a.nilai||0,
+holdingId:h.id,holdingName:h.name||'?',
+holdingValue:(typeof Investment!=='undefined'&&typeof Investment.holdingValue==='function')?Investment.holdingValue(h):null,
+});
+});
+});
+return candidates;
+},
+// _applyOwnersButtonLabel(linked)/_updateOwnersButtonLabel(a) -- SESI B2b: ubah label
+// tombol "Atur Porsi" di assetModal utama (id baru #assetOwnersBtn, lihat modals.js)
+// jadi "🔗 Atur Porsi di Investasi" kalau aset ini tertaut ke Holding Investasi yang
+// masih ada, atau balik ke label lama "⚖️ Atur Porsi Kepemilikan" kalau tidak -- PURE
+// UI, 0 penulisan data. _updateOwnersButtonLabel(a) dipanggil openModal() (aset
+// tersimpan, baca a.investmentId); onInvestmentLinkChange() di atas panggil
+// _applyOwnersButtonLabel() langsung dari value dropdown (belum tentu tersimpan).
+_applyOwnersButtonLabel(linked){
+const btn=document.getElementById('assetOwnersBtn');
+if(!btn)return;
+btn.textContent=linked?'🔗 Atur Porsi di Investasi':'⚖️ Atur Porsi Kepemilikan';
+},
+_updateOwnersButtonLabel(a){
+Aset._applyOwnersButtonLabel(!!Aset._resolveLinkedInvestment(a));
+},
+// _toggleOwnersEditControls() -- SESI B2a: tampil/sembunyikan blok tombol edit
+// (➕ Tambah Pemilik / ✅ Simpan Porsi / ↺ Reset Draft, dibungkus 1 div
+// #assetOwnersEditControls) & hint read-only (#assetOwnersReadOnlyHint), berdasarkan
+// Aset._ownersReadOnly (di-set openOwnersModal() dari hasil _resolveLinkedInvestmentOwners).
+// PURE UI, 0 penulisan ke D.assets/D.investments. Dipanggil dari _renderOwnersList()
+// (SATU titik render modal ini, sama disiplin dgn updateOwnersTotal()).
+_toggleOwnersEditControls(){
+const editBox=document.getElementById('assetOwnersEditControls');
+const hint=document.getElementById('assetOwnersReadOnlyHint');
+const readOnly=!!Aset._ownersReadOnly;
+if(editBox)editBox.classList.toggle('u-dnone',readOnly);
+if(hint){
+hint.classList.toggle('u-dnone',!readOnly);
+if(readOnly)hint.textContent='🔗 Aset ini terhubung ke Holding Investasi -- porsi kepemilikan diatur & disimpan di sana (bukan di sini). Lepas tautannya di form Aset (🔗 Hubungkan ke Holding Investasi) kalau mau atur porsi manual lagi di Buku Aset.';
+}
+},
 openOwnersModal(){
 const id=Aset.editId;
 const a=id?D.assets.find(x=>sameId(x.id,id)):null;
+// SESI B2b: aset terhubung ke Holding Investasi yang masih ada -> alih navigasi
+// LANGSUNG ke investmentOwnersModal lewat InvestmentUI.openOwnersModal(id) (S464,
+// 100% reuse) -- assetOwnersModal (termasuk versi read-only B2a) TIDAK lagi dibuka
+// sama sekali utk aset tertaut, konsisten dgn label tombol assetModal yang sudah
+// berubah jadi "🔗 Atur Porsi di Investasi" (_updateOwnersButtonLabel). Guard typeof
+// InvestmentUI: kalau module investasi-view.js belum dimuat (harusnya tidak pernah
+// terjadi bareng investmentId terisi, tapi jaga-jaga), fallback ke jalur B2a/lama di
+// bawah (read-only lewat Investment.getOwners(), bukan crash).
+const linkedHolding=Aset._resolveLinkedInvestment(a);
+if(linkedHolding&&typeof InvestmentUI!=='undefined'){
+InvestmentUI.openOwnersModal(linkedHolding.id);
+return;
+}
 document.getElementById('assetOwnersAssetName').textContent=a?('📋 '+a.name):'';
 // FIX (audit "Nominal tidak bisa diisi manual", laporan user Agustus 2026):
 // buang draft nilai tersirat (lihat _ownersDraftNilai) tiap kali modal
@@ -490,6 +657,17 @@ document.getElementById('assetOwnersAssetName').textContent=a?('📋 '+a.name):'
 // sebelumnya kalau user tutup modal tanpa Simpan Porsi.
 Aset._ownersDraftNilai=null;
 Aset._ownersModalAsset=a;
+// SESI B2a: aset terhubung ke Holding Investasi (a.investmentId) -> modal ini jadi
+// READ-ONLY, porsi dibaca dari h.owners (bukan a.owners) -- lihat
+// _resolveLinkedInvestmentOwners di atas.
+const linkedOwners=Aset._resolveLinkedInvestmentOwners(a);
+Aset._ownersReadOnly=!!linkedOwners;
+if(linkedOwners){
+Aset._ownersDraft=linkedOwners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf}));
+Aset._renderOwnersList();
+openModal('assetOwnersModal');
+return;
+}
 if(!a){
 Aset._ownersDraft=[];
 Aset._renderOwnersList();
@@ -643,9 +821,25 @@ opts+='<option value="__new__">➕ Buat pemilik baru…</option>';
 return '<select class="fi" style="flex:1" onchange="Aset.onOwnerSelectChange('+i+',this.value)">'+opts+'</select>';
 },
 _renderOwnersList(){
+Aset._toggleOwnersEditControls();
 const listBox=document.getElementById('assetOwnersList');
 if(!listBox){Aset.updateOwnersTotal();return;}
 const draft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
+// SESI B2a: cabang READ-ONLY (aset terhubung ke Holding Investasi) -- baris statis
+// nama+porsi saja, TANPA input/tombol hapus (tidak ada onOwnerNameInput/
+// onOwnerPorsiInput/removeOwnerRow di sini, sama sekali tidak menulis draft). Tombol
+// edit (Tambah/Simpan/Reset) & indikator total sudah disembunyikan lewat
+// _toggleOwnersEditControls() di atas, jadi TIDAK panggil updateOwnersTotal() di sini.
+if(Aset._ownersReadOnly){
+listBox.innerHTML=draft.length?draft.map((o)=>{
+const porsiTxt=(typeof o.porsi==='number'&&isFinite(o.porsi))?o.porsi:0;
+return '<div class="u-flex u-gap8" style="align-items:center;justify-content:space-between;margin-bottom:6px;padding:8px 10px;background:var(--surface3);border-radius:10px">'+
+'<span style="font-size:13px;font-weight:600">'+escapeHtml(o.ownerName||'?')+(o.isSelf?' <span class="u-fs11 u-t2">(saya)</span>':'')+'</span>'+
+'<span style="font-size:13px;font-weight:700;color:var(--accent)">'+porsiTxt+'%</span>'+
+'</div>';
+}).join(''):'<div class="empty"><div class="empty-text">Holding investasi terhubung belum punya pemilik tercatat.</div></div>';
+return;
+}
 if(!Aset._ownersModalAsset){
 listBox.innerHTML='<div class="empty"><div class="empty-text">Simpan aset ini dulu (tombol "Simpan Aset") sebelum mengatur porsi kepemilikan.</div></div>';
 Aset.updateOwnersTotal();
@@ -724,6 +918,11 @@ if(saveBtn)saveBtn.disabled=!isValid;
 // Baris ke-2 dst default false supaya total porsi "milik sendiri" tidak
 // sengaja kedobel tanpa user sadar.
 addOwnerRow(){
+// SESI B2a: guard pertahanan-berlapis -- tombol ini sudah disembunyikan lewat
+// _toggleOwnersEditControls() saat Aset._ownersReadOnly, tapi tetap dijaga di sini
+// (data-action bisa saja terpanggil dari jalur lain) supaya draft read-only dari
+// Holding Investasi TIDAK PERNAH ikut termutasi.
+if(Aset._ownersReadOnly){toast('🔗 Porsi aset ini diatur di Holding Investasi, tidak bisa diedit di sini');return;}
 if(!Aset._ownersModalAsset){toast('⚠️ Simpan aset ini dulu sebelum mengatur porsi kepemilikan');return;}
 Aset._ownersDraft=Array.isArray(Aset._ownersDraft)?Aset._ownersDraft:[];
 Aset._ownersDraft.push({ownerId:'',ownerName:'',porsi:0,isSelf:Aset._ownersDraft.length===0});
@@ -732,6 +931,8 @@ Aset._renderOwnersList();
 // removeOwnerRow(i) -- SESI 392b: hapus 1 baris pemilik dari Aset._ownersDraft (index i),
 // lalu render ulang list. Sama seperti addOwnerRow(), murni ubah draft di memori.
 removeOwnerRow(i){
+// SESI B2a: guard sama alasan addOwnerRow() di atas.
+if(Aset._ownersReadOnly){toast('🔗 Porsi aset ini diatur di Holding Investasi, tidak bisa diedit di sini');return;}
 if(!Array.isArray(Aset._ownersDraft))return;
 Aset._ownersDraft.splice(i,1);
 Aset._renderOwnersList();
@@ -1103,6 +1304,10 @@ o.porsi=porsiBaru;
 // (mis. diganggu toolbar quick-action browser), nilai yang BENAR-BENAR ada
 // di layar tetap yang disimpan.
 saveOwners(){
+// SESI B2a: guard sama alasan addOwnerRow() di atas -- tombol Simpan Porsi sudah
+// disembunyikan saat read-only, ini pertahanan berlapis supaya draft baca-saja dari
+// Holding Investasi tidak pernah ketulis balik ke a.owners lewat jalur ini.
+if(Aset._ownersReadOnly){toast('🔗 Porsi aset ini diatur di Holding Investasi, tidak bisa diedit di sini');return;}
 if(!Aset._ownersModalAsset){toast('⚠️ Simpan aset ini dulu sebelum mengatur porsi kepemilikan');return;}
 if(typeof MultiOwnerEngine==='undefined'){toast('⚠️ Fitur porsi kepemilikan belum siap dimuat');return;}
 const a=D.assets.find(x=>sameId(x.id,Aset._ownersModalAsset.id));
@@ -1224,6 +1429,15 @@ toast('✅ Porsi kepemilikan tersimpan');
 // sama persis logic yang dipakai openOwnersModal() -- 0 rumus baru). Dipakai kalau
 // user salah edit & mau mulai ulang dari data terakhir tersimpan TANPA menutup modal.
 resetOwners(){
+// SESI B2a: tombol Reset Draft sudah disembunyikan saat read-only -- pertahanan
+// berlapis: re-derive dari Holding Investasi lagi lewat jalur yang sama (idempotent,
+// TIDAK ada draft manual yang bisa "dibuang" krn tidak pernah bisa diedit di sini).
+if(Aset._ownersReadOnly){
+const linkedOwners=Aset._resolveLinkedInvestmentOwners(Aset._ownersModalAsset);
+Aset._ownersDraft=(linkedOwners||[]).map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf}));
+Aset._renderOwnersList();
+return;
+}
 if(!Aset._ownersModalAsset){return;}
 const res=typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.getOwners(Aset._ownersModalAsset):null;
 Aset._ownersDraft=res&&res.ok?res.owners.map((o)=>({ownerId:o.ownerId,ownerName:o.ownerName,porsi:o.porsi,isSelf:!!o.isSelf})):[];
@@ -1338,6 +1552,13 @@ let _createdNewAcc=false;
 // aset-nya (fix gap dicatat Sesi 311: akun auto-buat selalu ownership SELF/DEFAULT,
 // jadi tidak kehitung di Dana Kelolaan/"Dana Investor" walau aset-nya sendiri sudah
 // ownership INVESTOR/CUSTOMER/dst).
+// Link Holding Investasi (Sesi B1) -- dibaca dari dropdown "🔗 Hubungkan ke Holding
+// Investasi", pola sama vehAssetId (S506): "— Tidak terhubung —" (value kosong) -> field
+// DIHAPUS dari record (guardrail konvensi schema existing, bukan disimpan sbg link
+// kosong). 0 validasi tambahan di sesi ini (murni baca id yang dipilih user dari D.investments
+// -- opsi dropdown sudah dijamin valid oleh assetInvestmentLinkOptionsHtml()).
+const investmentIdRaw=document.getElementById('assetInvestmentId')?.value||'';
+const investmentId=investmentIdRaw||null;
 const ownRawA=document.getElementById('assetOwnership')?.value;
 const ownership=(typeof OwnershipEngine!=='undefined'&&OwnershipEngine.isValidType(ownRawA))?OwnershipEngine.normalize(ownRawA):(typeof OwnershipEngine!=='undefined'?OwnershipEngine.DEFAULT:'SELF');
 if(accountId==='__new__'){
@@ -1414,9 +1635,11 @@ if(Aset.editId){
 const a=D.assets.find(x=>sameId(x.id,Aset.editId));
 if(!a){toast('⚠️ Aset tidak ditemukan, coba tutup dan buka lagi');return;}
 Object.assign(a,{name,jenis,lokasi,nilai,tanggal,zakatable:Aset._zakatableState,accountId,ownership},extra);
+if(investmentId)a.investmentId=investmentId;else delete a.investmentId;
 savedAsset=a;
 } else {
 savedAsset=Object.assign({id:uid(),name,jenis,lokasi,nilai,tanggal,zakatable:Aset._zakatableState,accountId,ownership},extra);
+if(investmentId)savedAsset.investmentId=investmentId;
 D.assets.push(savedAsset);
 }
 // AUTO-MIGRATE (Sesi C -- sesi TERAKHIR dari 4 migrasi Dana Titipan -> Multi-Owner
@@ -1498,12 +1721,7 @@ el.innerHTML=migratedBanner+list.map(a=>{
 // closure, jadi TIDAK ada variabel sisa yang dihitung di sini tapi tidak dipakai.
 const jenisChip=`<span class="acc-chip">${escapeHtml(a.jenis)}</span>`;
 const lokasiChip=a.lokasi?` <span class="acc-chip">📍 ${escapeHtml(a.lokasi)}</span>`:'';
-// crossWarn (S552, generalisasi rekomendasi B.3 audit S551) -- badge di LEVEL LIST
-// (bukan cuma dalam Data Health Check modal), reuse assetCrossCheckWarning()
-// (investasi.js) apa adanya, 0 rumus baru. Sisi balik dari badge InvestmentListUI.
-const crossWarn=(typeof assetCrossCheckWarning==='function')?assetCrossCheckWarning(a):null;
-const crossWarnChip=crossWarn?` <span class="u-fs10 u-r6 u-ml4" style="border:1px solid var(--warning,#c77700);color:var(--warning,#c77700);padding:1px 5px" title="${escapeHtml(crossWarn)}">⚠️</span>`:'';
-return `<div class="tx-item u-pointer" data-action="openAssetModal" data-args="${escapeHtml(JSON.stringify([a.id]))}"><div class="tx-icon u-bgaccsoft">${Aset.ICON[a.jenis]||'📦'}</div><div class="tx-info"><div class="tx-name">${escapeHtml(a.name)}${a.zakatable?' <span class="u-fs10 u-cacc3 u-r6 u-ml4" style="border:1px solid var(--accent3);padding:1px 5px">Zakat</span>':''}${crossWarnChip}</div><div class="tx-meta">${jenisChip}${lokasiChip}</div></div><div class="tx-amount">${fmt(a.nilai)}</div><button class="tx-del" data-stop="1" data-action="Aset.openActionsMenu" data-args="${escapeHtml(JSON.stringify([a.id]))}" aria-label="Aksi lainnya">⋮</button></div>`;
+return `<div class="tx-item u-pointer" data-action="openAssetModal" data-args="${escapeHtml(JSON.stringify([a.id]))}"><div class="tx-icon u-bgaccsoft">${Aset.ICON[a.jenis]||'📦'}</div><div class="tx-info"><div class="tx-name">${escapeHtml(a.name)}${a.zakatable?' <span class="u-fs10 u-cacc3 u-r6 u-ml4" style="border:1px solid var(--accent3);padding:1px 5px">Zakat</span>':''}</div><div class="tx-meta">${jenisChip}${lokasiChip}</div></div><div class="tx-amount">${fmt(a.nilai)}</div><button class="tx-del" data-stop="1" data-action="Aset.openActionsMenu" data-args="${escapeHtml(JSON.stringify([a.id]))}" aria-label="Aksi lainnya">⋮</button></div>`;
 }).join('');
 Aset.renderDashboard();
 Aset.renderInvestasi();
@@ -1549,7 +1767,11 @@ const titipanLabel=a.titipanOwnerType==='keluarga'?'Keluarga':(a.titipanOwnerTyp
 const titipanMeta=a.titipanAmount>0?('💰 Titipan '+escapeHtml(titipanLabel)+': '+fmt(a.titipanAmount)):'';
 const extraMeta=Aset.extraLabel(a)?escapeHtml(Aset.extraLabel(a)):'';
 const pctMeta=(a.keuntunganPct!=null&&isFinite(a.keuntunganPct))?(`${a.keuntunganPct>=0?'▲':'▼'} ${a.keuntunganPct>=0?'+':''}${a.keuntunganPct.toFixed(2)}%`):'';
-const metaRows=[extraMeta,linkMeta,linkMultiOwnerWarn,ownMeta,titipanMeta,pctMeta].filter(Boolean);
+// investmentBridgeMeta -- SESI B3: baris "🔗 Terhubung ke Investasi" + porsi read-only,
+// lihat Aset._investmentBridgeMeta() di atas (pola persis vehAssetBridgeHtml() S507).
+// null (aset tidak tertaut/tautan orphan) -> baris disembunyikan sepenuhnya via filter(Boolean).
+const investmentBridgeMeta=Aset._investmentBridgeMeta(a);
+const metaRows=[extraMeta,linkMeta,linkMultiOwnerWarn,ownMeta,titipanMeta,investmentBridgeMeta,pctMeta].filter(Boolean);
 // Div meta TETAP ada di HTML (bukan dibuat/dihapus dinamis) supaya elemennya selalu bisa
 // diambil lewat getElementById; kalau kebetulan kosong (mis. OwnershipEngine belum kemuat),
 // disembunyikan lewat display:none — bukan cuma innerHTML='' — supaya padding bawaannya
@@ -1559,7 +1781,14 @@ const metaEl=document.getElementById('assetActionsMeta');
 metaEl.innerHTML=metaRows.join('<br>');
 metaEl.style.display=metaRows.length?'':'none';
 const histRow=linkedAcc?`<div class="bill-action-row" data-action="assetActionHistory" data-args="${escapeHtml(JSON.stringify([id]))}"><span class="bar-icon u-cacc3">📜</span> Riwayat Transaksi</div>`:'';
-document.getElementById('assetActionsList').innerHTML=`${histRow}
+// investRow -- SESI B3: tombol navigasi "🔍 Lihat di Investasi", HANYA tampil kalau aset
+// ini tertaut ke Holding Investasi yang masih ada (Aset._resolveLinkedInvestment(a)).
+// Reuse murni InvestmentListUI.openModal(id) (SUDAH ADA sejak Fase 1 investasi-list-view.js)
+// lewat dispatcher data-action/data-args generik -- pola sama persis vehAssetViewActionHtml()
+// (S509b, "🔍 Lihat di Buku Aset") & assetActionViewVehicle (_renderVehicleLinkAction, S509c).
+const linkedHoldingForView=Aset._resolveLinkedInvestment(a);
+const investRow=linkedHoldingForView?`<div class="bill-action-row" data-action="InvestmentListUI.openModal" data-args="${escapeHtml(JSON.stringify([linkedHoldingForView.id]))}"><span class="bar-icon u-cacc3">🔍</span> Lihat di Investasi</div>`:'';
+document.getElementById('assetActionsList').innerHTML=`${histRow}${investRow}
     <div class="bill-action-row" data-action="assetActionScan" data-args="${escapeHtml(JSON.stringify([id]))}"><span class="bar-icon u-cacc">⚡</span> Update Cepat via Scan</div>
     <div class="bill-action-row danger" data-action="assetActionDelete" data-args="${escapeHtml(JSON.stringify([id]))}"><span class="bar-icon">🗑</span> Hapus</div>`;
 openQS('qsAssetActions');
@@ -1594,7 +1823,28 @@ openQS('qsAssetActions');
 // `Investment.selfOwnedTotalValue()` (versi TERSKALA porsi SELF, beda dari
 // portfolioSummary().totalValue yg dipakai AssetPortfolioAPI -- lihat catatan
 // di investasi.js).
-totalValue(){return(D.assets||[]).filter(isAssetOwnershipSelf).filter(a=>!a._migratedToInvestmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);},
+// PERUBAHAN SESI B8 (fix, follow-up B7 audit "dihitung 2x" -- Opsi A dari 3
+// opsi trade-off yg dipresentasikan): TAMBAH filter `!a.investmentId` --
+// SAMA PERSIS pola `!a._migratedToInvestmentId` di atas, cuma sumbernya beda
+// (link manual B1 lewat dropdown "🔗 Hubungkan ke Holding Investasi", BUKAN
+// migrasi penuh s476a). Begitu aset ditautkan ke Holding yg MASIH ADA
+// (Aset._resolveLinkedInvestment(a) balikin non-null), nilainya SEKARANG
+// dianggap "milik" sisi Investasi (Investment.selfOwnedTotalValue()) --
+// PERSIS filosofi _migratedToInvestmentId, aset TIDAK hilang dari Buku Aset/
+// UI (beda dari migrasi), cuma tidak ikut dijumlah lagi DI SINI. Kalau
+// holding-nya sudah dihapus (orphan, dicek B6) atau belum ditautkan sama
+// sekali, `a.investmentId` tetap ada di data tapi resolve gagal -- SENGAJA
+// TIDAK pakai _resolveLinkedInvestment() di sini (nambah dependency lookup
+// per-aset ke overhead reduce()), cukup cek keberadaan field `a.investmentId`
+// -- SAMA sikap dgn B6 (baca field, bukan validasi orphan di titik hitung).
+// Efek: aset orphan (holding dihapus tapi field investmentId belum dilepas)
+// nilainya HILANG sementara dari Kekayaan Bersih sampai user lepas
+// tautannya di modal Aset -- SAMA PERSIS pola _migratedToInvestmentId (aset
+// termigrasi yg holding-nya dihapus juga tidak otomatis balik ke Buku Aset).
+// Dipakai juga oleh AssetPortfolioAPI (portfolioComposition()) -- filter ini
+// SEKALIGUS menghilangkan dobel-hitung yg sama di kartu Portfolio (assetValue
+// vs investmentValue), bukan cuma Kekayaan Bersih.
+totalValue(){return(D.assets||[]).filter(isAssetOwnershipSelf).filter(a=>!a._migratedToInvestmentId).filter(a=>!a.investmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0);},
 // FITUR BARU: Dashboard Aset — ringkasan Total Aset / Nilai Buku / Nilai Pasar +
 // breakdown per kategori (jenis). Nilai Pasar = total a.nilai (estimasi nilai saat
 // ini, sesuai yang diisi user di modal Aset). Nilai Buku = total modal/harga

@@ -97,19 +97,44 @@ const InvestmentListUI = {
       const gain = Investment.holdingGainLoss(h);
       const roi = Investment.holdingROI(h);
       const cls = gain >= 0 ? 'green' : 'red';
-      // crossWarn (S552) -- badge di LEVEL LIST (bukan cuma dalam modal saat dibuka),
-      // reuse investmentCrossCheckWarning() (investasi.js) apa adanya, 0 rumus baru.
-      const crossWarn = (typeof investmentCrossCheckWarning === 'function') ? investmentCrossCheckWarning(h) : null;
-      const crossWarnChip = crossWarn ? ' <span class="u-fs10 u-r6 u-ml4" style="border:1px solid var(--warning,#c77700);color:var(--warning,#c77700);padding:1px 5px" title="' + escapeHtml(crossWarn) + '">⚠️</span>' : '';
       return '<div class="tx-item u-pointer" data-action="InvestmentListUI.openModal" data-args="' + escapeHtml(JSON.stringify([h.id])) + '">'
         + '<div class="tx-icon u-bgaccsoft">💹</div>'
         + '<div class="tx-info">'
-        + '<div class="tx-name">' + escapeHtml(h.name) + crossWarnChip + '</div>'
+        + '<div class="tx-name">' + escapeHtml(h.name) + '</div>'
         + '<div class="tx-meta"><span class="acc-chip">' + escapeHtml(h.type) + '</span> ' + (h.unit || 0) + ' unit · ROI ' + (roi >= 0 ? '+' : '') + roi.toFixed(1) + '%</div>'
         + '</div>'
         + '<div class="tx-amount"><div>' + fmt(value) + '</div><div class="u-fs11 ' + cls + '">' + (gain >= 0 ? '+' : '') + fmt(gain) + '</div></div>'
         + '</div>';
     }).join('');
+  },
+
+  // _resolveLinkedAsset(h) — B10: Investasi -> Aset Reverse Navigation (simetris dgn
+  // B3 Aset -> Investasi). Cari SATU entry D.assets yang investmentId-nya menunjuk ke
+  // holding ini (link dibuat dari sisi Aset lewat dropdown B1, "🔗 Hubungkan ke Holding
+  // Investasi"). PURE/READ-ONLY, baca LIVE dari D.assets tiap panggilan (0 snapshot/cache
+  // di h) — pola sama persis Aset._resolveLinkedInvestment() (kebalikannya, aset.js).
+  // Balikin objek aset (a) kalau ketemu, null kalau tidak ada aset manapun yang tertaut
+  // ke holding ini (normal, bukan data rusak — tidak semua holding harus punya aset
+  // tertaut baliknya).
+  _resolveLinkedAsset(h) {
+    if (!h) return null;
+    return (D.assets || []).find((a) => a.investmentId && sameId(a.investmentId, h.id)) || null;
+  },
+
+  // _renderAssetLinkAction(h) — B10: bangun tombol navigasi "🔗 Lihat di Aset" di
+  // investmentModal, HANYA tampil kalau holding ini SUDAH ditautkan balik oleh SATU
+  // entry Buku Aset (via _resolveLinkedAsset() di atas). Pola PERSIS
+  // Aset._renderVehicleLinkAction() (S509c, aset.js) — container div disembunyikan
+  // (u-dnone) kalau tidak ada match, ditampilkan (innerHTML tombol) kalau ada. 100%
+  // reuse Aset.openModal() (sudah ada sejak awal) lewat dispatcher data-action generik
+  // yang sudah ada — TIDAK ada modal baru, TIDAK ada router baru.
+  _renderAssetLinkAction(h) {
+    const box = document.getElementById('investmentAssetLinkAction');
+    if (!box) return;
+    const a = InvestmentListUI._resolveLinkedAsset(h);
+    if (!a) { box.innerHTML = ''; box.classList.toggle('u-dnone', true); return; }
+    box.innerHTML = '<button type="button" class="btn btn-ghost btn-full btn-sm" data-action="Aset.openModal" data-args="' + escapeHtml(JSON.stringify([a.id])) + '">🔗 Lihat di Aset</button>';
+    box.classList.toggle('u-dnone', false);
   },
 
   // openModal(id) — buka investmentModal, mode Tambah kalau id kosong, mode Edit (prefill
@@ -151,16 +176,12 @@ const InvestmentListUI = {
     // custodianId (h.custodianId null/undefined, termasuk SEMUA data lama)
     // -> value kosong terpilih ("— Tidak ada —"), 0 dipaksa assign apa pun.
     InvestmentListUI._renderCustodianOptions(h ? h.custodianId : null);
-    // investAssetId (S552) -- dropdown "🔗 Hubungkan ke Buku Aset (opsional)", pola
-    // sama persis _populateVehAssetLinkSelect() (vehicle-core.js, S506): opsi diisi
-    // ulang tiap openModal() dari investmentAssetLinkOptionsHtml() (investasi.js).
-    // Holding tanpa assetId (termasuk SEMUA data lama) -> opsi "— Tidak terhubung —"
-    // otomatis terpilih.
-    const assetLinkEl = document.getElementById('investAssetId');
-    if (assetLinkEl && typeof investmentAssetLinkOptionsHtml === 'function') {
-      assetLinkEl.innerHTML = investmentAssetLinkOptionsHtml(h ? h.assetId : null);
-    }
-    InvestmentListUI._renderAssetLinkWarning(h);
+    // investmentAssetLinkAction (B10) — tombol "🔗 Lihat di Aset", lihat
+    // _renderAssetLinkAction() di atas. Dipanggil di sini (bukan cuma di mode Edit)
+    // supaya mode Tambah (h=null) otomatis ikut menyembunyikan kontainer lewat guard
+    // di _resolveLinkedAsset(null)->null, pola sama persis _renderCustodianOptions()
+    // di atas yang juga dipanggil tanpa cabang if/else terpisah.
+    InvestmentListUI._renderAssetLinkAction(h);
     // Tombol "⚖️ Atur Porsi Kepemilikan" & "🗑️ Hapus Holding" cuma masuk akal utk holding
     // yang SUDAH tersimpan (butuh id) — disembunyikan di mode Tambah, pola sama persis
     // assetModal (openOwnersModal cuma jalan kalau Aset.editId terisi).
@@ -204,34 +225,6 @@ const InvestmentListUI = {
     sel.innerHTML = opts;
     if (!selectedId) sel.value = '';
     InvestmentListUI._syncCustodianActionButtons();
-  },
-
-  // _renderAssetLinkWarning(h) — S552. Isi #investAssetLinkWarning di dalam
-  // investmentModal dgn hasil investmentCrossCheckWarning(h) (investasi.js, 0 rumus
-  // baru) supaya user langsung lihat peringatan kepemilikan beda TANPA harus buka
-  // Buku Aset secara terpisah (bagian "bridge" dari rekomendasi B.2 hasil audit S551
-  // -- lihat FIX-s552-asset-investasi-link-badge.md). Kosong/disembunyikan kalau h
-  // null (mode Tambah, belum ada nama/assetId utk dicek) atau tidak ada mismatch.
-  _renderAssetLinkWarning(h) {
-    const box = document.getElementById('investAssetLinkWarning');
-    if (!box) return;
-    const msg = (h && typeof investmentCrossCheckWarning === 'function') ? investmentCrossCheckWarning(h) : null;
-    box.textContent = msg || '';
-    box.classList.toggle('u-dnone', !msg);
-  },
-
-  // onAssetLinkChange() — S552. Dipanggil dari onchange dropdown #investAssetId.
-  // Mode Tambah (belum ada editId) belum punya holding tersimpan utk dicek silang --
-  // warning cuma ditampilkan di mode Edit (pola sama persis ownersBtn/txBtn yang juga
-  // disembunyikan sampai holding tersimpan). Murni preview UI, penulisan
-  // sesungguhnya (h.assetId) terjadi saat save().
-  onAssetLinkChange() {
-    if (!InvestmentListUI.editId) return;
-    const h = Investment.getHolding(InvestmentListUI.editId);
-    if (!h) return;
-    const sel = document.getElementById('investAssetId');
-    const preview = Object.assign({}, h, { assetId: sel ? (sel.value || null) : h.assetId });
-    InvestmentListUI._renderAssetLinkWarning(preview);
   },
 
   // _syncCustodianActionButtons() — S542 (follow-up ringan #2 pasca-S541,
@@ -372,15 +365,10 @@ const InvestmentListUI = {
     // investasi.js) -- 0 kemungkinan literal string "__new__" tersimpan sbg id.
     const custodianEl = document.getElementById('investCustodian');
     const custodianId = (custodianEl && custodianEl.value !== '__new__') ? custodianEl.value : '';
-    // assetId (S552) -- dibaca dari dropdown #investAssetId, "" (opsi "— Tidak
-    // terhubung —") dinormalisasi jadi null oleh updateHolding() sendiri (investasi.js,
-    // pola sama persis custodianId di atas).
-    const assetLinkEl = document.getElementById('investAssetId');
-    const assetId = assetLinkEl ? assetLinkEl.value : '';
     let h;
     try {
       if (InvestmentListUI.editId) {
-        h = Investment.updateHolding(InvestmentListUI.editId, { name, type, currentPrice, notes, purchaseDate, custodianId, assetId });
+        h = Investment.updateHolding(InvestmentListUI.editId, { name, type, currentPrice, notes, purchaseDate, custodianId });
       } else {
         h = Investment.addHolding({ name, type, unit, avgPrice, currentPrice: currentPrice || avgPrice, notes, purchaseDate });
       }
@@ -400,11 +388,6 @@ const InvestmentListUI = {
       // (investasi.js) tetap 1 sumber kebenaran, bukan assignment manual field mentah
       // spt unit/avgPrice di atas (yang memang belum ada jalur updateHolding()-nya).
       if (custodianId) Investment.updateHolding(h.id, { custodianId });
-      // assetId (S552) -- sama pola persis custodianId di atas: addHolding() belum
-      // menerima assetId lewat argumen resmi (holding baru selalu mulai assetId:null),
-      // ditulis lewat updateHolding() terpisah supaya jalur normalisasi falsy->null
-      // tetap 1 sumber kebenaran.
-      if (assetId) Investment.updateHolding(h.id, { assetId });
     }
     closeModal('investmentModal');
     InvestmentListUI.render();
