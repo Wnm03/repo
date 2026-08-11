@@ -55,6 +55,42 @@ issues.push({level:'warn',title:'Tagihan dengan akun tidak valid',detail:`"${esc
 if(a.accountId && !accIds.has(a.accountId)){
 issues.push({level:'warn',title:'Aset dengan akun tautan tidak valid',detail:`"${escapeHtml(a.name)}" ditautkan ke akun yang sudah dihapus — akun tautan otomatis dianggap kosong, cek/lepas tautannya di modal Aset.`});
 }
+// PERUBAHAN SESI B6 (gap sama persis cek accountId di atas, follow-up B1-B5
+// Aset<->Investasi bridge): a.investmentId (dropdown "🔗 Hubungkan ke Holding
+// Investasi", B1) bisa jadi ORPHAN kalau holding-nya sudah dihapus dari Investasi
+// -- baris bridge "🔗 Terhubung ke Investasi" (B3) & read-only Atur Porsi (B2a/B2b)
+// otomatis fallback ke perilaku lama (Aset._resolveLinkedInvestment() balikin null,
+// 0 crash), tapi user tidak pernah diberi tahu tautannya putus. Murni baca
+// (sameId(), pola sama cek assetId orphan Transaksi/Piutang/Utang di atas), 0
+// perubahan ke cek lain.
+if(a.investmentId && !(D.investments||[]).some(h=>sameId(h.id,a.investmentId))){
+// PERUBAHAN SESI B8 (update teks, konsekuensi dari fix Aset.totalValue() --
+// lihat komentar Opsi A di aset.js): SEBELUM B8, field investmentId orphan
+// cuma bikin baris bridge UI hilang (tampilan doang). SESUDAH B8, Aset.
+// totalValue()/asetZakatable EXCLUDE aset SELAMA `a.investmentId` masih
+// terisi -- TIDAK dicek dulu apa holding-nya masih ada -- jadi aset orphan
+// begini nilainya SEKARANG juga hilang sementara dari Kekayaan Bersih/Zakat
+// Maal, bukan cuma dari baris bridge UI. Teks diupdate supaya user tahu
+// dampaknya lebih besar dari sebelumnya -- level tetap 'warn' (bukan
+// 'error'), sama pola cek accountId orphan Aset di atas yg juga level warn.
+// PERUBAHAN SESI B11 (QoL #5 dari rencana B1-B10, ide user): tambah field
+// `assetId` di issue -- BUKAN render tombol di sini (file ini murni logic/
+// data, 0 HTML/DOM). Konsumen render list (di luar cakupan patch ini, lihat
+// FIX-B11 md) bisa reuse dispatcher data-action="openAssetModal" data-args=
+// "[assetId]" yang SUDAH ADA (pola sama persis baris list Aset di aset.js)
+// utk bikin tombol "Buka Aset" langsung dari saran ini, tanpa user cari
+// manual. 0 perubahan ke title/detail/level issue yang sudah ada.
+issues.push({level:'warn',title:'Aset tertaut ke Holding Investasi yang sudah dihapus',detail:`"${escapeHtml(a.name)}" masih menyimpan tautan ke Holding Investasi yang sudah dihapus -- baris "🔗 Terhubung ke Investasi" & porsi kepemilikan tertaut otomatis dianggap kosong, DAN nilai aset ini (${fmtFull(a.nilai||0)}) untuk sementara TIDAK ikut dihitung di Kekayaan Bersih/Zakat Maal (dianggap masih "milik" holding yang sudah terhapus). Cek/lepas tautannya di modal Aset (dropdown "🔗 Hubungkan ke Holding Investasi") supaya nilainya terhitung lagi.`,assetId:a.id});
+}
+// SESI B7 (audit) menambahkan warn "berpotensi dihitung 2x di Kekayaan Bersih"
+// di sini -- SESI B8 sudah MEMPERBAIKI rumusnya (Aset.totalValue() &
+// Zakat.hitungMaal() sekarang exclude aset yg `a.investmentId`-nya resolve ke
+// holding yg masih ada, lihat komentar Opsi A di totalValue()/asetZakatable
+// masing-masing). Warn B7 DIHAPUS di sesi ini krn sudah tidak akurat lagi --
+// dulu ngasih tau "ini dobel-hitung", sekarang KALAU dibiarkan nyala isinya
+// jadi bohong (rumus sudah tidak dobel-hitung). 0 pengganti: link B1 yg
+// resolve ke holding valid sekarang perilaku NORMAL/diharapkan (bukan lagi
+// gejala bug), tidak perlu warning apapun.
 // PERUBAHAN SESI 501 (F3, AUDIT-SESI-B-PERLUASAN-ASET.md §3.2, follow-up
 // dari Sesi B1/B2): aset yang punya KEDUANYA `a.ownership` non-SELF
 // (whole-entity, dropdown Kepemilikan) DAN `a.owners[]` EKSPLISIT non-SELF
@@ -85,6 +121,24 @@ issues.push({level:'warn',title:'Aset dengan kepemilikan ganda (Kepemilikan + Po
 }
 }
 });
+// PERUBAHAN SESI B4 (RENCANA-SESI-RINGKAS.md, alat bantu migrasi B1-B3 field
+// investmentId): saran (BUKAN auto-link) utk pasangan Aset & Holding Investasi
+// yang namanya mirip & belum ditautkan lewat dropdown "🔗 Hubungkan ke Holding
+// Investasi" (B1) -- kemungkinan instrumen yang sama tercatat 2x (1x manual di
+// Buku Aset, 1x di Holding Investasi). Guard typeof Aset (pola sama guard lain
+// di file ini) -- kalau module belum dimuat, cek ini diam saja. 100% REUSE
+// Aset._findInvestmentMigrationCandidates() (PURE, baca-saja) -- 0 logic
+// pencocokan baru di sini, cuma merangkai hasilnya jadi issue level 'warn' 1
+// per pasangan. User tetap memutuskan link-nya manual di modal Aset.
+if(typeof Aset!=='undefined' && typeof Aset._findInvestmentMigrationCandidates==='function'){
+Aset._findInvestmentMigrationCandidates().forEach(c=>{
+const holdingValueTxt=c.holdingValue!=null?` (nilai holding ${fmtFull(c.holdingValue)})`:'';
+// PERUBAHAN SESI B11: tambah `assetId:c.assetId` (sudah ada di return
+// _findInvestmentMigrationCandidates(), tinggal diteruskan) -- pola sama
+// persis komentar B11 di cek orphan investmentId di atas.
+issues.push({level:'warn',title:'Kemungkinan Aset & Investasi dobel-catat (belum ditautkan)',detail:`Aset "${escapeHtml(c.assetName)}" (${fmtFull(c.assetNilai)}) namanya mirip Holding Investasi "${escapeHtml(c.holdingName)}"${holdingValueTxt} yang belum ditautkan -- kemungkinan instrumen yang sama tercatat 2x. Ini cuma SARAN, bukan otomatis ditautkan; kalau memang sama, buka modal Aset ini lalu pilih holding tersebut di dropdown "🔗 Hubungkan ke Holding Investasi".`,assetId:c.assetId});
+});
+}
 // PERUBAHAN SESI 293 (audit lanjutan Sesi 292 akun-del-targets-assets-gapfix):
 // D.targets punya accountId (dipakai progress "via Akun" — lihat akun.js
 // delAcc() & modules-calc.js) tapi belum pernah dicek orphan di sini, gap
@@ -194,65 +248,6 @@ issues.push({level:'error',title:'ID snapshot Skor Hidup Seimbang duplikat',deta
 if(dupLbDates.length){
 issues.push({level:'warn',title:'Tanggal snapshot Skor Hidup Seimbang duplikat',detail:`${dupLbDates.length} tanggal punya lebih dari 1 snapshot (seharusnya cuma 1 per tanggal). Tanggal: ${[...new Set(dupLbDates)].slice(0,5).join(', ')}${dupLbDates.length>5?'...':''}.`});
 }
-// PERUBAHAN SESI 551 (audit "duplikat instrumen Aset<->Investasi", laporan
-// user Agustus 2026 -- rekomendasi butir B.1 hasil audit modal Porsi
-// Kepemilikan): D.assets[] & D.investments[] adalah 2 domain PARALEL yang
-// tidak pernah saling tahu -- instrumen yang sama (mis. "Schorder") bisa
-// tercatat di keduanya dgn NAMA sama tapi susunan pemilik (owners[]) beda
-// (satu ownership self-owned, satu lagi ada porsi titipan/investor), tanpa
-// ada peringatan apa pun di manapun. Cek ini MURNI BACA (0 mutasi data, 0
-// perubahan ke MultiOwnerEngine.getOwners() itu sendiri) -- deteksi nama
-// kembar (trim+lowercase, exact match SENGAJA -- fuzzy match di luar
-// cakupan, resiko false-positive lebih besar drpd manfaatnya) antara aset &
-// holding investasi, lalu bandingkan "signature" pemilik efektif dari
-// MultiOwnerEngine.getOwners() (0 rumus baru, reuse persis fungsi yang
-// sudah dipakai assetOwnersModal/investmentOwnersModal) -- kalau signature
-// beda, user diberi tahu (level warn, sama pola cek F3 S501 di atas: 2
-// angka "sama-sama benar" utk domain masing-masing, tapi user perlu tahu
-// ada 2 sumber kebenaran berbeda). Guard typeof MultiOwnerEngine sama pola
-// semua guard lain di file ini -- kalau modul belum dimuat, cek ini diam
-// saja (0 false-positive/crash).
-if(typeof MultiOwnerEngine!=='undefined' && typeof MultiOwnerEngine.getOwners==='function'){
-const ownerSig=(entity)=>{
-const res=MultiOwnerEngine.getOwners(entity);
-if(!res||!res.ok)return null;
-return (res.owners||[]).map(o=>(o.isSelf?'SELF':('ID:'+(o.ownerId||o.ownerName||'?')))+':'+(Math.round((o.porsi||0)*100)/100)).sort().join('|');
-};
-const assetByName=new Map();
-(D.assets||[]).forEach(a=>{
-const key=(a.name||'').trim().toLowerCase();
-if(!key)return;
-if(!assetByName.has(key))assetByName.set(key,[]);
-assetByName.get(key).push(a);
-});
-(D.investments||[]).forEach(h=>{
-const key=(h.name||'').trim().toLowerCase();
-if(!key)return;
-const assetMatches=assetByName.get(key);
-if(!assetMatches||!assetMatches.length)return;
-const invSig=ownerSig(h);
-if(invSig===null)return;
-assetMatches.forEach(a=>{
-const assetSig=ownerSig(a);
-if(assetSig===null)return;
-if(assetSig!==invSig){
-issues.push({level:'warn',title:'Nama sama di Buku Aset & Investasi dgn kepemilikan berbeda',detail:`"${escapeHtml(a.name)}" tercatat di Buku Aset DAN sbg holding Investasi dgn nama sama, tapi susunan pemiliknya beda -- cek apakah ini instrumen yang sama (kalau ya, hapus salah satu drpd dobel-hitung) atau memang 2 hal berbeda yang kebetulan namanya sama (kalau ya, ganti nama salah satunya biar tidak membingungkan).`});
-}
-});
-});
-}
-// PERUBAHAN SESI 552 (generalisasi rekomendasi B hasil audit S551 -- lihat
-// FIX-s552-asset-investasi-link-badge.md): orphan check utk `h.assetId` (link resmi
-// baru, investasi.js) -- pola SAMA PERSIS orphan check S506 utk `vehicle.assetId`
-// di atas. MURNI BACA, level warn, TIDAK auto-repair/auto-null (itu tanggung jawab
-// InvestmentListUI.save() saja kalau user edit ulang holding-nya).
-(D.investments||[]).forEach(h=>{
-if(!h||!h.assetId)return;
-const found=(D.assets||[]).some(a=>a&&String(a.id)===String(h.assetId));
-if(!found){
-issues.push({level:'warn',title:'Link Buku Aset investasi tidak ditemukan',detail:`Holding investasi "${escapeHtml(h.name||'?')}" ditautkan ke entry Buku Aset yang sudah tidak ada (mungkin sudah dihapus) -- link ini aman diabaikan atau bisa dilepas ulang lewat modal holding (dropdown "🔗 Hubungkan ke Buku Aset").`});
-}
-});
 (D.piutang||[]).forEach(p=>{
 if(!p.name || !p.name.trim()){
 issues.push({level:'error',title:'Piutang tanpa nama peminjam',detail:`Catatan piutang (ID ${p.id}) tidak punya nama peminjam.`});
@@ -269,23 +264,6 @@ issues.push({level:'warn',title:'Piutang dengan tanggal jatuh tempo tidak valid'
 // hitung diam-diam. Pola sama persis cek assetId lain di file ini.
 if(p.assetId && !(D.assets||[]).some(a=>sameId(a.id,p.assetId))){
 issues.push({level:'warn',title:'Piutang tertaut ke Aset Multi-Owner yang sudah dihapus',detail:`Piutang "${p.name||'?'}" masih menyimpan tautan ke aset multi-owner yang sudah dihapus -- porsi kepemilikan yang dihitung bisa salah, cek/lepas tautannya di modal Piutang.`});
-}
-// PERUBAHAN SESI 553 (gap dari rekomendasi audit S551/S552 -- field ini
-// berlabel "Kaitkan ke Aset Multi-Owner" (lihat modules/finance/
-// piutang-utang.js resolveEntryAssetSelfPorsi()), tapi kalau aset yang
-// ditautkan ternyata SINGLE-owner, tautan jadi silent no-op (fallback
-// selfPorsi 100%, sama persis spt tidak ditautkan) -- user bisa salah kira
-// porsinya kesplit padahal tidak. Guard typeof MultiOwnerEngine sama pola
-// semua guard lain di file ini. Level info (bukan warn/error) -- ini bukan
-// data rusak, murni supaya user sadar link ini belum "aktif".
-if(p.assetId && typeof MultiOwnerEngine!=='undefined' && typeof MultiOwnerEngine.getOwners==='function'){
-const linkedAsset=(D.assets||[]).find(a=>sameId(a.id,p.assetId));
-if(linkedAsset){
-const res=MultiOwnerEngine.getOwners(linkedAsset);
-if(res&&res.ok&&!res.isMultiOwner){
-issues.push({level:'warn',title:'Piutang tertaut ke aset yang bukan multi-owner',detail:`Piutang "${p.name||'?'}" ditautkan ke "${escapeHtml(linkedAsset.name||'?')}", tapi aset itu cuma 1 pemilik -- tautan ini tidak berpengaruh apa-apa (porsi tetap 100%, sama spt tidak ditautkan). Aman diabaikan kalau memang sengaja cuma buat referensi.`});
-}
-}
 }
 });
 (D.partsStock||[]).forEach(p=>{
@@ -375,17 +353,6 @@ issues.push({level:'warn',title:'Utang dengan tanggal jatuh tempo tidak valid',d
 if(d.assetId && !(D.assets||[]).some(a=>sameId(a.id,d.assetId))){
 issues.push({level:'warn',title:'Utang tertaut ke Aset Multi-Owner yang sudah dihapus',detail:`Utang "${d.name||'?'}" masih menyimpan tautan ke aset multi-owner yang sudah dihapus -- porsi kepemilikan yang dihitung bisa salah, cek/lepas tautannya di modal Utang.`});
 }
-// PERUBAHAN SESI 553 -- sama persis cek assetId-bukan-multi-owner Piutang
-// di atas, utk Utang.
-if(d.assetId && typeof MultiOwnerEngine!=='undefined' && typeof MultiOwnerEngine.getOwners==='function'){
-const linkedAsset=(D.assets||[]).find(a=>sameId(a.id,d.assetId));
-if(linkedAsset){
-const res=MultiOwnerEngine.getOwners(linkedAsset);
-if(res&&res.ok&&!res.isMultiOwner){
-issues.push({level:'warn',title:'Utang tertaut ke aset yang bukan multi-owner',detail:`Utang "${d.name||'?'}" ditautkan ke "${escapeHtml(linkedAsset.name||'?')}", tapi aset itu cuma 1 pemilik -- tautan ini tidak berpengaruh apa-apa (porsi tetap 100%, sama spt tidak ditautkan). Aman diabaikan kalau memang sengaja cuma buat referensi.`});
-}
-}
-}
 });
 // Cek tambahan (S283 — audit data integrity, temuan gap): D.renovProjects[].
 // items[] punya accountId & txId (lihat modules/finance/tx-renov.js) persis
@@ -446,9 +413,17 @@ summaryEl.innerHTML='✅ Tidak ditemukan masalah. Data terlihat sehat!';
 listEl.innerHTML='';
 } else {
 summaryEl.innerHTML=`Ditemukan <b>${errCount} error</b> & <b>${warnCount} peringatan</b> dari ${D.transactions.length} transaksi, ${D.bbmLogs.length+D.servisLogs.length} catatan kendaraan, ${(D.cobek||[]).length} transaksi Shop, ${(D.workDays||[]).length} catatan absensi, ${(D.wealthSnapshots||[]).length} snapshot kekayaan, ${(D.piutang||[]).length} piutang, ${(D.debts||[]).length} utang, ${(D.budgets||[]).length} anggaran, ${(D.lifeBalanceSnapshots||[]).length} snapshot Skor Hidup Seimbang & ${(D.wishlist||[]).length} barang Prioritas Belanja.`;
+// PERUBAHAN SESI B11 (QoL #5 dari rencana B1-B10): kalau issue punya
+// `assetId` (baru ditambahkan di 2 cek Aset<->Investasi B4/B6/B8 di atas),
+// render 1 tombol "Buka Aset" yang reuse dispatcher data-action=
+// "openAssetModal" data-args="[assetId]" yang SUDAH ADA (pola sama persis
+// baris list Aset di aset.js, lihat FIX-B11 md) -- 0 dispatcher baru, 0
+// logic buka-modal baru di sini. Issue lain (tanpa assetId) tampilannya
+// tidak berubah sama sekali.
 listEl.innerHTML=issues.map(i=>`<div style="padding:10px;border-radius:10px;margin-bottom:8px;background:${i.level==='error'?'var(--accent2-soft)':'var(--accent4-soft)'}">
       <div style="font-weight:700;font-size:13px;color:${i.level==='error'?'var(--accent2)':'var(--accent4)'}">${i.level==='error'?'❌':'⚠️'} ${escapeHtml(i.title)}</div>
       <div class="u-fs12 u-t2 u-mt2">${escapeHtml(i.detail)}</div>
+      ${i.assetId?`<button class="u-fs11 u-r6 u-mt6" style="padding:4px 10px;border:1px solid var(--accent4);background:transparent;color:var(--accent4)" data-action="openAssetModal" data-args="${escapeHtml(JSON.stringify([i.assetId]))}">📦 Buka Aset</button>`:''}
     </div>`).join('');
 }
 openModal('dataHealthModal');
