@@ -55,7 +55,7 @@ function makeCtx(D) {
   return { ctx, els };
 }
 
-test('showFilteredTx(scope=account) — akun tertaut aset multi-owner -> Modal & Pengeluaran dipecah per porsi, lalu ditotal per orang', () => {
+test('showFilteredTx(scope=account) — akun tertaut aset multi-owner -> tab per pemilik (bukan patungan/gabung), detail default owner pertama', () => {
   const D = {
     assets: [{ id: 'as1', name: 'Majoris', accountId: 'acc1', owners: [{ ownerId: 'SELF', ownerName: 'renov', porsi: 80 }, { ownerId: 'sihab', ownerName: 'mas sihab', porsi: 20 }] }],
     transactions: [
@@ -67,17 +67,24 @@ test('showFilteredTx(scope=account) — akun tertaut aset multi-owner -> Modal &
   ctx.showFilteredTx('account', 'all', 'Akun Test', 'acc1');
   const html = els.filterTxOwnerSplit.innerHTML;
   assert.equal(els.filterTxOwnerSplit.style.display, 'block', 'blok porsi harus ditampilkan');
-  assert.ok(html.includes('renov (80%)'), 'nama+porsi owner 1 harus tampil');
-  assert.ok(html.includes('mas sihab (20%)'), 'nama+porsi owner 2 harus tampil');
-  // Modal (income) 1.000.000: 80% -> 800000, 20% -> 200000
-  assert.ok(html.includes('Modal Rp800000'), 'modal owner 1 harus 80% dari total income');
-  assert.ok(html.includes('Modal Rp200000'), 'modal owner 2 harus 20% dari total income');
-  // Pengeluaran (expense) 200.000: 80% -> 160000, 20% -> 40000
-  assert.ok(html.includes('Pengeluaran Rp160000'), 'pengeluaran owner 1 harus 80% dari total expense');
-  assert.ok(html.includes('Pengeluaran Rp40000'), 'pengeluaran owner 2 harus 20% dari total expense');
-  // Total net (800000) tetap dipecah sesuai porsi
-  assert.ok(html.includes('Total Rp640000'), 'total net owner 1 harus 80% dari net (800000)');
-  assert.ok(html.includes('Total Rp160000'), 'total net owner 2 harus 20% dari net (800000)');
+  // S568: kedua NAMA pemilik muncul sbg tombol tab (bukan detail lengkap keduanya sekaligus)
+  assert.ok(html.includes('>renov<'), 'tombol tab owner 1 (renov) harus tampil');
+  assert.ok(html.includes('>mas sihab<'), 'tombol tab owner 2 (mas sihab) harus tampil');
+  // Default (belum diklik) -> hanya detail owner PERTAMA (renov) yang tampil
+  assert.ok(html.includes('renov (80%)'), 'detail default harus owner pertama (renov)');
+  assert.ok(!html.includes('mas sihab (20%)'), 'detail owner kedua TIDAK boleh tampil bersamaan (bukan mode patungan)');
+  // Modal (income) 1.000.000: 80% -> 800000
+  assert.ok(html.includes('Modal Rp800000'), 'modal owner pertama harus 80% dari total income');
+  assert.ok(html.includes('Pengeluaran Rp160000'), 'pengeluaran owner pertama harus 80% dari total expense');
+  assert.ok(html.includes('Total Rp640000'), 'total net owner pertama harus 80% dari net (800000)');
+
+  // Data owner kedua tetap TERSEDIA (siap ditampilkan begitu tabnya diklik) lewat
+  // window._filterTxOwnerSplitRows, walau tidak dirender bersamaan di HTML awal.
+  const rows = ctx.window._filterTxOwnerSplitRows;
+  assert.equal(rows.length, 2, 'data 2 owner harus tersimpan utk dipakai saat tab diklik');
+  assert.equal(rows[1].name, 'mas sihab');
+  assert.ok(rows[1].detailHtml.includes('mas sihab (20%)'));
+  assert.ok(rows[1].detailHtml.includes('Modal Rp200000'), 'modal owner kedua harus 20% dari total income');
 });
 
 test('showFilteredTx(scope=account) — akun TIDAK tertaut ke aset apa pun -> #filterTxOwnerSplit tetap kosong/tersembunyi', () => {
