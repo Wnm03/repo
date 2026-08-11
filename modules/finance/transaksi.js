@@ -126,15 +126,20 @@ maybeCreateTitipanTalanganPiutang(tx);
 }
 }
 // updateTxAssetWrapVisibility() — show/hide blok "#txAssetWrap" (dropdown
-// "Kaitkan ke Aset Multi-Owner" + preview, modals.js). HANYA tampil utk
-// Pemasukan (curTxType==='income') & ada minimal 1 aset multi-owner
-// (getMultiOwnerAssets(), 100% reuse dari piutang-utang.js S394 — 0
-// duplikasi). Dipanggil dari setTxType()/openTxModal()/editTx() supaya
-// field ke-reset/terisi benar tiap ganti tipe transaksi atau buka modal.
+// "Kaitkan ke Aset Multi-Owner" + preview, modals.js). Sebelumnya (S394)
+// HANYA tampil utk Pemasukan -- diperluas (patch akun-multi-owner-
+// doublecount-datahealthcheck-restore) supaya tampil juga utk Pengeluaran,
+// karena justru pengeluaran dari dana titipan/patungan itu yang paling
+// sering butuh dicatat porsinya (audit menemukan gap ini: split porsi
+// sebelumnya cuma bisa dilihat di transaksi Pemasukan). Syarat tetap sama:
+// minimal 1 aset multi-owner ada (getMultiOwnerAssets(), 100% reuse dari
+// piutang-utang.js S394 — 0 duplikasi). Dipanggil dari
+// setTxType()/openTxModal()/editTx() supaya field ke-reset/terisi benar
+// tiap ganti tipe transaksi atau buka modal.
 function updateTxAssetWrapVisibility(){
 const wrap=document.getElementById('txAssetWrap');
 if(!wrap)return;
-const show=curTxType==='income'&&typeof getMultiOwnerAssets==='function'&&getMultiOwnerAssets().length>0;
+const show=typeof getMultiOwnerAssets==='function'&&getMultiOwnerAssets().length>0;
 wrap.style.display=show?'block':'none';
 if(show&&typeof populateEntryAssetSelect==='function'){
 const sel=document.getElementById('txAssetId');
@@ -142,10 +147,55 @@ populateEntryAssetSelect('txAssetId',sel?sel.value:'');
 }
 updateTxAssetSplitPreview();
 }
+// findMultiOwnerAssetForAccount(accId) — Sesi (patch akun-multi-owner-
+// doublecount-datahealthcheck-restore): cari SATU aset multi-owner
+// (getMultiOwnerAssets(), 100% reuse) yang field `accountId`-nya menunjuk
+// ke akun `accId` (pola sama `a.accountId` yang dipakai Aset.openTxHistory()
+// & recalcAssetLinkedAccounts() di aset.js). Ini jembatan yang SEBELUMNYA
+// tidak ada sama sekali antara dropdown "Akun/Metode" (#txAcc) & dropdown
+// "Kaitkan ke Aset Multi-Owner" (#txAssetId) -- keduanya dulu independen
+// total, user harus tahu & pilih manual aset yang benar sendiri walau
+// akunnya sudah eksplisit ditautkan ke 1 aset tertentu. Return aset
+// pertama yang cocok, atau null (0 match / accId kosong / engine belum
+// dimuat -- 0 regresi, guard sama pola getMultiOwnerAssets()).
+function findMultiOwnerAssetForAccount(accId){
+if(!accId||typeof getMultiOwnerAssets!=='function')return null;
+return getMultiOwnerAssets().find(a=>sameId(a.accountId,accId))||null;
+}
+// onTxAccChange() — dipanggil onchange #txAcc (dropdown Akun/Metode,
+// modals.js). Selain menandai _txAccManuallySet=true (perilaku lama, dipakai
+// applyLastAccForCat() supaya tidak menimpa pilihan manual user), sekarang
+// JUGA auto-suggest aset multi-owner yang akunnya cocok
+// (findMultiOwnerAssetForAccount()) ke dropdown #txAssetId -- SATU-satunya
+// jembatan otomatis akun→aset yang ada di form ini (lihat audit gap #2).
+// Guard _txAssetManuallySet: kalau user SUDAH pernah pilih sendiri aset di
+// dropdown itu (lewat onTxAssetChange()), auto-suggest ini TIDAK menimpanya
+// (pola sama persis applyLastAccForCat() vs _txAccManuallySet) -- 0 override
+// paksa pilihan sadar user, cuma bantu isi kalau masih kosong/default.
+function onTxAccChange(){
+_txAccManuallySet=true;
+updateTxAssetWrapVisibility();
+if(_txAssetManuallySet)return;
+const accId=document.getElementById('txAcc').value;
+const match=findMultiOwnerAssetForAccount(accId);
+const sel=document.getElementById('txAssetId');
+if(!sel)return;
+if(match){
+const exists=[...sel.options].some(o=>o.value===match.id);
+if(exists)sel.value=match.id;
+} else {
+sel.value='';
+}
+updateTxAssetSplitPreview();
+}
 // onTxAssetChange() — dipanggil onchange #txAssetId (dropdown aset
-// multi-owner di form transaksi) — cuma perlu refresh live preview
-// pembagian, tidak ada state lain yg perlu disentuh.
+// multi-owner di form transaksi). Selain refresh live preview pembagian,
+// sekarang juga menandai _txAssetManuallySet=true (patch akun-multi-owner-
+// doublecount-datahealthcheck-restore) -- begitu user SENGAJA memilih aset
+// sendiri (termasuk balik ke "— Tidak dikaitkan —"), auto-suggest dari
+// onTxAccChange() berhenti menimpa pilihan itu di sesi form yang sama.
 function onTxAssetChange(){
+_txAssetManuallySet=true;
 updateTxAssetSplitPreview();
 }
 // updateTxAssetSplitPreview() — live preview "#txAssetSplitPreview"
@@ -522,6 +572,7 @@ function openTxModal(type){
 txEditId=null;
 if(typeof WorthIt!=='undefined')WorthIt.pendingBuyId=null;
 _txAccManuallySet=false;
+_txAssetManuallySet=false;
 _txCatLearnSource=null;
 document.getElementById('txModalTitle').textContent='Tambah Transaksi';
 document.getElementById('txDelBtn').style.display='none';
@@ -600,6 +651,11 @@ if(!t)return;
 if(t.type==='transfer_in'||t.type==='transfer_out'){toast('⚠️ Transfer antar akun tidak bisa diedit di sini. Hapus & buat ulang kalau salah.');return;}
 txEditId=id;
 _txPayMethodTouchedByUser=false;
+// _txAssetManuallySet=true kalau transaksi yang diedit sudah punya assetId
+// tersimpan -- pilihan lama itu diperlakukan sama seperti pilihan manual
+// user (0 auto-suggest onTxAccChange() yang menimpa data tersimpan begitu
+// modal Edit dibuka, sebelum user sempat ganti akun apa pun).
+_txAssetManuallySet=!!t.assetId;
 document.getElementById('txModalTitle').textContent='Edit Transaksi';
 document.getElementById('txDelBtn').style.display='flex';
 resetPayMethodLock();
@@ -828,13 +884,16 @@ const date=document.getElementById('txDate').value;
 const note=document.getElementById('txNote').value;
 const cat=document.getElementById('txCat').value;
 const accId=document.getElementById('txAcc').value;
-// Sesi 394: field "Kaitkan ke Aset Multi-Owner" (#txAssetId, modals.js)
-// cuma tampil & berlaku utk Pemasukan (lihat updateTxAssetWrapVisibility())
-// -- kalau curTxType bukan 'income', txAssetIdVal SENGAJA dikosongkan
-// biar assetId lama (kalau ada, dari edit sebelumnya) ikut terhapus di
-// jalur tunai/generik di bawah, bukan nyangkut jadi data basi.
+// Sesi 394 (diperluas -- patch akun-multi-owner-doublecount-datahealthcheck-
+// restore): field "Kaitkan ke Aset Multi-Owner" (#txAssetId, modals.js)
+// dulu HANYA tampil & berlaku utk Pemasukan (txAssetIdVal SENGAJA
+// dikosongkan utk Pengeluaran) -- sekarang field ini tampil utk Pemasukan
+// MAUPUN Pengeluaran (lihat updateTxAssetWrapVisibility()), jadi
+// txAssetIdVal diambil apa adanya dari dropdown tanpa filter tipe. Wrap-nya
+// sendiri tetap tersembunyi kalau tidak ada aset multi-owner sama sekali,
+// jadi txAssetIdSaveEl.value otomatis kosong di kasus itu -- 0 regresi.
 const txAssetIdSaveEl=document.getElementById('txAssetId');
-const txAssetIdVal=(curTxType==='income'&&txAssetIdSaveEl)?txAssetIdSaveEl.value:'';
+const txAssetIdVal=txAssetIdSaveEl?txAssetIdSaveEl.value:'';
 if(cat==='__add_new_cat__'){toast('⚠️ Pilih atau buat kategori dulu');return;}
 // Panel "🔨 Catat juga ke Proyek Renovasi?" dgn status "🛒 Belum Dibeli" (lihat
 // tx-renov.js): barangnya belum benar-benar dibeli, jadi transaksi Keuangan
