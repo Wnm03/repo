@@ -375,6 +375,46 @@ const Investment = {
     return { migrated, skipped };
   },
 
+  // migrateOwnersToRegistry() — R2 (audit ownership/titipan, lanjutan GAP3-AUD-001
+  // S545/546): pola SAMA PERSIS Aset.migrateOwnersToRegistry() — baris h.owners[]
+  // non-SELF yang dibuat SEBELUM investmentOwnersModal disambungkan ke
+  // OwnerRegistry (S491) masih pakai ownerId lama (uid() ad-hoc); ini beda kasus
+  // dari migrateLegacyTitipanOwners() di atas (yang menyasar fundSource==='titipan'
+  // single-owner legacy, BELUM PERNAH punya h.owners[] array sama sekali).
+  // Relabel D.debts[].linkedOwnerId LEBIH DULU (kontinuitas histori/lunas), baru
+  // ganti ownerId baris. IDEMPOTENT. GUARD tabrakan sama persis versi Aset (skip
+  // utuh 1 holding kalau konsolidasi bikin 2 baris ownerId sama).
+  migrateOwnersToRegistry() {
+    if (typeof D === 'undefined' || !Array.isArray(D.investments)) return { migrated: 0, skipped: 0, conflicts: 0 };
+    if (typeof OwnerRegistry === 'undefined' || typeof OwnerRegistry.findOrCreate !== 'function') {
+      throw new Error('OwnerRegistry belum dimuat');
+    }
+    let migrated = 0, skipped = 0, conflicts = 0;
+    D.investments.forEach((h) => {
+      if (!h || !Array.isArray(h.owners) || !h.owners.length) { skipped++; return; }
+      const plan = [];
+      let touched = false;
+      h.owners.forEach((o) => {
+        if (!o || o.isSelf || !o.ownerName) return;
+        const canonical = OwnerRegistry.findOrCreate(String(o.ownerName).trim());
+        if (canonical !== o.ownerId) { plan.push({ row: o, oldId: o.ownerId, newId: canonical }); touched = true; }
+      });
+      if (!touched) { skipped++; return; }
+      const resultIds = h.owners.map((o) => (o && !o.isSelf && plan.some((p) => p.row === o)) ? plan.find((p) => p.row === o).newId : (o ? o.ownerId : null));
+      const nonSelfResultIds = h.owners.map((o, i) => ({ o, id: resultIds[i] })).filter((x) => x.o && !x.o.isSelf).map((x) => x.id);
+      if (new Set(nonSelfResultIds).size !== nonSelfResultIds.length) { conflicts++; return; }
+      plan.forEach(({ row, oldId, newId }) => {
+        if (Array.isArray(D.debts)) {
+          D.debts.forEach((d) => { if (d && d.linkedInvestmentId === h.id && (d.linkedOwnerId || 'titipan_investor') === oldId) d.linkedOwnerId = newId; });
+        }
+        row.ownerId = newId;
+      });
+      Investment._syncTitipanDebt(h);
+      migrated += plan.length;
+    });
+    return { migrated, skipped, conflicts };
+  },
+
   // Hitung ulang unit & avgPrice sebuah holding murni dari riwayat transaksi
   // 'beli'/'jual' (metode average cost), diurutkan berdasarkan tanggal lalu
   // createdAt sebagai tie-breaker supaya urutan input yang tanggalnya sama

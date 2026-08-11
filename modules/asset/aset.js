@@ -1509,6 +1509,55 @@ keepIds.add(o.ownerId);
 });
 D.debts=D.debts.filter(d=>!(d.linkedAssetId===a.id&&!keepIds.has(d.linkedOwnerId)));
 },
+// migrateOwnersToRegistry() — R2 (audit ownership/titipan, lanjutan GAP3-AUD-001
+// S545/546): baris `a.owners[]` non-SELF yang dibuat SEBELUM assetOwnersModal
+// disambungkan ke OwnerRegistry (S490) masih pakai `ownerId` hasil `uid()` lama
+// -- 2 aset dgn owner nama sama TIDAK otomatis punya `ownerId` sama. Fungsi ini
+// derive `ownerId` KANONIK per nama lewat `OwnerRegistry.findOrCreate()` (fungsi
+// resmi yg sama dipakai S490/Investment.migrateLegacyTitipanOwners()), relabel
+// `D.debts[].linkedOwnerId` LEBIH DULU (pola sama persis S545, jaga kontinuitas
+// histori/status lunas), baru ganti `ownerId` di baris owners[]-nya.
+// IDEMPOTENT: baris yang `ownerId`-nya sudah sama dgn hasil findOrCreate() (baik
+// karena sudah dimigrasi, atau memang dibuat lewat dropdown S490+) di-skip --
+// aman dipanggil ulang.
+// GUARD tabrakan: kalau konsolidasi bikin 2 baris owners[] di ASET YANG SAMA
+// jadi `ownerId` sama (mis. data korup, 2 baris nama identik sengaja dipisah),
+// aset itu di-skip UTUH (0 baris diubah) drpd bikin porsi dobel di `ownerId`
+// yang sama -- dicatat di `res.conflicts`, butuh review manual (bukan retry
+// otomatis di sesi ini).
+// Return: {migrated, skipped, conflicts} -- jumlah BARIS owner yang direlabel,
+// aset yang di-skip (0 baris non-SELF/sudah kanonik), & aset yang kena guard
+// tabrakan di atas.
+migrateOwnersToRegistry(){
+if(typeof D==='undefined'||!Array.isArray(D.assets))return{migrated:0,skipped:0,conflicts:0};
+if(typeof OwnerRegistry==='undefined'||typeof OwnerRegistry.findOrCreate!=='function'){
+throw new Error('OwnerRegistry belum dimuat');
+}
+let migrated=0,skipped=0,conflicts=0;
+D.assets.forEach(a=>{
+if(!a||!Array.isArray(a.owners)||!a.owners.length){skipped++;return;}
+const plan=[];
+let touched=false;
+a.owners.forEach(o=>{
+if(!o||o.isSelf||!o.ownerName)return;
+const canonical=OwnerRegistry.findOrCreate(String(o.ownerName).trim());
+if(canonical!==o.ownerId){plan.push({row:o,oldId:o.ownerId,newId:canonical});touched=true;}
+});
+if(!touched){skipped++;return;}
+const resultIds=a.owners.map(o=>(o&&!o.isSelf&&plan.some(p=>p.row===o))?plan.find(p=>p.row===o).newId:(o?o.ownerId:null));
+const nonSelfResultIds=a.owners.map((o,i)=>({o,id:resultIds[i]})).filter(x=>x.o&&!x.o.isSelf).map(x=>x.id);
+if(new Set(nonSelfResultIds).size!==nonSelfResultIds.length){conflicts++;return;}
+plan.forEach(({row,oldId,newId})=>{
+if(Array.isArray(D.debts)){
+D.debts.forEach(d=>{ if(d&&d.linkedAssetId===a.id&&d.linkedOwnerId===oldId)d.linkedOwnerId=newId; });
+}
+row.ownerId=newId;
+});
+Aset._syncOwnerDebts(a);
+migrated+=plan.length;
+});
+return{migrated,skipped,conflicts};
+},
 save(){return withSaveGuard('aset','assetModal',Aset._saveInner);},
 _saveInner(){
 const name=document.getElementById('assetName').value.trim();
