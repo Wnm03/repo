@@ -11,8 +11,8 @@
 > file tapi lupa `node build.js`), jalankan ulang generatornya, JANGAN diedit
 > tangan — editan manual bakal ketimpa lagi di build berikutnya.
 
-Terakhir digenerate: 2026-08-11T02:47:35.428Z
-Total file source: 306 · Total identifier global: 2123
+Terakhir digenerate: 2026-08-11T03:42:52.343Z
+Total file source: 306 · Total identifier global: 2127
 
 ## 1. Urutan load & ringkasan tiap file
 
@@ -60,7 +60,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 37 | `modules/shared/owner-registry.js` | 78 | Owner Registry (Sesi 489, langkah 1/5 rencana PLAN-owner-registry-multi-session.md). TARGET: satu sumber kebenaran `ownerId` lintas Aset/Investasi/Titipan. Audit S488 menemukan `assetOwnersModal`/`investmentOwnersModal` … |
 | 38 | `modules/shared/custodian-registry.js` | 130 | Custodian Registry (Sesi S540-A, Tahap 1/4 DESIGN-S540-CUSTODIAN-GROUPING.md, Design Lock disetujui user dengan keputusan final: Opsi A/registry, seed kosong, 0 backfill, assign manual, build() tidak berubah untuk … |
 | 39 | `modules/asset/asset-ownership-split-presenter.js` | 100 | Sesi 391: split keuntungan aset per pemilik berdasarkan porsi (lanjutan Sesi 390, Multi-Owner Engine). Target eksplisit user: "hitung otomatis keuntungan berdasarkan porsi". PRINSIP SESI INI (sama disiplin dgn … |
-| 40 | `modules/shared/features-helpers-global-security.js` | 661 | Helper global (migrasi data, state D, save/load, event dispatcher) Dipindah ke modules/shared/features-helpers-global-security.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama … |
+| 40 | `modules/shared/features-helpers-global-security.js` | 667 | Helper global (migrasi data, state D, save/load, event dispatcher) Dipindah ke modules/shared/features-helpers-global-security.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama … |
 | 41 | `modules/shared/action-wrappers.js` | 189 | S264 Security Hardening — wrapper functions untuk eks data-onclick. Semua inline handler (data-onclick + new Function()) diganti data-action yang manggil fungsi bernama di sini. Tidak ada logic baru, cuma re-wrap kode … |
 | 42 | `diagnostik-versi.js` | 77 | Domain Diagnostik & Sinkronisasi Versi: snapshot HTML utk self-test (getHtmlSnapshotForSelfTest), cek status sinkron versi produksi vs master (computeProductionSyncStatus), cek status sinkron versi antar file modul … |
 | 43 | `modules/shared/format-tema.js` | 78 | Domain Format Angka & Tema: format rupiah singkat (fmt, mis. "Rp 1.5 jt"), Dipindah ke modules/shared/format-tema.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
@@ -88,7 +88,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 65 | `modules/finance/tx-cobek.js` | 30 | domain "Stok/Penjualan Shop (Shop)" pada form Transaksi. Dipindah ke modules/finance/tx-cobek.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi … |
 | 66 | `modules/finance/tx-target.js` | 69 | domain "Target Tabungan" (modal tambah target, deteksi Dana Dipindah ke modules/finance/tx-target.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi … |
 | 67 | `modules/finance/tx-list-cashflow.js` | 567 | domain "List Transaksi (kartu tx, hapus tx), filter Dipindah ke modules/finance/tx-list-cashflow.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi … |
-| 68 | `modules/finance/transaksi.js` | 1323 | Form Tambah/Edit Transaksi Keuangan: autocomplete kategori/produk, Dipindah ke modules/finance/transaksi.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
+| 68 | `modules/finance/transaksi.js` | 1382 | Form Tambah/Edit Transaksi Keuangan: autocomplete kategori/produk, Dipindah ke modules/finance/transaksi.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
 | 69 | `modules/shared/profil-pengaturan.js` | 120 | Profil pengguna di Pengaturan: auto-save profil, status Dipindah ke modules/shared/profil-pengaturan.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
 | 70 | `modules/finance/kategori.js` | 171 | Modal Kategori & Subkategori (tambah/edit/hapus, filter tampilan) Dipindah ke modules/finance/kategori.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
 | 71 | `modules/ai/kategorisasi-ai.js` | 187 | AI Auto-Kategorisasi Transaksi dari Catatan Bebas Dipindah ke modules/ai/kategorisasi-ai.js (Sesi 14 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder). … |
@@ -142,7 +142,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 119 | `sheets-schema.js` | 228 | Skema kolom Google Sheets per modul (SHEETS_SCHEMAS/SHEETS_MODULES) & helper konversi item<->baris (sheetsHeaderFor/sheetsItemToCells/sheetsCellsToItem dst), dipakai oleh sheets-sync.js. Dipisah dari … |
 | 120 | `sheets-sync.js` | 239 | Integrasi Google Sheets: koneksi OAuth, sinkronisasi push/pull data D.* ke/dari Google Spreadsheet. Dipisah dari features-sheets-pwa-selftest.js (Sesi 2 restrukturisasi folder, blok 1/5 — lihat … |
 | 121 | `pwa-setup.js` | 62 | Setup PWA: registrasi manifest (via Blob kalau tidak di-hosting https) & service worker (sw.js, fallback inline Blob). Dipisah dari features-sheets-pwa-selftest.js (Sesi 2 restrukturisasi folder, blok 2/5 — lihat … |
-| 122 | `self-test.js` | 2225 | CATATAN (Sesi 297): file ini adalah runtime app (bukan file test Node), tapi namanya cocok pola default `node --test` (*-test.js) sehingga bisa ke-load & "gagal" kalau `node --test` dijalankan TANPA argumen di root. … |
+| 122 | `self-test.js` | 2285 | CATATAN (Sesi 297): file ini adalah runtime app (bukan file test Node), tapi namanya cocok pola default `node --test` (*-test.js) sehingga bisa ke-load & "gagal" kalau `node --test` dijalankan TANPA argumen di root. … |
 | 123 | `pajak-aset-ui-wrappers.js` | 163 | Wrapper UI tipis: parser angka (parsePzNum/parseDecStr/ normalizeOcrNumber), ganti tab pajak/zakat (setPajakTab/setPjkTab/savePajakSettings), dan delegasi tipis ke modul … |
 | 124 | `modules/finance/finance-intelligence.js` | 238 | Finance Intelligence Foundation (Sesi 74, Batch 6). Target sesi: Cash Flow Summary, Budget Summary, Income vs Expense, Financial Health Score, Insight dasar — lihat docs/BATCH_PLAN.md § Batch 6. PRINSIP (RULE #1 sesi … |
 | 125 | `modules/finance/finance-dashboard.js` | 202 | modules/finance/finance-dashboard.js — Finance Dashboard & AI Hook Foundation (Sesi 75, Batch 6). Lihat docs/BATCH_PLAN.md § Batch 6. PRINSIP (RULE #1 sesi ini): UI HANYA presenter. 100% REUSE … |
@@ -520,6 +520,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `_toastHideTimer` | `modules/shared/format-tema.js` |
 | `_totalSaldoCache` | `modules/finance/akun.js` |
 | `_txAccManuallySet` | `modules/shared/features-helpers-global-security.js` |
+| `_txAssetManuallySet` | `modules/shared/features-helpers-global-security.js` |
 | `_txByAccIndex` | `modules/finance/akun.js` |
 | `_txCatLearnSource` | `modules/shared/features-helpers-global-security.js` |
 | `_txPayMethodTouchedByUser` | `modules/finance/transaksi.js` |
@@ -1075,6 +1076,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `findFallbackBillPaymentTxId` | `modules/finance/tagihan-kalender.js` |
 | `findFallbackBillPaymentTxIdsForActiveBill` | `modules/shared/modules-render.js` |
 | `findMissingAriaLabels` | `self-test.js` |
+| `findMultiOwnerAssetForAccount` | `modules/finance/transaksi.js` |
 | `findPossibleDuplicateTx` | `modules/shared/scan-ocr.js` |
 | `fiNetAssetFund` | `modules/shared/modules-calc.js` |
 | `FINGOAL_NAV_TARGETS` | `modules/finance/financial-goal-presenter.js` |
@@ -1456,6 +1458,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `migrateShopCategory` | `modules/shared/features-helpers-global-security.js` |
 | `MobilInsight` | `modules/ai/feature-insights.js` |
 | `MODAL_HTML` | `modules/shared/modals.js` |
+| `MODAL_SWEEP_MANUAL_OVERRIDE_FNS` | `self-test.js` |
 | `MODAL_VERSION` | `modules/shared/modals.js` |
 | `MODULE_CALC_VERSION` | `modules/shared/modules-calc.js` |
 | `MODULE_FEATURES_VERSION` | `chat-action-handlers.js` |
@@ -1499,6 +1502,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `onSimJenisChange` | `modules/vehicle/vehicle-core.js` |
 | `onTargetAccChange` | `modules/finance/tx-target.js` |
 | `onTargetDanaDaruratToggle` | `modules/finance/tx-target.js` |
+| `onTxAccChange` | `modules/finance/transaksi.js` |
 | `onTxAssetChange` | `modules/finance/transaksi.js` |
 | `onTxCatInput` | `modules/finance/transaksi.js` |
 | `onTxShopSaleItemChange` | `modules/shop/cobek-tx-cart.js` |
