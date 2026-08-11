@@ -484,7 +484,20 @@ const utang=utangManual+totalDebtValue()+totalCicilanOutstanding();
 // positive) begitu ada holding investasi tersimpan, walau kodenya sendiri sudah benar &
 // konsisten dgn SSOT. Disamakan persis dgn rumus renderBersih()/currentNetWorth().
 const totalAsetExpected=totalAssetValue()+(typeof Investment!=='undefined'?Investment.selfOwnedTotalValue():0);
-const expected=totalSaldoAkun()+totalAsetExpected+totalInventoriBisnisValue()+totalPiutangValue()-utang;
+// FIX (S555, laporan Tes Otomatis "Buku Aset: totalAssetValue() & Kekayaan
+// Bersih konsisten"): dapat 27328191 vs ekspektasi 27328191.083606 -- BUKAN
+// bug kode, tapi false positive di test ini sendiri. netEl.textContent
+// dihasilkan lewat fmtFullSigned() (renderBersih(), modules-calc.js) yang
+// Math.round() nilainya SEBELUM ditampilkan (nominal rupiah tidak pernah
+// pecahan), sedangkan `expected` di sini dihitung ulang langsung dari
+// totalAssetValue()/Investment.selfOwnedTotalValue()/dst TANPA pembulatan --
+// begitu ada holding investasi dgn harga/unit pecahan (mis. NAV reksadana),
+// expected jadi py pecahan sementara hasil tampilan sudah dibulatkan,
+// sehingga perbandingan strict (===) SELALU gagal walau rumusnya sendiri
+// sudah 100% sama dgn renderBersih()/currentNetWorth(). Bulatkan expected
+// dgn Math.round() supaya dibandingkan setara (apples-to-apples) dgn nilai
+// yang benar-benar dirender ke layar.
+const expected=Math.round(totalSaldoAkun()+totalAsetExpected+totalInventoriBisnisValue()+totalPiutangValue()-utang);
 _selfTestAssert(parsePzNum(netEl.textContent)===expected,'Kekayaan Bersih harus = saldo akun + total aset (termasuk holding investasi porsi SELF) + inventori bisnis + total piutang − (utang manual + utang tercatat + sisa cicilan/paylater), dapat '+parsePzNum(netEl.textContent)+' vs ekspektasi '+expected);
 }
 }},
@@ -1731,10 +1744,23 @@ toast('📋 Hasil tes navigasi disalin');
 toast('⚠️ Gagal menyalin, coba lagi');
 }
 }
+// MODAL_SWEEP_MANUAL_OVERRIDE_FNS (S555): fungsi yang cocok pola regex
+// /^open[A-Z]\w*Modal$/ (jadi otomatis ke-tangkap computeModalSweepFnNames())
+// TAPI nama fungsinya TIDAK mencerminkan id modal yang benar-benar dibuka --
+// openTxLinkedServisModal() (tx-servis.js) misalnya JUSTRU menutup txModal
+// lalu membuka #servisModal lewat Servis.openModal() (jembatan txEditId ->
+// servisLinkId, bukan modal sendiri), jadi tebakan id otomatis
+// "txLinkedServisModal" SELALU meleset -- terdeteksi "elemen #txLinkedServisModal
+// tidak ditemukan (tebakan id salah?)" di Tes Buka/Tutup Modal padahal
+// fungsinya sendiri tidak bermasalah. Fungsi di set ini dikeluarkan dari
+// tebakan otomatis & didaftarkan manual dengan id+call yang benar di
+// RISKY_OPENER_SPECS (pola sama openCicilanHistoryFromTx), supaya tetap
+// tercakup coverage tanpa laporan salah tebak id.
+const MODAL_SWEEP_MANUAL_OVERRIDE_FNS=new Set(['openTxLinkedServisModal']);
 function computeModalSweepFnNames(){
 const names=[];
 for(const k in window){
-if(/^open[A-Z]\w*Modal$/.test(k)&&typeof window[k]==='function')names.push(k);
+if(/^open[A-Z]\w*Modal$/.test(k)&&typeof window[k]==='function'&&!MODAL_SWEEP_MANUAL_OVERRIDE_FNS.has(k))names.push(k);
 }
 return names.sort();
 }
@@ -1845,6 +1871,28 @@ window.fetch=()=>Promise.reject(new Error('__sweep_blocked_fetch__'));
 try{ RenovAI.suggest('__sweep_dummy_project__'); } finally{ setTimeout(()=>{ window.fetch=origFetch; },80); }
 },
 after:()=>{ D.renovProjects=D.renovProjects.filter(p=>p.id!=='__sweep_dummy_project__'); }},
+// S555: openTxLinkedServisModal() (tx-servis.js) -- lihat catatan
+// MODAL_SWEEP_MANUAL_OVERRIDE_FNS di atas (computeModalSweepFnNames()) kenapa
+// fungsi ini dikeluarkan dari tebakan otomatis. id yang BENAR adalah
+// 'servisModal' (bukan tebakan 'txLinkedServisModal'), karena fungsinya cuma
+// jembatan txEditId -> servisLinkId lalu reuse 100% Servis.openModal(s.id).
+// before/after set txEditId ke transaksi dummy yang punya servisLinkId
+// tertaut ke D.servisLogs dummy, pola sama openCicilanHistoryFromTx di atas
+// (set state global sementara, restore di after, 0 mutasi permanen).
+{label:'openTxLinkedServisModal',id:'servisModal',
+before:()=>{
+const backupTxEditId=txEditId;
+D.servisLogs.push({id:'__sweep_dummy_servis__',vehicleId:(D.vehicles[0]&&D.vehicles[0].id)||null,date:todayStr(),item:'(tes sweep)',categoryId:null,km:null,cost:0,note:'',accountId:null,txLinkId:'__sweep_dummy_tx_servis__',usedPartId:null,usedPartQty:0,catalogPartId:null,catalogPartQty:0,catalogPartOemCode:'',catalogPartLinkedStockId:null});
+D.transactions.push({id:'__sweep_dummy_tx_servis__',type:'expense',amount:0,category:'',date:todayStr(),accountId:null,note:'',servisLinkId:'__sweep_dummy_servis__'});
+txEditId='__sweep_dummy_tx_servis__';
+return backupTxEditId;
+},
+call:()=>{ openTxLinkedServisModal(); },
+after:(backupTxEditId)=>{
+txEditId=backupTxEditId;
+D.transactions=D.transactions.filter(t=>t.id!=='__sweep_dummy_tx_servis__');
+D.servisLogs=D.servisLogs.filter(s=>s.id!=='__sweep_dummy_servis__');
+}},
 ];
 const MODULE_METHOD_MODAL_SPECS=[
 {label:'Etalase.openModal()',id:'productModal',
@@ -1915,6 +1963,18 @@ call:()=>{ InvestmentWatchUI.openModal(); }},
 call:()=>{ DanaTitipanCommitmentUI.open(); }},
 {label:'DanaTitipanReturnUI.open()',id:'titipanReturnModal',
 call:()=>{ DanaTitipanReturnUI.open(); }},
+// S555: titipanExpenseModal ("💸 Pengeluaran Dana Titipan", S521-B1) ada di
+// halaman tapi belum terdaftar di sweep manapun -- terdeteksi "(kelengkapan
+// cakupan) modal belum terdaftar" di Tes Buka/Tutup Modal. TitipanExpenseUI.open()
+// dipanggil TANPA argumen (persis DanaTitipanCommitmentUI.open()/
+// DanaTitipanReturnUI.open() di atas) tetap aman: kalau TitipanExpenseFlow/
+// DanaTitipanPortfolioAPI belum termuat cuma toast peringatan & TIDAK membuka
+// modal (jadi wajar hasilnya needsContext, bukan gagal keras), & kalau owner
+// existing kosong render list owner kosong lalu tetap openModal() seperti
+// biasa -- 0 mutasi data (tidak push dummy apa pun ke D), jadi TIDAK perlu
+// before/after.
+{label:'TitipanExpenseUI.open()',id:'titipanExpenseModal',
+call:()=>{ TitipanExpenseUI.open(); }},
 {label:'Piutang.openModal()',id:'piutangModal',
 call:()=>{ Piutang.openModal(); }},
 {label:'Debt.openModal()',id:'debtModal',
