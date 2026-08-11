@@ -218,6 +218,43 @@ const sorted=[...txs].sort((a,b)=>new Date(b.date)-new Date(a.date));
 const total=sorted.reduce((s,t)=>s+(t.type==='income'?t.amount:-t.amount),0);
 document.getElementById('filterTxTitle').textContent=label||'Transaksi';
 document.getElementById('filterTxSummary').textContent=sorted.length+' transaksi · Total '+(total<0?'-':'')+fmt(Math.abs(total));
+// filterTxOwnerSplit (permintaan user: "riwayat transaksi ... tiap transaksi (modal/
+// pengeluaran) dipecah per porsi pemilik lalu ditotal per orang") -- HANYA muncul utk
+// scope 'account' YANG akunnya tertaut ke Aset multi-owner (0 perubahan utk scope lain/
+// akun biasa). Modal = total income, Pengeluaran = total expense, Total = net (sama
+// definisi dgn `total` di atas) -- masing-masing dipecah per porsi lewat REUSE
+// MultiOwnerEngine.splitByPorsi() (0 rumus baru, sama fungsi yg dipakai
+// resolveTxAssetSplit() per-transaksi di transaksi.js). Guard elemen null (modal ini
+// belum tentu ada di semua halaman/test), guard scope/typeof/asset/porsi sama pola
+// linkedPorsiLine di renderAccGrid() (modules-render.js).
+const ownerSplitEl=document.getElementById('filterTxOwnerSplit');
+if(ownerSplitEl){
+let ownerSplitHtml='';
+if(scope==='account'&&typeof MultiOwnerEngine!=='undefined'){
+const linkedAssetForSplit=(D.assets||[]).find(a=>sameId(a.accountId,accId));
+if(linkedAssetForSplit){
+const ownersRes=MultiOwnerEngine.getOwners(linkedAssetForSplit);
+if(ownersRes&&ownersRes.ok&&ownersRes.owners.length){
+const modalTotal=sorted.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+const pengeluaranTotal=sorted.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+const modalSplit=MultiOwnerEngine.splitByPorsi(modalTotal,ownersRes.owners);
+const pengeluaranSplit=MultiOwnerEngine.splitByPorsi(pengeluaranTotal,ownersRes.owners);
+const totalSplit=MultiOwnerEngine.splitByPorsi(total,ownersRes.owners);
+if(modalSplit.ok&&pengeluaranSplit.ok&&totalSplit.ok){
+const rows=ownersRes.owners.map((o,idx)=>{
+const m=modalSplit.splits[idx].bagian;
+const e=pengeluaranSplit.splits[idx].bagian;
+const t=totalSplit.splits[idx].bagian;
+return`<div style="margin-top:4px">${escapeHtml(o.ownerName)} (${o.porsi}%): Modal ${fmt(m)} · Pengeluaran ${fmt(e)} · Total ${t<0?'-':''}${fmt(Math.abs(t))}</div>`;
+}).join('');
+ownerSplitHtml=`<div style="font-weight:600">👥 Porsi per Pemilik</div>${rows}`;
+}
+}
+}
+}
+ownerSplitEl.innerHTML=ownerSplitHtml;
+ownerSplitEl.style.display=ownerSplitHtml?'block':'none';
+}
 const FTX_PAGE_SIZE=100;
 const visibleCount=Math.min(sorted.length,FTX_PAGE_SIZE);
 const visible=sorted.slice(0,visibleCount);
