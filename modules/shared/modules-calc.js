@@ -1,6 +1,6 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s555-modal-sweep-datahealth-fixes';
+const MODULE_CALC_VERSION='s557-modal-sweep-datahealth-fixes';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){
@@ -10,7 +10,14 @@ if((fi.assetScope||'zakatable')==='semua') return totalAssetValue();
 // exclude aset yang sudah `_migratedToInvestmentId` (dobel-hitung), tambah
 // `Investment.zakatableValue()` supaya holding hasil migrasi tetap ikut
 // scope FI "Hanya Zakatable".
-return (D.assets||[]).filter(a=>a.zakatable&&!a._migratedToInvestmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0)+(typeof Investment!=='undefined'?Investment.zakatableValue():0);
+// Sesi B9: fix gap dicatat di release notes B8 ("Tidak diubah" section) --
+// filter inline di sini (duplikat dari Zakat.hitungMaal(), bukan reuse
+// totalAssetValue()) belum ikut exclude aset yang ditautkan resmi lewat
+// `a.investmentId` (B1) ke holding yang masih ada, jadi masih dobel-hitung
+// (1x di sini via a.nilai, 1x lagi di Investment.zakatableValue()). Fix
+// SAMA PERSIS pola B8: tambah `!a.investmentId` di samping
+// `!a._migratedToInvestmentId`.
+return (D.assets||[]).filter(a=>a.zakatable&&!a._migratedToInvestmentId&&!a.investmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0)+(typeof Investment!=='undefined'?Investment.zakatableValue():0);
 },
 assetFund(){ return totalSaldoAkun()+FI.investmentAssetValue()+totalPiutangValue(); },
 totalDebt(){
