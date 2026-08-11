@@ -171,6 +171,20 @@ issues.push({level:'warn',title:'Nama sama di Buku Aset & Investasi dgn kepemili
 });
 });
 }
+// PERUBAHAN SESI 552 (gap FIX-s552-asset-investasi-link-badge.md bag. "Data
+// Health Check tambahan", lihat tests/data-health-check-investment-asset-
+// link-orphan-s552.test.js): orphan check utk `D.investments[].assetId` --
+// field link RESMI baru (arah kebalikan dari `a.investmentId` yang sudah
+// dicek orphan di atas) yang menunjuk entry Buku Aset yang sudah dihapus.
+// Pola SAMA PERSIS orphan check S506 utk `vehicle.assetId` (lihat cek
+// Kendaraan di bawah) -- level warn, murni baca, 0 auto-repair
+// (h.assetId TIDAK di-null-kan otomatis).
+(D.investments||[]).forEach(h=>{
+if(!h)return;
+if(h.assetId && !(D.assets||[]).some(a=>sameId(a.id,h.assetId))){
+issues.push({level:'warn',title:'Link Buku Aset investasi tidak ditemukan',detail:`Holding Investasi "${escapeHtml(h.name||'?')}" masih menyimpan tautan ke entry Buku Aset yang sudah dihapus -- cek/lepas tautannya di modal Investasi (dropdown "🔗 Hubungkan ke Holding Investasi" di modal Aset).`});
+}
+});
 // PERUBAHAN SESI B4 (RENCANA-SESI-RINGKAS.md, alat bantu migrasi B1-B3 field
 // investmentId): saran (BUKAN auto-link) utk pasangan Aset & Holding Investasi
 // yang namanya mirip & belum ditautkan lewat dropdown "🔗 Hubungkan ke Holding
@@ -315,6 +329,23 @@ issues.push({level:'warn',title:'Piutang dengan tanggal jatuh tempo tidak valid'
 if(p.assetId && !(D.assets||[]).some(a=>sameId(a.id,p.assetId))){
 issues.push({level:'warn',title:'Piutang tertaut ke Aset Multi-Owner yang sudah dihapus',detail:`Piutang "${p.name||'?'}" masih menyimpan tautan ke aset multi-owner yang sudah dihapus -- porsi kepemilikan yang dihitung bisa salah, cek/lepas tautannya di modal Piutang.`});
 }
+// PERUBAHAN SESI 553 (gap dari rekomendasi audit S551/S552, lihat
+// FIX-s553-debt-piutang-nonmultiowner-link-audit.md &
+// tests/data-health-check-debt-piutang-nonmultiowner-link-s553.test.js):
+// field assetId di Piutang berlabel "Kaitkan ke Aset Multi-Owner", tapi
+// kalau asetnya ternyata SINGLE-owner, tautan itu silent no-op
+// (resolveEntryAssetSelfPorsi() fallback 100%, sama spt tidak ditautkan) --
+// sebelumnya 0 peringatan soal ini. Guard `linkedAsset` (asetnya harus
+// ADA -- orphan case sudah ditangani cek di atas, 0 tumpang tindih).
+if(p.assetId){
+const linkedAsset=(D.assets||[]).find(a=>sameId(a.id,p.assetId));
+if(linkedAsset){
+const ownersArr=Array.isArray(linkedAsset.owners)?linkedAsset.owners:[];
+if(ownersArr.length<2){
+issues.push({level:'warn',title:'Piutang tertaut ke aset yang bukan multi-owner',detail:`Piutang "${p.name||'?'}" ditautkan ke aset "${escapeHtml(linkedAsset.name||'?')}" yang BUKAN aset multi-owner -- porsi kepemilikan tidak berpengaruh apa-apa (tautannya silent no-op), cek ulang di modal Piutang.`});
+}
+}
+}
 });
 (D.partsStock||[]).forEach(p=>{
 if((p.qty||0)<0){
@@ -402,6 +433,16 @@ issues.push({level:'warn',title:'Utang dengan tanggal jatuh tempo tidak valid',d
 // atas, utk Utang.
 if(d.assetId && !(D.assets||[]).some(a=>sameId(a.id,d.assetId))){
 issues.push({level:'warn',title:'Utang tertaut ke Aset Multi-Owner yang sudah dihapus',detail:`Utang "${d.name||'?'}" masih menyimpan tautan ke aset multi-owner yang sudah dihapus -- porsi kepemilikan yang dihitung bisa salah, cek/lepas tautannya di modal Utang.`});
+}
+// PERUBAHAN SESI 553: sama persis cek non-multi-owner Piutang di atas, utk Utang.
+if(d.assetId){
+const linkedAsset=(D.assets||[]).find(a=>sameId(a.id,d.assetId));
+if(linkedAsset){
+const ownersArr=Array.isArray(linkedAsset.owners)?linkedAsset.owners:[];
+if(ownersArr.length<2){
+issues.push({level:'warn',title:'Utang tertaut ke aset yang bukan multi-owner',detail:`Utang "${d.name||'?'}" ditautkan ke aset "${escapeHtml(linkedAsset.name||'?')}" yang BUKAN aset multi-owner -- porsi kepemilikan tidak berpengaruh apa-apa (tautannya silent no-op), cek ulang di modal Utang.`});
+}
+}
 }
 });
 // Cek tambahan (S283 — audit data integrity, temuan gap): D.renovProjects[].
