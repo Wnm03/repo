@@ -11,8 +11,8 @@
 > file tapi lupa `node build.js`), jalankan ulang generatornya, JANGAN diedit
 > tangan — editan manual bakal ketimpa lagi di build berikutnya.
 
-Terakhir digenerate: 2026-08-11T01:40:44.795Z
-Total file source: 306 · Total identifier global: 2113
+Terakhir digenerate: 2026-08-11T02:47:35.428Z
+Total file source: 306 · Total identifier global: 2123
 
 ## 1. Urutan load & ringkasan tiap file
 
@@ -32,14 +32,14 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 9 | `modules/business/shop-data-io-api.js` | 657 | Bagian B (Shop Import/Export: Scan/PDF/CSV/JSON) dari DESIGN_torsi-vehicle-selector_shop-import-export-2.md. Bagian B (Scan, Import PDF, Import CSV, Import/Export JSON) SUDAH SELESAI 4/4. Sesi ini (lanjutan opsional, … |
 | 10 | `modules/business/kasir.js` | 375 | Modul "🧠 Kasir AI" (v127, kw81-kasir-ai-pos): Dipindah ke modules/business/kasir.js (Sesi 15 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder). Tab … |
 | 11 | `modules/finance/piutang-utang.js` | 805 | Domain Piutang & Utang: catatan piutang (uang dipinjamkan), utang (uang dipinjam) beserta status lunas/cicilan, dan DebtStrategy (simulasi strategi pelunasan Avalanche/Snowball). Dipindah ke … |
-| 12 | `modules/finance/pajak-pbb-zakat.js` | 388 | Kalkulator Pajak Bumi & Bangunan (PBB), Zakat (penghasilan, maal, fitrah), Referensi AI (cek harga emas/nisab via AI), Pajak UMKM, dan PPh 21 (Orang Pribadi) Dipindah ke modules/finance/pajak-pbb-zakat.js (Sesi 16 … |
+| 12 | `modules/finance/pajak-pbb-zakat.js` | 396 | Kalkulator Pajak Bumi & Bangunan (PBB), Zakat (penghasilan, maal, fitrah), Referensi AI (cek harga emas/nisab via AI), Pajak UMKM, dan PPh 21 (Orang Pribadi) Dipindah ke modules/finance/pajak-pbb-zakat.js (Sesi 16 … |
 | 13 | `budget.js` | 545 | Anggaran Budget (batas pengeluaran per kategori, tab List/Rekomendasi, drill-down transaksi). Dipisah dari features-budget-laporan-carnotes-pelanggan.js (Sesi 6 restrukturisasi folder, bagian budget/laporan — lihat … |
 | 14 | `car-notes.js` | 1299 | Catatan Kendaraan (Car Notes): pajak kendaraan (VEHTAX), log BBM, log servis + pengingat interval, kalkulator Torsi baut. Dipisah dari features-budget-laporan-carnotes-pelanggan.js (Sesi 6 restrukturisasi folder, bagian … |
 | 15 | `chat-action-handlers.js` | 107 | Aksi AI Chat/RefAI: label & handler eksekusi usulan aksi dari balasan AI (blok [[ACTION]]). Dipisah dari features-budget-laporan-carnotes-pelanggan.js (Sesi 7 restrukturisasi folder — file lama SELESAI dihapus total, … |
 | 16 | `modules/finance/edukasi-dana.js` | 185 | Dana Pendidikan (EduFund): kalkulator target biaya sekolah/kuliah & nabung/bulan Dipindah ke modules/finance/edukasi-dana.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file … |
 | 17 | `modules/home/hidup-seimbang.js` | 228 | Domain Skor Hidup Seimbang: skor gabungan dari Dana Darurat, DSR cicilan, No-Spend 30 hari, & keseimbangan kerja-istirahat, plus riwayat snapshot bulanan. Dipindah ke modules/home/hidup-seimbang.js (Sesi 13 … |
 | 18 | `modules/finance/linktx.js` | 264 | Transaksi tertaut (LinkTx): hubungkan transaksi lama di Keuangan ke Renov/Wishlist/Bill Dipindah ke modules/finance/linktx.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file … |
-| 19 | `modules/asset/aset.js` | 2858 | Domain Aset & Kekayaan: ALOKASI_PRESETS/AlokasiAset (rekomendasi alokasi dana), Aset (Buku Aset & Kekayaan Bersih), Penyusutan (estimasi nilai buku aset yg menurun nilainya: Garis Lurus/Saldo Menurun/Manual), PajakAset … |
+| 19 | `modules/asset/aset.js` | 3113 | Domain Aset & Kekayaan: ALOKASI_PRESETS/AlokasiAset (rekomendasi alokasi dana), Aset (Buku Aset & Kekayaan Bersih), Penyusutan (estimasi nilai buku aset yg menurun nilainya: Garis Lurus/Saldo Menurun/Manual), PajakAset … |
 | 20 | `modules/asset/aset-keluarga.js` | 93 | Laporan gabungan lintas-modul: 🏠 Aset Keluarga Dipindah ke modules/asset/aset-keluarga.js (Sesi 9 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder). … |
 | 21 | `modules/ai/feature-insights.js` | 440 | Kartu "💡 Insight ..." di PALING ATAS/dekat 7 fitur (Keuangan, Pajak & Dipindah ke modules/ai/feature-insights.js (Sesi 14 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
 | 22 | `modules/asset/invest-ai-widget.js` | 195 | Widget "🤖 Rekomendasi AI" otomatis di kartu 🧭 Dipindah ke modules/asset/invest-ai-widget.js (Sesi 9 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi … |
@@ -137,7 +137,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 114 | `reminder-notif.js` | 163 | resetApp (reset total data, disatukan di sini krn tidak ada domain lain yang cocok & cuma 1 fungsi kecil), share ke WhatsApp (phoneToWaId/waShareLink/openWaShare), notifikasi browser … |
 | 115 | `laporan-export.js` | 146 | Ekspor Laporan Keuangan ke PDF (exportLaporanPDF) & gambar (exportLaporanImage), plus builder data laporan (buildLaporanExportData: filter periode, total income/expense, breakdown per kategori). Dipisah dari … |
 | 116 | `gdrive-backup.js` | 293 | Integrasi Google Drive: OAuth connect/disconnect, backup manual/otomatis (uploadBackupToDrive), restore (gdriveDownloadBackup). Dipisah dari features-aiwidget-reminder-gdrive-search.js (Sesi 5 restrukturisasi folder, … |
-| 117 | `data-health-check.js` | 370 | Cek integritas data lintas-domain (runDataHealthCheck): transaksi dengan akun/tanggal/jumlah tidak valid, ID duplikat, tagihan/aset/BBM dengan tautan akun atau kendaraan yang sudah dihapus, dll. Dipisah dari … |
+| 117 | `data-health-check.js` | 482 | Cek integritas data lintas-domain (runDataHealthCheck): transaksi dengan akun/tanggal/jumlah tidak valid, ID duplikat, tagihan/aset/BBM dengan tautan akun atau kendaraan yang sudah dihapus, dll. Dipisah dari … |
 | 118 | `global-search.js` | 58 | Pencarian DATA milik user lintas halaman (openGlobalSearch/runGlobalSearch), beda tujuan dari Feature Search (dashboard-hub-search.js) yang cari FITUR/MENU. Dipisah dari features-aiwidget-reminder-gdrive-search.js (Sesi … |
 | 119 | `sheets-schema.js` | 228 | Skema kolom Google Sheets per modul (SHEETS_SCHEMAS/SHEETS_MODULES) & helper konversi item<->baris (sheetsHeaderFor/sheetsItemToCells/sheetsCellsToItem dst), dipakai oleh sheets-sync.js. Dipisah dari … |
 | 120 | `sheets-sync.js` | 239 | Integrasi Google Sheets: koneksi OAuth, sinkronisasi push/pull data D.* ke/dari Google Spreadsheet. Dipisah dari features-sheets-pwa-selftest.js (Sesi 2 restrukturisasi folder, blok 1/5 — lihat … |
@@ -239,9 +239,9 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 216 | `modules/self-reward/self-reward-engine.js` | 217 | Domain Self Reward Engine: cek kelayakan self reward Dipindah ke modules/self-reward/self-reward-engine.js (Sesi 12 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
 | 217 | `modules/self-reward/self-reward-view.js` | 221 | UI layer untuk Self Reward Engine. Memisahkan render/DOM Dipindah ke modules/self-reward/self-reward-view.js (Sesi 12 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, … |
 | 218 | `modules/self-reward/self-reward-ai-widget.js` | 236 | Widget Rekomendasi AI di dalam modal Self Reward. Dipindah ke modules/self-reward/self-reward-ai-widget.js (Sesi 12 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
-| 219 | `modules/asset/investasi.js` | 681 | Domain Investment: Portfolio, Dividend, Capital Gain/Loss, ROI, Dipindah ke modules/asset/investasi.js (Sesi 9 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
-| 220 | `modules/asset/investasi-view.js` | 425 | InvestmentUI: modal "⚖️ Atur Porsi Kepemilikan" untuk holding investasi (S464, lanjutan AUD-008/S462). File BARU, terpisah dari investasi.js (logika murni, 0 DOM) — pola sama persis dashboard-hub-favorit.js vs … |
-| 221 | `modules/asset/investasi-list-view.js` | 388 | InvestmentListUI: halaman/tab "💹 Investasi" di bawah #page-aset (Fase 1, implementasi BUG-INV-001 Opsi 3 — lihat AUDIT-BUILD-UI-INVESTASI-OPSI3.md & docs/BUG_REGISTRY.md §0a-8). File BARU, terpisah dari investasi.js … |
+| 219 | `modules/asset/investasi.js` | 808 | Domain Investment: Portfolio, Dividend, Capital Gain/Loss, ROI, Dipindah ke modules/asset/investasi.js (Sesi 9 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
+| 220 | `modules/asset/investasi-view.js` | 508 | InvestmentUI: modal "⚖️ Atur Porsi Kepemilikan" untuk holding investasi (S464, lanjutan AUD-008/S462). File BARU, terpisah dari investasi.js (logika murni, 0 DOM) — pola sama persis dashboard-hub-favorit.js vs … |
+| 221 | `modules/asset/investasi-list-view.js` | 423 | InvestmentListUI: halaman/tab "💹 Investasi" di bawah #page-aset (Fase 1, implementasi BUG-INV-001 Opsi 3 — lihat AUDIT-BUILD-UI-INVESTASI-OPSI3.md & docs/BUG_REGISTRY.md §0a-8). File BARU, terpisah dari investasi.js … |
 | 222 | `modules/asset/investasi-tx-view.js` | 206 | InvestmentTxUI: UI riwayat transaksi Beli/Jual/Dividen per holding investasi (Fase 2, implementasi BUG-INV-001 Opsi 3 -- lihat AUDIT-BUILD-UI-INVESTASI-OPSI3.md §3.3 "UI Transaksi Beli/Jual/Dividen"). Backend 100% … |
 | 223 | `modules/asset/investasi-watch-view.js` | 123 | InvestmentWatchUI: UI Watchlist instrumen investasi (Fase 3, implementasi BUG-INV-001 Opsi 3 -- lihat AUDIT-BUILD-UI-INVESTASI-OPSI3.md §3.5 "UI Watchlist"). Backend 100% reuse: … |
 | 224 | `modules/asset/asset-portfolio-api.js` | 191 | modules/asset/asset-portfolio-api.js — Asset Portfolio API (S101, Batch 10). Target sesi: Asset Portfolio Foundation. PRINSIP (RULE #1 sesi ini): 100% REUSE modul Asset/Finance yang SUDAH ADA — TIDAK ada rumus keuangan … |
@@ -315,9 +315,9 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 292 | `modules/shop/shop-business-engine-presenter.js` | 232 | modules/shop/shop-business-engine-presenter.js — Shop Business Engine Presenter (Sesi 199, Finalisasi Integrasi Shop). Target sesi: audit menemukan PurchaseEngine/TripEngine/InventoryEngine/ProfitEngine (S198, … |
 | 293 | `modules/shop/trip-presenter.js` | 166 | modules/shop/trip-presenter.js — Trip Presenter (Sesi 204-A). Menutup gap yang dicatat eksplisit di shop-business-engine-presenter.js: "TripEngine (S198) tidak dipakai di sini — tidak ada ringkasan 'pengiriman' yang … |
 | 294 | `modules/shop/business-flow-presenter.js` | 2777 | modules/shop/business-flow-presenter.js — Business Flow Presenter (Sesi 205). WIRE ONLY: menyusun 4 tahap alur bisnis Shop — Purchase -> Trip -> Stock -> Sale — dari 2 presenter yang SUDAH ADA: … |
-| 295 | `modules/finance/dana-kelolaan.js` | 276 | Dana Kelolaan / Managed Funds (Sesi 195). TARGET EKSPLISIT USER: "S195 Managed Funds. Reuse OwnershipEngine. Implementasikan Dana Kelolaan... Reuse existing modules. No audit. No refactor. No business logic changes." … |
+| 295 | `modules/finance/dana-kelolaan.js` | 287 | Dana Kelolaan / Managed Funds (Sesi 195). TARGET EKSPLISIT USER: "S195 Managed Funds. Reuse OwnershipEngine. Implementasikan Dana Kelolaan... Reuse existing modules. No audit. No refactor. No business logic changes." … |
 | 296 | `modules/finance/dana-kelolaan-presenter.js` | 200 | Dana Kelolaan / Managed Funds Presenter (Sesi 195). Pola SAMA PERSIS PropertyManagementPresenter.render() (modules/asset/property-management-presenter.js, S102/Sesi 132): UI HANYA presenter, 100% reuse … |
-| 297 | `modules/finance/dana-titipan-portfolio-presenter.js` | 1622 | Dana Titipan dalam Investasi: Portfolio Allocation Projection (Sesi 484 + Sesi 485a-e + Sesi 486 + Sesi 499/B1 + Sesi B2 + Sesi E). SESI E (PROMPT-SESI-E-ALLOCATEDEXCLUDING-LINTAS-DOMAIN.md — fondasi utk fitur Kuota … |
+| 297 | `modules/finance/dana-titipan-portfolio-presenter.js` | 1641 | Dana Titipan dalam Investasi: Portfolio Allocation Projection (Sesi 484 + Sesi 485a-e + Sesi 486 + Sesi 499/B1 + Sesi B2 + Sesi E). SESI E (PROMPT-SESI-E-ALLOCATEDEXCLUDING-LINTAS-DOMAIN.md — fondasi utk fitur Kuota … |
 | 298 | `modules/finance/titipan-expense-flow.js` | 239 | Sesi 521 (S521-A, implementasi Design Lock DESIGN-S520-DANA-TITIPAN-UI-MULTIOWNER.md, baseline v1251/S519). Scope: flow pencatatan pengeluaran Dana Titipan (single-owner & multi-owner) yang dipanggil dari modal khusus … |
 | 299 | `modules/finance/titipan-expense-ui.js` | 272 | Sesi 521 (S521-B2, UI ONLY, DESIGN-S520-DANA- TITIPAN-UI-MULTIOWNER.md, baseline v1251/S519 + S521-A/S521-B1). Scope: SATU-SATUNYA hal baru di sesi ini adalah `TitipanExpenseUI` — controller DOM tipis buat modal … |
 | 300 | `modules/vehicle/ride-activity-metrics.js` | 385 | RideActivityMetrics (S522, "Ride Activity Metrics Foundation"). HARD SCOPE sesi ini: PURE deterministic math functions saja — fondasi buat Ride Activity GPS recorder yang akan dibangun sesi-sesi berikutnya (S523+). … |
@@ -350,6 +350,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `_aiLoaded` | `modules/ai/ai-core.js` |
 | `_aiMeasureMs` | `modules/ai/ai-core.js` |
 | `_aiMeasureMsAsync` | `modules/ai/ai-core.js` |
+| `_aiOwnerSig` | `modules/asset/investasi.js` |
 | `_aiReminderAndTargetSummary` | `modules/ai/ai-service.js` |
 | `_amc015` | `modules/finance/piutang-utang.js` |
 | `_amc015` | `modules/shared/scan-ocr.js` |
@@ -445,6 +446,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `_lifeOSLoaded` | `lifeos/lifeos-store.js` |
 | `_magnitudeScore` | `economic-intelligence/domain/scoring-formulas.js` |
 | `_normalizeAccNameForMatch` | `modules/shared/scan-ocr.js` |
+| `_normalizeInstrumentName` | `modules/asset/aset.js` |
 | `_ocrWorkerPromise` | `modules/shared/scan-ocr.js` |
 | `_openDialogOverlay` | `modules/shared/modal-navigasi.js` |
 | `_paEsc` | `modules/asset/penyusutan-ai-widget.js` |
@@ -657,7 +659,10 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `assetActionHistory` | `modules/shared/action-wrappers.js` |
 | `assetActionScan` | `modules/shared/action-wrappers.js` |
 | `assetActionViewVehicle` | `modules/shared/action-wrappers.js` |
+| `assetCrossCheckWarning` | `modules/asset/investasi.js` |
 | `AssetInsight` | `modules/asset/aset.js` |
+| `assetInvestmentLinkOptionsHtml` | `modules/asset/aset.js` |
+| `assetInvestmentMismatch` | `modules/asset/investasi.js` |
 | `AssetMaintenanceAPI` | `modules/asset/asset-maintenance-api.js` |
 | `AssetMaintenancePresenter` | `modules/asset/asset-maintenance-presenter.js` |
 | `AssetOwnershipSplitPresenter` | `modules/asset/asset-ownership-split-presenter.js` |
@@ -1300,6 +1305,8 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `InvestAI` | `modules/asset/invest-ai-widget.js` |
 | `Investment` | `modules/asset/investasi.js` |
 | `INVESTMENT_TYPES` | `modules/asset/investasi.js` |
+| `investmentAssetLinkOptionsHtml` | `modules/asset/investasi.js` |
+| `investmentCrossCheckWarning` | `modules/asset/investasi.js` |
 | `InvestmentListUI` | `modules/asset/investasi-list-view.js` |
 | `InvestmentPlannerAPI` | `modules/finance/investment-planner-api.js` |
 | `InvestmentPlannerPresenter` | `modules/finance/investment-planner-presenter.js` |
@@ -1841,6 +1848,9 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `resolveElement` | `modules/vehicle/ride-map.js` |
 | `resolveEntryAssetSelfPorsi` | `modules/finance/piutang-utang.js` |
 | `resolveFavoritEntries` | `modules/dashboard-hub/dashboard-hub-favorit-view.js` |
+| `resolveInvestmentAssetLink` | `modules/asset/investasi.js` |
+| `resolveInvestmentByAssetId` | `modules/asset/investasi.js` |
+| `resolveLinkedInvestmentAsset` | `modules/asset/investasi.js` |
 | `resolveLinkedVehicleAsset` | `modules/vehicle/vehicle-core.js` |
 | `resolveShopKategori` | `modules/shop/cobek-tx-cart.js` |
 | `resolveTxAssetSplit` | `modules/finance/transaksi.js` |
