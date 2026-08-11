@@ -121,6 +121,56 @@ issues.push({level:'warn',title:'Aset dengan kepemilikan ganda (Kepemilikan + Po
 }
 }
 });
+// PERUBAHAN SESI 554 (restore rule S551 — lihat
+// FIX-s551-asset-investasi-duplicate-name-owner-mismatch-audit.md &
+// tests/data-health-check-asset-investasi-owner-mismatch-s551.test.js):
+// rule ini SUDAH terdokumentasikan lengkap sejak S551 (termasuk 9 test
+// permanen) tapi kodenya sendiri tidak pernah benar-benar masuk ke file
+// ini — audit S540-D menemukan 3/9 test regresinya FAIL persis di titik
+// ini. Diimplementasikan sekarang, 0 rumus baru (100% reuse
+// MultiOwnerEngine.getOwners(), murni baca, 0 mutasi D.assets/D.investments).
+//
+// Deteksi (BUKAN link resmi B1/investmentId — itu kasusnya sudah
+// tertangani cek orphan B6/B7-B8 di atas): instrumen nama sama tercatat
+// SEKALIGUS di Buku Aset & sbg Holding Investasi TANPA ditautkan, dgn
+// susunan pemilik BERBEDA di kedua sisi (mis. laporan user: "Schorder" —
+// di Aset dimiliki investor "renov" 100%, di Investasi dimiliki "Milik
+// Sendiri" 100%) — indikasi instrumen yang sama tercatat 2x dgn data
+// kepemilikan tidak sinkron (risiko dobel-hitung nilai & porsi dana
+// titipan salah, akar masalah yang sama dgn fix dobel-hitung Dana Titipan
+// Sesi 554 di dana-titipan-portfolio-presenter.js).
+//
+// Match nama EXACT (trim+lowercase, SENGAJA bukan fuzzy — hindari
+// false-positive, beda dari saran mirip-nama B4 di bawah yang memang
+// fuzzy). "Signature" pemilik = daftar {ownerId,porsi} disortir supaya
+// urutan array tidak mempengaruhi perbandingan; porsi dibulatkan 2
+// desimal (toleransi floating point, pola sama PORSI_EPSILON di
+// multi-owner-engine.js). Guard `typeof MultiOwnerEngine` (pola sama
+// semua guard lain di file ini) — kalau engine belum dimuat, cek diam
+// saja (0 crash, 0 false-positive).
+if(typeof MultiOwnerEngine!=='undefined' && typeof MultiOwnerEngine.getOwners==='function'){
+const ownerSignature=(entity)=>{
+const res=MultiOwnerEngine.getOwners(entity);
+if(!res||!res.ok)return '';
+return (res.owners||[])
+.map(o=>({id:String((o&&o.ownerId)||'').trim().toLowerCase(),porsi:Math.round(((o&&o.porsi)||0)*100)/100}))
+.sort((x,y)=>x.id<y.id?-1:(x.id>y.id?1:0))
+.map(o=>o.id+':'+o.porsi)
+.join('|');
+};
+(D.investments||[]).forEach(h=>{
+if(!h||!h.name)return;
+const hName=String(h.name).trim().toLowerCase();
+if(!hName)return;
+const hSig=ownerSignature(h);
+(D.assets||[]).forEach(a=>{
+if(!a||!a.name)return;
+if(String(a.name).trim().toLowerCase()!==hName)return;
+if(ownerSignature(a)===hSig)return;
+issues.push({level:'warn',title:'Nama sama di Buku Aset & Investasi dgn kepemilikan berbeda',detail:`"${escapeHtml(a.name)}" tercatat DUA KALI dgn nama yang sama -- 1x di Buku Aset, 1x sbg Holding Investasi -- tapi susunan pemiliknya BERBEDA di kedua sisi. Kemungkinan instrumen yang sama tercatat 2x dengan data kepemilikan tidak sinkron (risiko dobel-hitung nilai & porsi dana titipan salah). Cek kedua sisi di modal Aset & modal Investasi -- kalau memang instrumen yang sama, samakan datanya atau tautkan lewat dropdown "🔗 Hubungkan ke Holding Investasi".`,assetId:a.id});
+});
+});
+}
 // PERUBAHAN SESI B4 (RENCANA-SESI-RINGKAS.md, alat bantu migrasi B1-B3 field
 // investmentId): saran (BUKAN auto-link) utk pasangan Aset & Holding Investasi
 // yang namanya mirip & belum ditautkan lewat dropdown "🔗 Hubungkan ke Holding
