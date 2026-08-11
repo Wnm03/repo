@@ -65,9 +65,20 @@ sumAccounts(type) {
 // sumAssets(type) — jumlah nilai aset (D.assets) ber-ownership `type`,
 // pakai field a.nilai apa adanya (0 rumus baru, sama seperti
 // Aset.totalValue() di aset.js).
+// PERUBAHAN SESI B12 (follow-up B7-B9, gap yang sama persis ditemukan di
+// modul ini): aset yang ditautkan ke Holding Investasi lewat dropdown B1
+// (`a.investmentId`) sekarang DIKECUALIKAN dari sini juga -- sebelum sesi
+// ini, kalau aset non-SELF (mis. ownership INVESTOR) ditautkan ke holding
+// ber-ownership INVESTOR yang sama, nilainya kehitung 2x di byType():
+// sekali di sini (a.nilai), sekali lagi di sumInvestasi() (Investment.
+// holdingValue(h)). Filter `&&!a.investmentId` pola SAMA PERSIS Opsi A
+// Aset.totalValue() (B8) -- 0 validasi ulang ke D.investments (aset
+// dengan tautan orphan tetap dikecualikan sampai user melepas tautannya,
+// sikap sama dgn B8).
 sumAssets(type) {
   return (D.assets || [])
     .filter((a) => this._resolveType(a) === type)
+    .filter((a) => !a.investmentId)
     .reduce((s, a) => s + (a.nilai || 0), 0);
 },
 

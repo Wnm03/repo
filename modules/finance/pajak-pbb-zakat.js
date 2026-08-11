@@ -120,7 +120,15 @@ const saldoAkun=totalSaldoAkun();
 // (D.investments) tidak dobel-hitung -- nilainya sekarang disumbang lewat
 // `Investment.zakatableValue()` (holding.zakatable, field baru investasi.js)
 // yang ditambahkan di bawah. Aset zakatable yang BELUM dimigrasi 0 perubahan.
-const asetZakatable=(D.assets||[]).filter(a=>a.zakatable&&!a._migratedToInvestmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0)+(typeof Investment!=='undefined'?Investment.zakatableValue():0);
+// PERUBAHAN SESI B8 (fix, poin #4 audit B7 -- pola SAMA PERSIS fix
+// Aset.totalValue() di aset.js): tambah `&&!a.investmentId` -- aset yg
+// ditautkan ke Holding Investasi (B1) dgn KEDUA sisi zakatable (a.zakatable
+// DAN holding.zakatable sama-sama true) sebelumnya ikut dihitung 2x di sini
+// (asetZakatable) DAN di Investment.zakatableValue(). Sesuai keputusan "Opsi
+// A" (holding jadi 1 sumber kebenaran nilai begitu ditautkan): kalau user
+// mau aset yg ditautkan tetap kena Zakat Maal, tandai `zakatable` di sisi
+// HOLDING (Atur Zakatable Investasi), bukan di sisi aset yg sudah ditautkan.
+const asetZakatable=(D.assets||[]).filter(a=>a.zakatable&&!a._migratedToInvestmentId&&!a.investmentId).reduce((s,a)=>s+(typeof MultiOwnerEngine!=='undefined'?MultiOwnerEngine.selfOwnedValue(a,a.nilai||0):(a.nilai||0)),0)+(typeof Investment!=='undefined'?Investment.zakatableValue():0);
 const piutangZakatable=totalPiutangValue();
 const utangManual=parsePzNum(document.getElementById('zmUtang').value);
 pz.utangJT=utangManual; save();
