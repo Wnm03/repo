@@ -179,6 +179,55 @@ else jump();
 // Reuse goToList() apa adanya (0 logic baru): pindah ke #page-keuangan, buka tab "akun", scroll
 // + flash-highlight #accGrid supaya user langsung lihat kartu Akun & Metode Pembayaran.
 function goToKeuanganAkunTab(){goToList('accGrid','keuangan',null,null,null,'akun');}
+// S568: handler tab pemilik di blok "Porsi per Pemilik" (lihat showFilteredTx). Ganti
+// tampilan detail ke pemilik yang diklik + toggle class active pada tombolnya, murni
+// baca dari window._filterTxOwnerSplitRows yang sudah dihitung, tanpa hitung ulang split.
+function selectFilterTxOwnerSplit(idx){
+const rows=window._filterTxOwnerSplitRows||[];
+const r=rows[idx];
+if(!r)return;
+const detail=document.getElementById('filterTxOwnerSplitDetail');
+if(detail)detail.innerHTML=r.detailHtml;
+document.querySelectorAll('#filterTxOwnerSplit .cn-tab').forEach(b=>b.classList.remove('active'));
+const btn=document.querySelector(`#filterTxOwnerSplit .cn-tab[data-owner-idx="${idx}"]`);
+if(btn)btn.classList.add('active');
+}
+// resolveTxOwnerSplitForAccount(accountId) -- Sesi A (AUDIT-DANA-TITIPAN-MAJORIS-PORSI-SYNC.md,
+// acceptance criterion P0 "owner source setelah link"). SATU titik baca owner utk transaksi 1
+// akun, mengunci URUTAN SUMBER supaya porsi TIDAK diam-diam stale setelah Aset di-link ke Holding
+// Investasi:
+//   1. Aset ketemu (D.assets[].accountId===accountId) DAN tertaut ke Holding Investasi
+//      (a.investmentId, holding masih ada di D.investments) -> BACA LIVE lewat
+//      Aset._resolveLinkedInvestmentOwners() (SUDAH ADA sejak Sesi B2a/462, reuse
+//      Investment.getOwners() -- 0 rumus baru). Ini yang menutup celah: sebelum sesi ini,
+//      showFilteredTx() baca MultiOwnerEngine.getOwners(a) LANGSUNG dari a.owners -- padahal
+//      a.owners cuma disalin SEKALI saat link lalu tidak ikut berubah kalau porsi Holding
+//      diedit belakangan (lihat §2 audit). Investment.getOwners(h) selalu baca live dari
+//      h.owners tiap panggilan, jadi porsi terbaru otomatis kepakai di sini juga.
+//   2. Aset TIDAK tertaut (investmentId kosong) ATAU tautan orphan (holding sudah dihapus) ATAU
+//      module investasi.js belum dimuat -> fallback MultiOwnerEngine.getOwners(a) (PERSIS
+//      perilaku showFilteredTx() sebelum sesi ini -- 0 regresi utk akun yang belum pernah
+//      di-link ke Holding Investasi).
+// PURE, 0 side-effect, 0 tulis ke D. Balikin null kalau: tidak ada Aset yang match accountId,
+// ATAU MultiOwnerEngine tidak dimuat. Balikin {asset,owners} kalau ketemu (owners selalu >=1
+// baris -- baik dari Investment.getOwners() maupun MultiOwnerEngine.getOwners(), keduanya
+// mensintesis minimal 1 baris SELF 100% kalau tidak ada data owner eksplisit, sama persis
+// kontrak lama).
+function resolveTxOwnerSplitForAccount(accountId){
+if(typeof MultiOwnerEngine==='undefined')return null;
+const a=(D.assets||[]).find(x=>sameId(x.accountId,accountId));
+if(!a)return null;
+let owners=null;
+if(typeof Aset!=='undefined'&&typeof Aset._resolveLinkedInvestmentOwners==='function'){
+owners=Aset._resolveLinkedInvestmentOwners(a);
+}
+if(!owners||!owners.length){
+const res=MultiOwnerEngine.getOwners(a);
+owners=(res&&res.ok&&res.owners&&res.owners.length)?res.owners:null;
+}
+if(!owners||!owners.length)return null;
+return{asset:a,owners};
+}
 function showFilteredTx(scope, type, label, accId){
 let txs=[];
 if(scope==='dashboard'){
@@ -230,25 +279,37 @@ document.getElementById('filterTxSummary').textContent=sorted.length+' transaksi
 const ownerSplitEl=document.getElementById('filterTxOwnerSplit');
 if(ownerSplitEl){
 let ownerSplitHtml='';
-if(scope==='account'&&typeof MultiOwnerEngine!=='undefined'){
-const linkedAssetForSplit=(D.assets||[]).find(a=>sameId(a.accountId,accId));
-if(linkedAssetForSplit){
-const ownersRes=MultiOwnerEngine.getOwners(linkedAssetForSplit);
-if(ownersRes&&ownersRes.ok&&ownersRes.owners.length){
+if(scope==='account'){
+// Sesi A: sebelumnya baca MultiOwnerEngine.getOwners(linkedAssetForSplit) LANGSUNG dari
+// a.owners (bisa stale kalau aset sudah di-link ke Holding Investasi & porsinya diubah
+// belakangan di sana -- lihat AUDIT-DANA-TITIPAN-MAJORIS-PORSI-SYNC.md §2). Ganti ke
+// resolveTxOwnerSplitForAccount() -- SATU titik baca yang urutan sumbernya sudah
+// mengunci prioritas Investment.getOwners() (kalau linked) > MultiOwnerEngine.getOwners()
+// (kalau belum linked) -- 0 rumus split baru, cuma sumber owners-nya yang benar.
+const resolvedSplit=resolveTxOwnerSplitForAccount(accId);
+if(resolvedSplit){
+const ownersRes={owners:resolvedSplit.owners};
 const modalTotal=sorted.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
 const pengeluaranTotal=sorted.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
 const modalSplit=MultiOwnerEngine.splitByPorsi(modalTotal,ownersRes.owners);
 const pengeluaranSplit=MultiOwnerEngine.splitByPorsi(pengeluaranTotal,ownersRes.owners);
 const totalSplit=MultiOwnerEngine.splitByPorsi(total,ownersRes.owners);
 if(modalSplit.ok&&pengeluaranSplit.ok&&totalSplit.ok){
+// S568: sebelumnya semua pemilik ditampilkan sekaligus (mode "patungan" — semua baris
+// muncul bersamaan). Permintaan user: ubah jadi PILIHAN per pemilik (mis. "renov" saja
+// atau "mas sihab" saja), bukan digabung. Reuse pola tab .cn-tab/.cn-tab.active yang
+// sudah dipakai di tempat lain (styles.css) supaya konsisten, 0 CSS baru. Data disimpan
+// di window._filterTxOwnerSplitRows lalu dibaca oleh selectFilterTxOwnerSplit() saat tab
+// diklik -- 0 refetch, cuma switch tampilan dari array yang sudah dihitung sekali di atas.
 const rows=ownersRes.owners.map((o,idx)=>{
 const m=modalSplit.splits[idx].bagian;
 const e=pengeluaranSplit.splits[idx].bagian;
 const t=totalSplit.splits[idx].bagian;
-return`<div style="margin-top:4px">${escapeHtml(o.ownerName)} (${o.porsi}%): Modal ${fmt(m)} · Pengeluaran ${fmt(e)} · Total ${t<0?'-':''}${fmt(Math.abs(t))}</div>`;
-}).join('');
-ownerSplitHtml=`<div style="font-weight:600">👥 Porsi per Pemilik</div>${rows}`;
-}
+return{name:o.ownerName,detailHtml:`<div style="margin-top:4px">${escapeHtml(o.ownerName)} (${o.porsi}%): Modal ${fmt(m)} · Pengeluaran ${fmt(e)} · Total ${t<0?'-':''}${fmt(Math.abs(t))}</div>`};
+});
+window._filterTxOwnerSplitRows=rows;
+const tabsHtml=rows.map((r,idx)=>`<button type="button" class="cn-tab${idx===0?' active':''}" data-owner-idx="${idx}" onclick="selectFilterTxOwnerSplit(${idx})" style="flex:none;padding:6px 14px;margin-right:6px">${escapeHtml(r.name)}</button>`).join('');
+ownerSplitHtml=`<div style="font-weight:600;margin-bottom:6px">👥 Porsi per Pemilik</div><div style="display:flex;flex-wrap:wrap">${tabsHtml}</div><div id="filterTxOwnerSplitDetail">${rows[0].detailHtml}</div>`;
 }
 }
 }

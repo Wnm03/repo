@@ -71,6 +71,69 @@ const DanaTitipanPortfolioPresenter = {
     return `<span class="u-fw700">${this._money(o.outstandingPrincipal)}</span>`;
   },
 
+  // _expenseComparisonForOwner(o) — Sesi C (Langkah B,
+  // AUDIT-DANA-TITIPAN-MAJORIS-PORSI-SYNC.md §3 Langkah B): baris
+  // pembanding OTOMATIS "Estimasi dari Transaksi <Akun>" di sebelah "Pokok
+  // Dikomit" manual (§2 poin 1). REUSE 100% resolveTxOwnerSplitForAccount()
+  // (filter-laporan.js, Sesi A — sumber owners SUDAH anti-basi, prioritas
+  // Investment.getOwners() kalau linked) + MultiOwnerEngine.splitByPorsi()
+  // -- 0 rumus baru ditulis di sini.
+  //
+  // Untuk tiap holding owner ini (o.holdings[], baik domain Aset MAUPUN
+  // Investasi yang tertaut balik ke sebuah Aset ber-accountId): resolve
+  // akun tertautnya, lalu HANYA proses kalau resolveTxOwnerSplitForAccount()
+  // mengenali akun itu sebagai akun multi-owner DAN owner ini match salah
+  // satu baris owners-nya (guard yang sama persis S567/568 -- kalau tidak
+  // match, holding itu dilewati, BUKAN error). Total expense akun itu
+  // dihitung ALL-TIME (seluruh `D.transactions`, TIDAK difilter periode --
+  // beda dari modal Riwayat yang scope ke filter aktif, karena baris ini
+  // representasi "total historis" sepadan `principalAmount` manual yang
+  // juga bukan angka per-periode) lalu displit per porsi, ambil bagian
+  // owner ini. `seenAcc` dedup by accountId (kalau owner ini kebetulan
+  // punya >1 holding yang mengarah ke akun YANG SAMA -- mis. Aset lama +
+  // Holding hasil link -- supaya expense akun itu TIDAK dihitung dobel).
+  //
+  // Tidak menyentuh `principalAmount`/`outstandingPrincipal`/
+  // `_principalCell()`/`_outstandingCell()` -- murni baca tambahan.
+  //
+  // Return: null kalau tidak ada satupun holding owner ini yang tertaut ke
+  // akun ber-transaksi multi-owner (baris disembunyikan) -- kalau tidak,
+  // `{total, accountNames}` (`total` angka, `accountNames` array nama akun
+  // unik yang ikut menyumbang, dipakai label baris supaya generik/tidak
+  // hardcode "Majoris").
+  _expenseComparisonForOwner(o) {
+    if (typeof resolveTxOwnerSplitForAccount !== 'function' || typeof MultiOwnerEngine === 'undefined') return null;
+    if (typeof D === 'undefined' || !Array.isArray(D.assets) || !Array.isArray(D.transactions)) return null;
+    const seenAcc = new Set();
+    let total = 0;
+    const accountNames = [];
+    (o.holdings || []).forEach((h) => {
+      if (!h) return;
+      let asset = null;
+      if (h.type === 'aset' && h.linkedAssetId) {
+        asset = D.assets.find((a) => a && sameId(a.id, h.linkedAssetId));
+      } else if (h.linkedInvestmentId) {
+        asset = D.assets.find((a) => a && sameId(a.investmentId, h.linkedInvestmentId));
+      }
+      const accountId = asset && asset.accountId;
+      if (!accountId || seenAcc.has(accountId)) return;
+      seenAcc.add(accountId);
+      const resolved = resolveTxOwnerSplitForAccount(accountId);
+      if (!resolved) return;
+      const idx = resolved.owners.findIndex((ow) => ow && ow.ownerId === o.ownerId);
+      if (idx < 0) return;
+      const pengeluaranTotal = D.transactions
+        .filter((t) => t && t.type === 'expense' && sameId(t.accountId, accountId))
+        .reduce((s, t) => s + (isFinite(t.amount) ? Number(t.amount) : 0), 0);
+      const split = MultiOwnerEngine.splitByPorsi(pengeluaranTotal, resolved.owners);
+      if (!split.ok) return;
+      total += (split.splits[idx] && split.splits[idx].bagian) || 0;
+      accountNames.push(asset.name || 'Akun');
+    });
+    if (!accountNames.length) return null;
+    return { total, accountNames };
+  },
+
   // _returnsHistoryHtml(ownerId) — Sesi 486 (Case F). Riwayat baris
   // pengembalian per owner, 100% konsumsi
   // `DanaTitipanPortfolioAPI.getReturns(ownerId)` (0 agregasi baru di
@@ -449,6 +512,7 @@ const DanaTitipanPortfolioPresenter = {
           </summary>
           <div class="titipan-detail-grid u-fs11 u-mb6" style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px">
             <span class="u-t2">Pokok Dikomit</span><span>${this._principalCell(o)}</span>
+            ${(() => { const cmp = this._expenseComparisonForOwner(o); return cmp ? `<span class="u-t2">Estimasi dari Transaksi ${escapeHtml(cmp.accountNames.join(', '))}</span><span class="u-fw700">${this._money(cmp.total)}</span>` : ''; })()}
             <span class="u-t2">Teralokasi ke Holding</span><span class="u-fw700">${this._money(o.allocatedPrincipal)}</span>
             <span class="u-t2">Estimasi Belum Teralokasi</span><span>${this._unallocatedCell(o)}</span>
             <span class="u-t2">Nilai Saat Ini</span><span class="u-fw700">${this._money(o.currentValue)}</span>
