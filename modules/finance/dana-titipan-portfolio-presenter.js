@@ -172,8 +172,27 @@ _asetOwnersForTitipan(a) {
 // dependency belum dimuat ATAU `_asetOwnersForTitipan()` balik [] (aset
 // itu belum pernah diatur porsi majemuk eksplisit — SENGAJA di-skip,
 // bukan bug, lihat komentar `_asetOwnersForTitipan()` di atas).
+// PERUBAHAN SESI 554 (audit user, Agustus 2026 — laporan "Schorder"/owner
+// "renov" tercatat 2x di tab Dana Titipan): SEBELUM sesi ini, `_assetSplits()`
+// TIDAK PERNAH mengecek `a.investmentId` — begitu user menautkan Aset ke
+// Holding Investasi lewat dropdown "🔗 Hubungkan ke Holding Investasi" (B1),
+// instrumen yang sama kena hitung 2x di `build()`/`allocatedExcluding()`
+// (KEDUA satu-satunya caller helper ini): 1x lewat porsi `h.owners[]` di
+// domain Investment, 1x LAGI lewat porsi `a.owners[]` di domain Aset — angka
+// `allocatedPrincipal` per owner jadi dobel padahal itu uang yang SAMA. Fix:
+// skip aset yang `a.investmentId` terisi — logic exclude PERSIS SAMA yang
+// sudah dipakai `Aset.totalValue()` (aset.js, `.filter(a=>!a.investmentId)`,
+// Sesi B8) supaya definisi "aset ini masih dihitung di mana" konsisten
+// lintas Kekayaan Bersih & Dana Titipan (0 pengecekan holding-nya masih ada
+// atau tidak — SENGAJA unconditional, sama seperti totalValue(): kalau
+// linknya orphan, aset itu tetap dianggap "milik" holding yang sudah
+// terhapus, konsisten dgn pesan cek health-check "Aset tertaut ke Holding
+// Investasi yang sudah dihapus"). Fix ini di `_assetSplits()` (bukan
+// duplikasi di `build()`/`allocatedExcluding()` masing-masing) supaya KEDUA
+// caller otomatis ikut benar, 0 logic ganda.
 _assetSplits(a) {
   if (!a || typeof MultiOwnerEngine === 'undefined') return null;
+  if (a.investmentId) return null;
   const owners = this._asetOwnersForTitipan(a);
   if (!Array.isArray(owners) || !owners.length) return null;
   const nilai = (typeof a.nilai === 'number' && isFinite(a.nilai)) ? a.nilai : 0;
