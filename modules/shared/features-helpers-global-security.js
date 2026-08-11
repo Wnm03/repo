@@ -58,8 +58,8 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's554-danatitipan-doublecount-datahealthcheck-s551-restore';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's554-danatitipan-doublecount-datahealthcheck-s551-restore';
+const APP_BUILD_VERSION = 's554-investment-owners-nominal-readonly';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's554-investment-owners-nominal-readonly';
 let D = {
 schemaVersion:SCHEMA_VERSION,
 transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],productStockCorrections:[],
@@ -135,6 +135,12 @@ let subCatParentId=null, subCatParentType=null, subCatEditId=null;
 let txEditId=null, catModalCallback=null, txEditLinkedBillId=null;
 let _txSaving=false;
 let _txAccManuallySet=false;
+// _txAssetManuallySet — Sesi (patch akun-multi-owner-doublecount-datahealthcheck-restore):
+// sama pola persis dgn _txAccManuallySet -- true kalau user SENGAJA mengubah
+// dropdown #txAssetId sendiri (lewat onTxAssetChange()), supaya auto-select
+// aset dari onTxAccChange() (lihat transaksi.js) TIDAK menimpa pilihan
+// manual user setelah dia ganti sendiri.
+let _txAssetManuallySet=false;
 let _txCatLearnSource=null;
 let _saveGuards={};
 function withSaveGuard(key,modalId,fn){
