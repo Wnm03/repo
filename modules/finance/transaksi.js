@@ -145,7 +145,22 @@ if(show&&typeof populateEntryAssetSelect==='function'){
 const sel=document.getElementById('txAssetId');
 populateEntryAssetSelect('txAssetId',sel?sel.value:'');
 }
+updateTxAssetHintText();
 updateTxAssetSplitPreview();
+}
+// updateTxAssetHintText() — (patch s558) sinkronkan copy hint di bawah
+// dropdown #txAssetId (modals.js, elemen #txAssetHint) dgn tipe transaksi
+// aktif (curTxType). Sebelumnya teks hint hardcode "pemasukan" padahal
+// logic di atasnya (updateTxAssetWrapVisibility) sudah berlaku utk
+// Pemasukan MAUPUN Pengeluaran (lihat komentar di atas) — gap kosmetik
+// murni, 0 perubahan logic split porsi. Dipanggil dari
+// updateTxAssetWrapVisibility() supaya ikut ke-refresh tiap ganti tipe
+// transaksi (setTxType()) atau buka modal (openTxModal()/editTx()).
+function updateTxAssetHintText(){
+const hint=document.getElementById('txAssetHint');
+if(!hint)return;
+const label=curTxType==='income'?'pemasukan':(curTxType==='expense'?'pengeluaran':'transaksi');
+hint.textContent=`Kalau ${label} ini terkait aset patungan (⚖️ Atur Porsi Kepemilikan di Buku Aset), rincian pembagian ke semua pemilik ditampilkan di riwayat transaksi.`;
 }
 // findMultiOwnerAssetForAccount(accId) — Sesi (patch akun-multi-owner-
 // doublecount-datahealthcheck-restore): cari SATU aset multi-owner
