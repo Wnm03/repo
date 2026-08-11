@@ -165,6 +165,11 @@ test('[gap-check] titipanExpenseAmt: oninput/onblur nyambung ke TitipanExpenseUI
   assert.match(html, /id="titipanExpenseAmt"[^>]*onblur="[^"]*TitipanExpenseUI\.onAmtInput\(\)/);
 });
 
+test('[gap-check] titipanExpenseNote: oninput nyambung ke TitipanExpenseUI.onNoteInput (auto-suggest owner)', () => {
+  const html = extractModalHtml();
+  assert.match(html, /id="titipanExpenseNote"[^>]*oninput="[^"]*TitipanExpenseUI\.onNoteInput\(\)/);
+});
+
 test('[gap-check] render() Dana Titipan tab: tombol pemicu TitipanExpenseUI.open ada', () => {
   const presenterSrc = fs.readFileSync(path.join(ROOT, 'modules/finance/dana-titipan-portfolio-render.js'), 'utf8');
   assert.match(presenterSrc, /data-action="TitipanExpenseUI\.open"/);
@@ -227,6 +232,51 @@ test('4. toggleOwner(): 2 owner tercentang -> input porsi muncul utk masing2 bar
   const html = dom.getElementById('titipanExpenseOwnersList').innerHTML;
   assert.match(html, /titipanExpenseOwnerPorsi0/);
   assert.match(html, /titipanExpenseOwnerPorsi1/);
+});
+
+// ============================================================
+// onNoteInput() -- auto-suggest owner dari catatan (baru).
+// ============================================================
+
+test('5. onNoteInput(): catatan mengandung nama 1 owner -> owner itu otomatis tercentang', () => {
+  const dom = makeStatefulDom();
+  const ctx = makeCtx(baseD(), dom);
+  ctx.TitipanExpenseUI.open();
+  dom.getElementById('titipanExpenseNote').value = 'Bayar renov punya Budi';
+  ctx.TitipanExpenseUI.onNoteInput();
+  assert.equal(ctx.TitipanExpenseUI._draft[0].selected, true);
+  assert.equal(ctx.TitipanExpenseUI._draft[1].selected, false);
+});
+
+test('6. onNoteInput(): catatan cocok ke 2 nama owner sekaligus (ambigu) -> TIDAK ada yang dicentang otomatis', () => {
+  const dom = makeStatefulDom();
+  const ctx = makeCtx(baseD(), dom);
+  ctx.TitipanExpenseUI.open();
+  dom.getElementById('titipanExpenseNote').value = 'Patungan Budi dan Cici beli galon';
+  ctx.TitipanExpenseUI.onNoteInput();
+  assert.equal(ctx.TitipanExpenseUI._draft[0].selected, false);
+  assert.equal(ctx.TitipanExpenseUI._draft[1].selected, false);
+});
+
+test('7. onNoteInput(): owner sudah dicentang manual -> TIDAK ditimpa oleh auto-suggest', () => {
+  const dom = makeStatefulDom();
+  const ctx = makeCtx(baseD(), dom);
+  ctx.TitipanExpenseUI.open();
+  ctx.TitipanExpenseUI.toggleOwner(1, true); // Cici dicentang manual
+  dom.getElementById('titipanExpenseNote').value = 'Beli galon buat Budi';
+  ctx.TitipanExpenseUI.onNoteInput();
+  assert.equal(ctx.TitipanExpenseUI._draft[0].selected, false);
+  assert.equal(ctx.TitipanExpenseUI._draft[1].selected, true);
+});
+
+test('8. onNoteInput(): catatan tidak cocok nama manapun -> tidak error, tidak ada yang dicentang', () => {
+  const dom = makeStatefulDom();
+  const ctx = makeCtx(baseD(), dom);
+  ctx.TitipanExpenseUI.open();
+  dom.getElementById('titipanExpenseNote').value = 'Beli galon warung';
+  ctx.TitipanExpenseUI.onNoteInput();
+  assert.equal(ctx.TitipanExpenseUI._draft[0].selected, false);
+  assert.equal(ctx.TitipanExpenseUI._draft[1].selected, false);
 });
 
 // ============================================================
