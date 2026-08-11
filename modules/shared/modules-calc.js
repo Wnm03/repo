@@ -1,6 +1,6 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s553-investment-owners-nominal-readonly';
+const MODULE_CALC_VERSION='s554-danatitipan-doublecount-datahealthcheck-s551-restore';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){
