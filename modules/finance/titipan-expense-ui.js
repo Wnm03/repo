@@ -152,6 +152,27 @@ const TitipanExpenseUI = {
     this._updateSplitPreview();
   },
 
+  // onNoteInput() — S(baru): auto-suggest owner dari isi field Kategori/
+  // Keterangan (titipanExpenseNote). Kalau catatan yang diketik mengandung
+  // PERSIS NAMA 1 owner existing (case-insensitive substring match) DAN
+  // belum ada owner manapun yang tercentang (supaya TIDAK menimpa pilihan
+  // manual user), owner itu otomatis tercentang -- murni kemudahan input,
+  // user tetap bebas uncheck/ubah manual kapan saja setelahnya. Kalau
+  // catatan cocok ke >1 nama owner sekaligus (ambigu) atau tidak ada yang
+  // cocok, tidak ada yang diubah. 0 tulis ke D, pola sama toggleOwner().
+  onNoteInput() {
+    const noteEl = document.getElementById('titipanExpenseNote');
+    const note = noteEl ? String(noteEl.value || '').trim().toLowerCase() : '';
+    if (!note || !this._draft.length) return;
+    if (this._draft.some((o) => o.selected)) return;
+    const matches = this._draft.filter((o) => o.ownerName && note.indexOf(String(o.ownerName).toLowerCase()) !== -1);
+    if (matches.length !== 1) return;
+    const idx = this._draft.indexOf(matches[0]);
+    this._draft[idx].selected = true;
+    this._renderOwnersList();
+    this._updateSplitPreview();
+  },
+
   // _readAmount() — baca nilai numerik field Jumlah (sudah dibersihkan
   // dari format ribuan/simbol Rp kalau evalAmtExpr belum sempat jalan).
   _readAmount() {
