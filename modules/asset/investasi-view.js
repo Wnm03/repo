@@ -12,22 +12,22 @@
 // Validasi & penyimpanan 100% reuse Investment.setOwners() (SUDAH ADA sejak S462, yang di dalamnya
 // delegasi penuh ke MultiOwnerEngine) — TIDAK ada rumus/validasi porsi baru ditulis di sini.
 //
-// VERSI RINGKAS dibanding assetOwnersModal — SENGAJA TANPA lapisan Nominal (Rp) dua-arah
-// (S429/S457 di aset.js): field "Nominal (Rp)" di assetModal itu diturunkan dari `a.nilai`
-// ("Estimasi Nilai Saat Ini", field manual yang diisi user). Holding investasi TIDAK punya field
-// nilai manual yang setara — unit/avgPrice/currentPrice-nya SELALU diturunkan ulang dari riwayat
-// transaksi beli/jual lewat Investment.recomputeHolding() (lihat komentar di investasi.js), bukan
-// diisi manual, jadi tidak ada "nilai dasar Rp" tunggal yang aman dipakai konversi Rp<->% per baris
-// pemilik seperti di aset.js. Field yang diedit di modal ini HANYA Nama Pemilik + Porsi (%) + toggle
-// "Ini saya" — cukup buat Investment.setOwners(), yang porsinya (bukan nominal) jadi sumber
-// kebenaran tunggal (sama seperti a.owners[].porsi di aset.js).
+// SESI 551 (audit S540/B1-B12 rekomendasi #1): tambah field "Nominal (Rp)" per baris. Basis:
+// Investment.holdingValue(h) (nilai pasar terkini holding, SUDAH ADA sejak awal investasi.js, 0
+// rumus baru) x draft[i].porsi/100.
 //
-// SESI 551 (audit S540/B1-B12 rekomendasi #1): tambah field "Nominal (Rp)" READ-ONLY per baris
-// (BUKAN dua-arah spt assetModal -- catatan "VERSI RINGKAS" di atas tetap berlaku 100%). Murni
-// tampilan turunan: Investment.holdingValue(h) (nilai pasar terkini holding, SUDAH ADA sejak
-// awal investasi.js, 0 rumus baru) x draft[i].porsi/100, di-update live tiap ketik % lewat
-// _updateOwnerNominalDisplay(i) (dipanggil dari onOwnerPorsiInput(), pola sama persis
-// _updateOwnerQuotaDisplay(i) S494) -- TIDAK PERNAH ditulis balik ke draft/holding.
+// SESI 552 (permintaan user: "nominal bisa diubah dan persen menyesuaikan atau sebaliknya"):
+// field Nominal (Rp) sebelumnya READ-ONLY (S551) — sekarang DUA ARAH, mirror pola
+// Aset.onOwnerPorsiInput()/onOwnerNominalInput() (S429/S457): ketik Porsi (%) -> Nominal (Rp)
+// baris ini ikut sync live (_updateOwnerNominalDisplay), ketik Nominal (Rp) -> Porsi (%) baris
+// ini dihitung ulang & disinkronkan balik (onOwnerNominalInput, presisi 4 desimal sama S457).
+// Basis konversi tunggal: holding investasi SELALU punya Investment.holdingValue() (diturunkan
+// dari riwayat transaksi, beda dari Aset yang nilainya manual & bisa 0) — jadi TIDAK perlu cabang
+// "nilai belum diisi"/nilai tersirat seperti Aset.onOwnerNominalInput(), & TIDAK perlu
+// _autoDistributeRemaining() ke baris lain (di luar cakupan permintaan — user cuma minta field
+// ini bisa diedit dua arah, bukan auto-bagi sisa ke pemilik lain). 0 field baru di draft/holding —
+// porsi tetap satu-satunya sumber kebenaran yang dibaca saveOwners()/updateOwnersTotal(), Nominal
+// murni tampilan+input turunan.
 
 const InvestmentUI = {
   // _ownersDraft — salinan array pemilik yang sedang diedit di modal ini (aman diubah lewat
@@ -258,33 +258,38 @@ const InvestmentUI = {
     el.innerHTML = InvestmentUI._ownerQuotaText(draft[i]);
   },
 
-  // _ownerNominalText(o) — SESI 551. Hitung teks "Nominal (Rp)" READ-ONLY utk 1 baris owner,
-  // basis Investment.holdingValue(h) (nilai pasar terkini holding yang SEDANG dibuka di modal ini
-  // — SAMA fungsi yang sudah dipakai _ownerQuotaText() di atas utk basis draftNominal, 0 rumus
-  // baru) × draft[i].porsi/100. SENGAJA basis holdingValue() (nilai pasar terkini), BUKAN
-  // holdingCost() (basis biaya perolehan) yang dipakai _ownerQuotaText() — field ini murni
-  // menampilkan "porsi X% ini setara berapa Rupiah SEKARANG", konsisten dgn cara Buku Aset
-  // menampilkan Nominal (Rp) dari nilai kini (a.nilai), bukan basis biaya.
-  _ownerNominalText(o) {
+  // _ownersHoldingValue() — SESI 552. Basis Rp tunggal dipakai konversi porsi%<->nominal Rp di
+  // modal ini, ambil dari Investment.holdingValue(h) (nilai pasar terkini holding yang SEDANG
+  // dibuka — SAMA fungsi yang sudah dipakai _ownerQuotaText()/_ownerNominalText() sejak S494/S551,
+  // 0 rumus baru).
+  _ownersHoldingValue() {
     const holding = InvestmentUI._ownersModalHolding;
-    if (!holding) return '';
-    const value = (typeof Investment !== 'undefined' && typeof Investment.holdingValue === 'function')
+    if (!holding) return 0;
+    return (typeof Investment !== 'undefined' && typeof Investment.holdingValue === 'function')
       ? (Investment.holdingValue(holding) || 0) : 0;
-    const porsiNum = typeof o.porsi === 'number' && isFinite(o.porsi) ? o.porsi : 0;
-    const nominal = value * (porsiNum / 100);
-    const money = (typeof fmtFull === 'function') ? fmtFull : ((typeof fmt === 'function') ? fmt : (n) => 'Rp ' + Math.round(n || 0));
-    return money(nominal);
   },
 
-  // _updateOwnerNominalDisplay(i) — SESI 551. Update HANYA elemen #investOwnerNominal{i} tiap
-  // ketik porsi (dipanggil dari onOwnerPorsiInput()), TANPA render ulang seluruh list — pola sama
-  // persis _updateOwnerQuotaDisplay(i) (S494), supaya fokus/kursor input porsi tidak hilang.
+  // _ownerNominalValue(o) — SESI 552 (sebelumnya _ownerNominalText S551, READ-ONLY). Sekarang
+  // dipakai buat ISI value input Nominal (Rp) yang bisa diketik langsung (mirror
+  // Aset._renderOwnersList() nominalVal — angka polos, BUKAN string format "Rp ..." supaya bisa
+  // ditulis balik ke parseFloat tanpa strip formatting tambahan), basis _ownersHoldingValue() ×
+  // draft[i].porsi/100, dibulatkan ke rupiah.
+  _ownerNominalValue(o) {
+    const value = InvestmentUI._ownersHoldingValue();
+    const porsiNum = typeof o.porsi === 'number' && isFinite(o.porsi) ? o.porsi : 0;
+    return Math.round(value * (porsiNum / 100));
+  },
+
+  // _updateOwnerNominalDisplay(i) — SESI 552 (sebelumnya SESI 551, dulu textContent ke div
+  // read-only). Update HANYA elemen input #investOwnerNominal{i} tiap ketik porsi (dipanggil dari
+  // onOwnerPorsiInput()), TANPA render ulang seluruh list — pola sama persis
+  // _updateOwnerQuotaDisplay(i) (S494), supaya fokus/kursor input porsi tidak hilang.
   _updateOwnerNominalDisplay(i) {
     const el = document.getElementById('investOwnerNominal' + i);
     if (!el) return;
     const draft = Array.isArray(InvestmentUI._ownersDraft) ? InvestmentUI._ownersDraft : [];
     if (!draft[i]) return;
-    el.textContent = InvestmentUI._ownerNominalText(draft[i]);
+    el.value = InvestmentUI._ownerNominalValue(draft[i]);
   },
 
   // _renderOwnersList() — render ulang #investmentOwnersList dari InvestmentUI._ownersDraft.
@@ -315,7 +320,7 @@ const InvestmentUI = {
         + '<button type="button" class="btn btn-ghost btn-sm" data-action="InvestmentUI.removeOwnerRow" data-args=\'[' + i + ']\' aria-label="Hapus pemilik">✕</button>'
         + '</div>'
         + '<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Porsi (%)</label><input type="number" class="fi" id="investOwnerPorsi' + i + '" placeholder="%" inputmode="decimal" value="' + (porsiNum !== null ? porsiNum : '') + '" oninput="InvestmentUI.onOwnerPorsiInput(' + i + ',this.value)"></div>'
-        + '<div class="fg u-mb0" style="margin-top:6px"><label class="fl" style="margin-bottom:2px">Nominal (Rp)</label><div class="fi" id="investOwnerNominal' + i + '" style="background:var(--surface3);color:var(--text2);display:flex;align-items:center">' + InvestmentUI._ownerNominalText(o) + '</div></div>'
+        + '<div class="fg u-mb0" style="margin-top:6px"><label class="fl" style="margin-bottom:2px">Nominal (Rp)</label><input type="text" class="fi" id="investOwnerNominal' + i + '" placeholder="0" inputmode="decimal" value="' + InvestmentUI._ownerNominalValue(o) + '" oninput="InvestmentUI.onOwnerNominalInput(' + i + ',this.value)"></div>'
         + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:4px;cursor:pointer">'
         + '<input type="checkbox" style="width:14px;height:14px"' + (o.isSelf ? ' checked' : '') + ' onchange="InvestmentUI.onOwnerIsSelfToggle(' + i + ',this.checked)"> 👤 Ini saya (porsi ini dihitung ke Zakat/Pajak milikmu)'
         + '</label>'
@@ -394,8 +399,34 @@ const InvestmentUI = {
     // SESI 494 — "Kuota sisa" per owner terpisah dari validasi total-porsi 100% di atas (soft
     // warning, TIDAK menyentuh saveBtn.disabled — lihat _ownerQuotaText()/_updateOwnerQuotaDisplay()).
     InvestmentUI._updateOwnerQuotaDisplay(i);
-    // SESI 551 — live-update "Nominal (Rp)" read-only tiap ketik %, sama pola kuota di atas.
+    // SESI 552 (dulu SESI 551, read-only) — live-sync input "Nominal (Rp)" tiap ketik %, sama
+    // pola kuota di atas. Update value DOM langsung (BUKAN _renderOwnersList ulang) supaya
+    // fokus/kursor input porsi yang sedang diketik tidak hilang — pola sama persis
+    // Aset.onOwnerPorsiInput().
     InvestmentUI._updateOwnerNominalDisplay(i);
+  },
+
+  // onOwnerNominalInput(i,val) — SESI 552. Arah sebaliknya dari onOwnerPorsiInput(): user isi
+  // Nominal (Rp) baris ini, porsi% baris ini dihitung ulang (nominal/holdingValue*100, dibulatkan
+  // 4 desimal — presisi sama dgn Aset.onOwnerNominalInput() sejak FIX S457, supaya round-trip
+  // Rp->porsi%->Rp praktis lossless) & ditulis ke InvestmentUI._ownersDraft[i].porsi (SAMA persis
+  // field yang dibaca saveOwners()/updateOwnersTotal() — 0 field baru, Nominal murni tampilan
+  // turunan dari porsi% + holdingValue(), TIDAK pernah disimpan sbg field sendiri).
+  // Holding investasi SELALU punya nilai pasar (Investment.holdingValue(), diturunkan dari
+  // riwayat transaksi — beda dari Aset yang nilainya manual & bisa 0), jadi TIDAK perlu cabang
+  // "nilai belum diisi" seperti Aset.onOwnerNominalInput() — di sini basis Rp selalu tersedia.
+  onOwnerNominalInput(i, val) {
+    if (!Array.isArray(InvestmentUI._ownersDraft) || !InvestmentUI._ownersDraft[i]) return;
+    const value = InvestmentUI._ownersHoldingValue();
+    if (value <= 0) return;
+    const n = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+    const nominal = isFinite(n) ? n : 0;
+    const porsi = Math.round((nominal / value * 100) * 10000) / 10000;
+    InvestmentUI._ownersDraft[i].porsi = porsi;
+    const porsiEl = document.getElementById('investOwnerPorsi' + i);
+    if (porsiEl) porsiEl.value = porsi;
+    InvestmentUI.updateOwnersTotal();
+    InvestmentUI._updateOwnerQuotaDisplay(i);
   },
 
   // onOwnerIsSelfToggle(i,checked) — tandai/lepas baris ke-i draft sbg porsi milik sendiri (dipakai
