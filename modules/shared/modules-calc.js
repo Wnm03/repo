@@ -1,6 +1,6 @@
 
 // Dipindah ke modules/shared/modules-calc.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
-const MODULE_CALC_VERSION='s557-modal-sweep-datahealth-fixes';
+const MODULE_CALC_VERSION='s567-filtertx-owner-porsi-split';
 const FI={
 assetScopeState:'zakatable',
 investmentAssetValue(){

@@ -4,7 +4,7 @@
 // data-default.js (v79) — file itu HARUS dimuat SEBELUM file ini karena dibaca langsung di `let D = {...}`.
 // PENTING: file ini HARUS dimuat sesuai urutan build.js (GROUP_A/GROUP_B) karena beberapa modul saling referensi. Urutan grup ini: data-default.js, features-helpers-global-security.js, diagnostik-versi.js, format-tema.js, error-handler.js, helper-teks.js, keamanan-pin.js, modal-navigasi.js, reset-gaji-mingguan.js, debug-console.js, pengaturan-search.js, onboarding.js, kalkulator-input.js, scan-ocr.js, akun.js, gaji-calc.js, transaksi.js, profil-pengaturan.js, kategori.js, tagihan-kalender.js, backup-restore.js, payroll-absensi.js, tukang-absensi.js
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 const DATA_MIGRATIONS=[
 {toVersion:2,desc:'Tambah kategori baku Investasi & Sedekah/Donasi (pengeluaran) utk user lama',migrate(d){
 if(!d.categories||!d.categories.expense)return;
@@ -35,6 +35,14 @@ if(typeof Investment!=='undefined'&&typeof Investment.migrateLegacyTitipanOwners
 Investment.migrateLegacyTitipanOwners();
 }
 }},
+{toVersion:7,desc:'R2 (audit ownership/titipan, lanjutan GAP3-AUD-001): baris a.owners[]/h.owners[] non-SELF yang dibuat SEBELUM assetOwnersModal/investmentOwnersModal disambung ke OwnerRegistry (S490/S491) masih pakai ownerId ad-hoc lama -- 2 aset/holding dgn owner nama sama tidak otomatis ownerId sama. Aset.migrateOwnersToRegistry()/Investment.migrateOwnersToRegistry() derive ownerId kanonik per nama lewat OwnerRegistry.findOrCreate() (idempotent, guard tabrakan internal), relabel D.debts[].linkedOwnerId lebih dulu spy histori/status lunas utang titipan tidak hilang.',migrate(d){
+if(typeof Aset!=='undefined'&&typeof Aset.migrateOwnersToRegistry==='function'){
+Aset.migrateOwnersToRegistry();
+}
+if(typeof Investment!=='undefined'&&typeof Investment.migrateOwnersToRegistry==='function'){
+Investment.migrateOwnersToRegistry();
+}
+}},
 ];
 function runDataMigrations(fromVersion){
 let v=Number.isFinite(fromVersion)?fromVersion:0;
@@ -58,8 +66,8 @@ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return true;
 }catch(e){ /* anggap bukan dev mode kalau gagal deteksi */ }
 return false;
 }
-const APP_BUILD_VERSION = 's557-modal-sweep-datahealth-fixes';
-const PRODUCTION_BUILD_SYNCED_VERSION = 's557-modal-sweep-datahealth-fixes';
+const APP_BUILD_VERSION = 's567-filtertx-owner-porsi-split';
+const PRODUCTION_BUILD_SYNCED_VERSION = 's567-filtertx-owner-porsi-split';
 let D = {
 schemaVersion:SCHEMA_VERSION,
 transactions:[],cobek:[],products:[],produsen:[],cobekKategori:JSON.parse(JSON.stringify(DEFAULT_COBEK_KATEGORI)),targets:[],eduFunds:[],reminders:[],bills:[],billsArchive:[],inventoryTransfers:[],productMovementOverride:{},purchaseOrders:[],productStockCorrections:[],

@@ -2,7 +2,7 @@
 // Dipindah ke modules/shared/modules-render.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma lokasi folder).
 // Semua fungsi ini murni definisi function global (bukan module), jadi tetap bisa dipanggil dari file manapun
 // yang loadnya belakangan (sama seperti modules-calc.js/features-*.js).
-const MODULE_RENDER_VERSION='s557-modal-sweep-datahealth-fixes';
+const MODULE_RENDER_VERSION='s567-filtertx-owner-porsi-split';
 
 function renderPageContent(name){
 // KW perf fix: jaring pengaman selain hook di save() -- pastikan cache saldo akun juga fresh
@@ -113,6 +113,25 @@ if(invD.keuntungan!=null)parts.push((invD.keuntungan<0?'Rugi ':'Untung ')+fmt(Ma
 if(invD.jumlahUnit!=null)parts.push(Number(invD.jumlahUnit).toLocaleString('id-ID')+' unit');
 return parts.length?`<div class="u-fs11 u-t2" style="margin-top:2px">${escapeHtml(parts.join(' · '))}</div>`:'';
 })():'';
+// linkedPorsiLine + linkedTxHint (permintaan user: "perjelas aset yang ditautkan
+// utk akun transaksi agar menampilkan porsi lengkap dgn riwayat transaksi modal
+// total") -- SEBELUM ini, akun berbadge "(via Aset)" cuma nampilin ownText
+// generik (mis. "Investor", 1 tipe) & invDetailLine statis dari a.investDetail
+// (snapshot hasil scan OCR, TIDAK mencerminkan porsi multi-owner Aset yg
+// sebenarnya nautin akun ini). 2 tambahan di bawah PURE UI/read-only, 0 field
+// baru, 0 rumus baru -- 100% REUSE MultiOwnerEngine.getOwners() (sama pola
+// persis linkMultiOwnerWarn di Aset.openActionsMenu()/aset.js) & aksi klik
+// kartu yg SUDAH ADA (data-action="openAccTxHistory" di wrapper div, tidak
+// berubah) -- linkedTxHint cuma bikin affordance itu KELIHATAN, bukan bikin
+// aksi baru.
+const linkedAssetObj=linked?(D.assets||[]).find(x=>String(x.accountId)===String(a.id)):null;
+const linkedPorsiLine=(linkedAssetObj&&typeof MultiOwnerEngine!=='undefined')?(()=>{
+const res=MultiOwnerEngine.getOwners(linkedAssetObj);
+if(!res||!res.ok||!res.owners.length)return'';
+const porsiTxt=res.owners.map(o=>`${escapeHtml(o.ownerName)} (${o.porsi}%)`).join(' · ');
+return`<div class="u-fs11 u-t2" style="margin-top:2px">👥 Porsi: ${porsiTxt}</div>`;
+})():'';
+const linkedTxHint=linked?'<div class="u-fs10 u-t2" style="margin-top:2px">📜 Ketuk kartu untuk riwayat transaksi modal</div>':'';
 return`<div class="acc-card" style="${off?'opacity:.55':''}" data-action="openAccTxHistory" data-args="${escapeHtml(JSON.stringify([a.id]))}">
       <button class="acc-card-edit" data-stop="1" data-action="openAccModal" data-args="${escapeHtml(JSON.stringify([i]))}" title="Edit" aria-label="Edit">✏️</button>
       <button class="acc-card-del" data-stop="1" data-action="delAcc" data-args="${escapeHtml(JSON.stringify([i]))}" aria-label="Hapus">🗑</button>
@@ -120,6 +139,8 @@ return`<div class="acc-card" style="${off?'opacity:.55':''}" data-action="openAc
       <div class="acc-card-name">${escapeHtml(a.name)}${badge}${jenisBadge}${ownText}</div>
       ${ownDetail}
       ${invDetailLine}
+      ${linkedPorsiLine}
+      ${linkedTxHint}
       <div class="acc-card-bal ${bal<0?'red':'green'}">${bal<0?'-':''}${fmt(Math.abs(bal))}</div>
     </div>`;
 }).join('');
@@ -1832,6 +1853,12 @@ if(typeof DashboardSettings!=='undefined')DashboardSettings.renderSettingsUI();
 // renderSettings() (tidak boleh menjatuhkan sisa fungsi kalau entah kenapa
 // belum sempat dimuat).
 if(typeof OwnershipSettingsPresenter!=='undefined')OwnershipSettingsPresenter.render();
+// R4 (audit ownership/titipan, menutup OWNREG-GATE3-001): sinkronkan card
+// "Kelola Daftar Pemilik" (#ownerRegistrySettingsList) tiap kali halaman
+// Pengaturan dirender ulang — pola sama persis OwnershipSettingsPresenter
+// di atas. Guard typeof sama alasan yang sama (modul opsional dari sudut
+// pandang renderSettings()).
+if(typeof OwnerRegistrySettingsUI!=='undefined')OwnerRegistrySettingsUI.render();
 // Data Management Core: Backup Health/Backup History (lihat
 // modules/shared/backup-health-presenter.js/backup-history-presenter.js)
 // — guard typeof, pola sama dgn DashboardSettings di atas.
