@@ -14,8 +14,8 @@
 > utk ditinjau, bukan vonis akhir. Kalau file ini kelihatan tidak sinkron,
 > jalankan ulang generatornya, JANGAN diedit tangan.
 
-Terakhir digenerate: 2026-08-11T04:48:10.451Z
-Total file test (`tests/*.test.js`): 350 · Total module family: 19
+Terakhir digenerate: 2026-08-11T08:40:39.391Z
+Total file test (`tests/*.test.js`): 356 · Total module family: 19
 
 | Module family | File source (.js) | File test yang menyentuh | Status |
 |---|---:|---:|---|
@@ -32,12 +32,12 @@ Total file test (`tests/*.test.js`): 350 · Total module family: 19
 | `modules/dashboard-hub` | 6 | 6 |  |
 | `modules/ai` | 7 | 10 |  |
 | `modules/business` | 10 | 14 |  |
-| `modules/shop` | 26 | 61 |  |
+| `modules/shop` | 25 | 61 |  |
 | `root` | 19 | 68 |  |
 | `modules/vehicle` | 80 | 73 |  |
-| `modules/asset` | 19 | 93 |  |
-| `modules/finance` | 45 | 110 |  |
-| `modules/shared` | 32 | 164 |  |
+| `modules/asset` | 19 | 94 |  |
+| `modules/finance` | 47 | 113 |  |
+| `modules/shared` | 33 | 169 |  |
 
 ## Family tanpa test file yang menyentuhnya langsung (4)
 

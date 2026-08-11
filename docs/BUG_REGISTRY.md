@@ -1388,9 +1388,21 @@ Status: **BY DESIGN**
   (yang mendokumentasikan perilaku ini) TIDAK diubah.
 - Verification: `node --test tests/*.test.js` → 3144/3144 pass, 0 fail (angka
   tidak berubah dari baseline Gap #3, 0 test baru ditambah sesi ini).
-- Status: **OPEN / OUT OF SCOPE** (dicatat untuk tracking, tidak diperbaiki sesi ini)
+- Status: **FIXED (Sesi 545/546)** — `Investment.migrateLegacyTitipanOwners()`
+  (S545) derive `ownerId` per-nama lewat `OwnerRegistry.findOrCreate()`
+  (idempotent, guard `Array.isArray(h.owners)`), diwire otomatis lewat schema
+  migration `toVersion:6` (S546, `modules/shared/features-helpers-global-security.js`)
+  jadi jalan sendiri saat data user dimuat — 0 tombol manual/opt-in yang bisa
+  terlewat. Ditutup via `PATCH-README-s485f-gap3-audit-closeout.md`. Entri di
+  atas TIDAK diedit (histori audit asli dipertahankan) — status baris ini
+  ditambahkan belakangan (audit ownership/titipan, R1→GAP3 cleanup) karena
+  entry lama tidak pernah diupdate walau fix sudah landing 2 sesi kemudian —
+  dicatat di sini supaya BUG_REGISTRY.md tidak lagi menyesatkan.
+- Verification (ulang): `tests/s545-legacy-titipan-owner-registry-migration.test.js`
+  + `tests/s546-schema-v6-titipan-owner-migration-wiring.test.js` → 13/13 pass.
 - Audit Session: Sesi Audit pasca-implementasi Gap #3 Dana Titipan
-  (S484→S485e closeout, 2026-08-08)
+  (S484→S485e closeout, 2026-08-08); status diperbarui saat audit
+  ownership/titipan lanjutan (2026-08-11).
 
 ## GAP3-AUD-002
 
