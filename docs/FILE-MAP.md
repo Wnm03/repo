@@ -11,8 +11,8 @@
 > file tapi lupa `node build.js`), jalankan ulang generatornya, JANGAN diedit
 > tangan — editan manual bakal ketimpa lagi di build berikutnya.
 
-Terakhir digenerate: 2026-08-11T08:40:39.357Z
-Total file source: 309 · Total identifier global: 2129
+Terakhir digenerate: 2026-08-11T10:15:16.228Z
+Total file source: 309 · Total identifier global: 2131
 
 ## 1. Urutan load & ringkasan tiap file
 
@@ -77,7 +77,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 54 | `modules/shared/onboarding.js` | 55 | Domain Onboarding: preview perkiraan kasar gaji/kiriman saat setup awal Dipindah ke modules/shared/onboarding.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
 | 55 | `modules/shared/kalkulator-input.js` | 142 | Kalkulator ekspresi angka: parser aman (safeCalc), popup kalkulator (openCalc/calcPress/dst), Dipindah ke modules/shared/kalkulator-input.js (Sesi 17-18 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; … |
 | 56 | `modules/shared/scan-ocr.js` | 1677 | Scan struk belanja (OCR): struk belanja, bukti transfer, tanggal dari foto, odometer, portofolio aset, kategori & sparepart otomatis dari struk Dipindah ke modules/shared/scan-ocr.js (Sesi 17-18 restrukturisasi folder — … |
-| 57 | `modules/finance/filter-laporan.js` | 285 | Filter transaksi/keuangan (panel filter Keuangan & Laporan), pencarian, paginasi list transaksi, navigasi antar-list (goToList/showFilteredTx) Dipindah ke modules/finance/filter-laporan.js (Sesi 16 restrukturisasi … |
+| 57 | `modules/finance/filter-laporan.js` | 346 | Filter transaksi/keuangan (panel filter Keuangan & Laporan), pencarian, paginasi list transaksi, navigasi antar-list (goToList/showFilteredTx) Dipindah ke modules/finance/filter-laporan.js (Sesi 16 restrukturisasi … |
 | 58 | `modules/finance/akun.js` | 294 | Kelola Akun (Cash/Bank/Ewallet dll): saldo, filter dropdown akun di seluruh app, CRUD akun Dipindah ke modules/finance/akun.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file … |
 | 59 | `modules/business/gaji-calc.js` | 56 | Kalkulator gaji harian/borongan (Tukang & karyawan lepas), catat sbg pemasukan Dipindah ke modules/business/gaji-calc.js (Sesi 15 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK … |
 | 60 | `modules/finance/cicilan.js` | 114 | logika form Cicilan pada txModal (Tambah/Edit Transaksi Keuangan). Dipindah ke modules/finance/cicilan.js (Sesi 16 restrukturisasi folder — lihat docs/FILE-MAP.md & RENCANA-SESI.md; isi & nama file TIDAK berubah, cuma … |
@@ -320,7 +320,7 @@ bundler menggabungkan semua file jadi `app-bundle-a.min.js`/`app-bundle-b.min.js
 | 297 | `modules/finance/dana-kelolaan-presenter.js` | 200 | Dana Kelolaan / Managed Funds Presenter (Sesi 195). Pola SAMA PERSIS PropertyManagementPresenter.render() (modules/asset/property-management-presenter.js, S102/Sesi 132): UI HANYA presenter, 100% reuse … |
 | 298 | `modules/finance/dana-titipan-aggregation-api.js` | 654 | Dana Titipan dalam Investasi: Portfolio Allocation Projection (Sesi 484 + Sesi 485a-e + Sesi 486 + Sesi 499/B1 + Sesi B2 + Sesi E). SESI R5 (AUDIT-DANA-TITIPAN-OWNERSHIP-SIMPLIFIKASI.md, Rekomendasi R5): file ini adalah … |
 | 299 | `modules/finance/dana-titipan-commitment-return-api.js` | 261 | PECAHAN KEDUA dari `dana-titipan-portfolio-presenter.js` (SESI R5, lihat catatan split lengkap di header `dana-titipan-aggregation-api.js`). Berisi CRUD `D.titipanCommitments[]`/`D.titipanReturns[]` (Sesi 485b + Sesi … |
-| 300 | `modules/finance/dana-titipan-portfolio-render.js` | 796 | PECAHAN KETIGA dari `dana-titipan-portfolio-presenter.js` (SESI R5, lihat catatan split lengkap di header `dana-titipan-aggregation-api.js`). Berisi render/UI: `DanaTitipanPortfolioPresenter` (kartu dashboard … |
+| 300 | `modules/finance/dana-titipan-portfolio-render.js` | 860 | PECAHAN KETIGA dari `dana-titipan-portfolio-presenter.js` (SESI R5, lihat catatan split lengkap di header `dana-titipan-aggregation-api.js`). Berisi render/UI: `DanaTitipanPortfolioPresenter` (kartu dashboard … |
 | 301 | `modules/finance/titipan-expense-flow.js` | 239 | Sesi 521 (S521-A, implementasi Design Lock DESIGN-S520-DANA-TITIPAN-UI-MULTIOWNER.md, baseline v1251/S519). Scope: flow pencatatan pengeluaran Dana Titipan (single-owner & multi-owner) yang dipanggil dari modal khusus … |
 | 302 | `modules/finance/titipan-expense-ui.js` | 272 | Sesi 521 (S521-B2, UI ONLY, DESIGN-S520-DANA- TITIPAN-UI-MULTIOWNER.md, baseline v1251/S519 + S521-A/S521-B1). Scope: SATU-SATUNYA hal baru di sesi ini adalah `TitipanExpenseUI` — controller DOM tipis buat modal … |
 | 303 | `modules/vehicle/ride-activity-metrics.js` | 385 | RideActivityMetrics (S522, "Ride Activity Metrics Foundation"). HARD SCOPE sesi ini: PURE deterministic math functions saja — fondasi buat Ride Activity GPS recorder yang akan dibangun sesi-sesi berikutnya (S523+). … |
@@ -1862,6 +1862,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `resolveLinkedVehicleAsset` | `modules/vehicle/vehicle-core.js` |
 | `resolveShopKategori` | `modules/shop/cobek-tx-cart.js` |
 | `resolveTxAssetSplit` | `modules/finance/transaksi.js` |
+| `resolveTxOwnerSplitForAccount` | `modules/finance/filter-laporan.js` |
 | `resolveTxTitipanOwner` | `modules/finance/transaksi.js` |
 | `resolveVehicleAssetLink` | `modules/vehicle/vehicle-core.js` |
 | `resolveVehicleAssetTitipan` | `modules/vehicle/vehicle-core.js` |
@@ -1969,6 +1970,7 @@ bisa dipanggil sebagai "global" dari file manapun lewat bundel gabungan.
 | `selectBudgetIcon` | `budget.js` |
 | `selectBudgetPeriod` | `budget.js` |
 | `selectFiAssetScope` | `modules/shared/modules-calc.js` |
+| `selectFilterTxOwnerSplit` | `modules/finance/filter-laporan.js` |
 | `selectShopCustomer` | `modules/shop/cobek-tx-cart.js` |
 | `selectSimpleAutocomplete` | `modules/finance/transaksi.js` |
 | `selectStatusKawin` | `modules/shared/profil-pengaturan.js` |
