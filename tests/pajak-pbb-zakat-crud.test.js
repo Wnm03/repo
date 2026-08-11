@@ -231,6 +231,35 @@ test('Zakat.hitungMaal() -> save() dipanggil (utangJT ikut ditulis) & hitung tot
   assert.match(els.zmStatus.textContent, /Belum Wajib/);
 });
 
+// PERUBAHAN SESI B8 (fix, poin #4 audit B7 -- pola SAMA PERSIS
+// _migratedToInvestmentId): asetZakatable sekarang exclude aset yg
+// `investmentId` (link B1) supaya tidak dobel-hitung dgn Investment.
+// zakatableValue() kalau kedua sisi ditandai zakatable.
+test('Zakat.hitungMaal() -> aset zakatable YANG ditautkan (investmentId, B1) DIKECUALIKAN dari asetZakatable (0 dobel-hitung)', () => {
+  const calls = [];
+  const D = makeD({
+    assets: [
+      { id: 'as1', zakatable: true, nilai: 2000000, investmentId: 'h1' }, // ditautkan -> dikecualikan
+      { id: 'as2', zakatable: true, nilai: 500000 }, // tidak ditautkan -> tetap ikut
+    ],
+  });
+  const els = { zmUtang: { value: '0' }, zmTotalHarta: {}, zmNisab: {}, zmStatus: { style: {} }, zmJumlah: {}, zmHaulInfo: {} };
+  const { Zakat } = makeCtx({ document: makeDoc(els), D, calls });
+  Zakat.hitungMaal();
+  // totalSaldoAkun (1000000) + asetZakatable (500000, as1 dikecualikan) - utang(0) = 1500000
+  assert.equal(els.zmTotalHarta.textContent, 'RpFull1500000');
+});
+
+test('Zakat.hitungMaal() -> aset zakatable dgn _migratedToInvestmentId (s476a) TETAP dikecualikan (0 regresi fix lama)', () => {
+  const calls = [];
+  const D = makeD({ assets: [{ id: 'as1', zakatable: true, nilai: 2000000, _migratedToInvestmentId: 'h1' }] });
+  const els = { zmUtang: { value: '0' }, zmTotalHarta: {}, zmNisab: {}, zmStatus: { style: {} }, zmJumlah: {}, zmHaulInfo: {} };
+  const { Zakat } = makeCtx({ document: makeDoc(els), D, calls });
+  Zakat.hitungMaal();
+  // totalSaldoAkun (1000000) + asetZakatable (0, dikecualikan) - utang(0) = 1000000
+  assert.equal(els.zmTotalHarta.textContent, 'RpFull1000000');
+});
+
 test('Zakat.hitungFitrah() -> total = jiwa x zakatFitrahPerJiwa, minimal 1 jiwa', () => {
   const calls = [];
   const els = { zfJiwa: { value: '4' }, zfTotal: {} };
