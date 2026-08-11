@@ -263,3 +263,8 @@
 
 - **lint-unavailable**: override dipakai. Alasan: Sandbox tanpa akses jaringan (egress proxy nonaktif) -- npm install eslint gagal 403, sudah direview manual (gaya konsisten file existing: const/arrow fn/single quotes, guard typeof, tanpa unused var baru)
 - **unminified-bundle**: override dipakai. Alasan: Sandbox tanpa akses jaringan -- esbuild tidak bisa diinstall, bundle build.js fallback unminified (valid secara sintaks, node --check lolos)
+
+## 2026-08-11T01:41:37.974Z — versi s553-investment-owners-nominal-readonly
+
+- **lint-unavailable**: override dipakai. Alasan: sandbox tanpa akses npm registry, eslint tidak terpasang
+- **unminified-bundle**: override dipakai. Alasan: sandbox tanpa esbuild, bundle tidak diminify
