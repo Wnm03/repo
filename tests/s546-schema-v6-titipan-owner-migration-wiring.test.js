@@ -58,15 +58,34 @@ test('DATA_MIGRATIONS toVersion:6 — D.investments kosong/tidak ada -> tidak er
   assert.equal(ctx.D.schemaVersion, ctx.SCHEMA_VERSION);
 });
 
-test('DATA_MIGRATIONS toVersion:6 — holding yang SUDAH multi-owner (owners[] eksplisit) tidak disentuh migrasi', () => {
+test('DATA_MIGRATIONS toVersion:6 — holding yang SUDAH multi-owner (owners[] eksplisit) tidak disentuh migrasi toVersion:6', () => {
+  // Diisolasi ke Investment.migrateLegacyTitipanOwners() (fungsi toVersion:6)
+  // langsung, BUKAN lewat runDataMigrations() penuh — sejak R2/toVersion:7
+  // (Aset/Investment.migrateOwnersToRegistry()), holding SUDAH multi-owner
+  // SENGAJA ikut dinormalisasi ke ownerId registry kanonik (lihat
+  // tests/s560-owners-to-registry-migration-r2.test.js), jadi menjalankan
+  // full chain di sini tidak lagi mengisolasi perilaku toVersion:6 saja.
+  const ctx = makeCtx();
+  ctx.D.investments = [
+    { id: 'h1', name: 'Reksadana A', fundSource: 'titipan', owners: [{ ownerId: 'owner_manual', porsi: 100, ownerName: 'Budi', isSelf: false }] },
+  ];
+  ctx.D.debts = [];
+  ctx.D.ownerRegistry = [];
+  ctx.Investment.migrateLegacyTitipanOwners();
+  assert.equal(ctx.D.investments[0].owners[0].ownerId, 'owner_manual');
+});
+
+test('DATA_MIGRATIONS toVersion:7 (R2) — holding multi-owner ad-hoc ownerId dinormalisasi ke OwnerRegistry lewat runDataMigrations() penuh', () => {
   const ctx = makeCtx();
   ctx.D.schemaVersion = 5;
   ctx.D.investments = [
     { id: 'h1', name: 'Reksadana A', fundSource: 'titipan', owners: [{ ownerId: 'owner_manual', porsi: 100, ownerName: 'Budi', isSelf: false }] },
   ];
   ctx.D.debts = [];
+  ctx.D.ownerRegistry = [];
   ctx.runDataMigrations(5);
-  assert.equal(ctx.D.investments[0].owners[0].ownerId, 'owner_manual');
+  const canonical = ctx.OwnerRegistry.findOrCreate('Budi');
+  assert.equal(ctx.D.investments[0].owners[0].ownerId, canonical, 'ownerId ad-hoc lama dinormalisasi ke registry (toVersion:7)');
 });
 
 test('DATA_MIGRATIONS toVersion:6 — data user yang SUDAH di schemaVersion 6 -> migrasi tidak jalan ulang (pending filter toVersion>v)', () => {

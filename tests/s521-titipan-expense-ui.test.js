@@ -90,7 +90,7 @@ function makeCtx(D, dom) {
       'modules/shared/ownership-engine.js',
       'modules/shared/multi-owner-engine.js',
       'modules/asset/investasi.js',
-      'modules/finance/dana-titipan-portfolio-presenter.js',
+      'modules/finance/dana-titipan-aggregation-api.js', 'modules/finance/dana-titipan-commitment-return-api.js', 'modules/finance/dana-titipan-portfolio-render.js',
       'modules/finance/piutang-utang.js',
       'modules/finance/transaksi.js',
       'modules/finance/tx-list-cashflow.js',
@@ -166,7 +166,7 @@ test('[gap-check] titipanExpenseAmt: oninput/onblur nyambung ke TitipanExpenseUI
 });
 
 test('[gap-check] render() Dana Titipan tab: tombol pemicu TitipanExpenseUI.open ada', () => {
-  const presenterSrc = fs.readFileSync(path.join(ROOT, 'modules/finance/dana-titipan-portfolio-presenter.js'), 'utf8');
+  const presenterSrc = fs.readFileSync(path.join(ROOT, 'modules/finance/dana-titipan-portfolio-render.js'), 'utf8');
   assert.match(presenterSrc, /data-action="TitipanExpenseUI\.open"/);
 });
 

@@ -126,7 +126,7 @@ function makeCtx(D, dom) {
   };
   if (dom) extraGlobals.document = dom;
   const ctx = loadSource(
-    ['modules/shared/ownership-engine.js', 'modules/shared/multi-owner-engine.js', 'modules/asset/investasi.js', 'modules/finance/dana-titipan-portfolio-presenter.js'],
+    ['modules/shared/ownership-engine.js', 'modules/shared/multi-owner-engine.js', 'modules/asset/investasi.js', 'modules/finance/dana-titipan-aggregation-api.js', 'modules/finance/dana-titipan-commitment-return-api.js', 'modules/finance/dana-titipan-portfolio-render.js'],
     extraGlobals,
     ['Investment', 'OwnershipEngine', 'MultiOwnerEngine', 'DanaTitipanPortfolioAPI', 'DanaTitipanPortfolioPresenter', 'DanaTitipanReturnUI'],
   );
@@ -156,7 +156,7 @@ function extractModalHtml() {
 
 test('1. [gap-check] titipanReturnModal: semua id yang dipakai DanaTitipanReturnUI.open()/save() memang ada di template', () => {
   const html = extractModalHtml();
-  const presenterSrc = fs.readFileSync(path.join(ROOT, 'modules/finance/dana-titipan-portfolio-presenter.js'), 'utf8');
+  const presenterSrc = fs.readFileSync(path.join(ROOT, 'modules/finance/dana-titipan-portfolio-render.js'), 'utf8');
   const start = presenterSrc.indexOf('const DanaTitipanReturnUI');
   assert.notEqual(start, -1, 'DanaTitipanReturnUI harus ada di presenter file -- nama berubah? update test ini');
   const uiCode = presenterSrc.slice(start);

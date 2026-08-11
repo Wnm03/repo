@@ -40,7 +40,7 @@ function makeD(investments) {
 
 function makeViewCtx(D, dom) {
   return loadSource(
-    ['modules/shared/multi-owner-engine.js', 'modules/shared/owner-registry.js', 'modules/asset/investasi.js', 'modules/finance/dana-titipan-portfolio-presenter.js', 'modules/asset/investasi-view.js'],
+    ['modules/shared/multi-owner-engine.js', 'modules/shared/owner-registry.js', 'modules/asset/investasi.js', 'modules/finance/dana-titipan-aggregation-api.js', 'modules/finance/dana-titipan-commitment-return-api.js', 'modules/finance/dana-titipan-portfolio-render.js', 'modules/asset/investasi-view.js'],
     {
       D,
       document: dom,

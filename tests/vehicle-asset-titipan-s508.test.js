@@ -150,7 +150,7 @@ test('INTEGRASI: vehAssetBridgeHtml dgn DanaTitipanPortfolioAPI & MultiOwnerEngi
       'modules/shared/multi-owner-engine.js',
       'modules/shared/format-tema.js',
       'modules/asset/investasi.js',
-      'modules/finance/dana-titipan-portfolio-presenter.js',
+      'modules/finance/dana-titipan-aggregation-api.js', 'modules/finance/dana-titipan-commitment-return-api.js', 'modules/finance/dana-titipan-portfolio-render.js',
       'modules/vehicle/vehicle-core.js',
     ],
     {
