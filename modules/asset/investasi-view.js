@@ -21,6 +21,13 @@
 // pemilik seperti di aset.js. Field yang diedit di modal ini HANYA Nama Pemilik + Porsi (%) + toggle
 // "Ini saya" — cukup buat Investment.setOwners(), yang porsinya (bukan nominal) jadi sumber
 // kebenaran tunggal (sama seperti a.owners[].porsi di aset.js).
+//
+// SESI 551 (audit S540/B1-B12 rekomendasi #1): tambah field "Nominal (Rp)" READ-ONLY per baris
+// (BUKAN dua-arah spt assetModal -- catatan "VERSI RINGKAS" di atas tetap berlaku 100%). Murni
+// tampilan turunan: Investment.holdingValue(h) (nilai pasar terkini holding, SUDAH ADA sejak
+// awal investasi.js, 0 rumus baru) x draft[i].porsi/100, di-update live tiap ketik % lewat
+// _updateOwnerNominalDisplay(i) (dipanggil dari onOwnerPorsiInput(), pola sama persis
+// _updateOwnerQuotaDisplay(i) S494) -- TIDAK PERNAH ditulis balik ke draft/holding.
 
 const InvestmentUI = {
   // _ownersDraft — salinan array pemilik yang sedang diedit di modal ini (aman diubah lewat
@@ -43,6 +50,7 @@ const InvestmentUI = {
     if (!h) {
       InvestmentUI._ownersDraft = [];
       InvestmentUI._renderOwnersList();
+      InvestmentUI._renderLinkBanner();
       openModal('investmentOwnersModal');
       return;
     }
@@ -54,7 +62,89 @@ const InvestmentUI = {
       isSelf: !!o.isSelf,
     }));
     InvestmentUI._renderOwnersList();
+    // SESI 552 (Rekomendasi #2, audit S540/B1-B12 — lihat RENCANA-SESI-S552-BANNER-SAMAKAN-PORSI.md):
+    // tampilkan banner saran link kalau ada pasangan Aset yang belum tertaut & namanya mirip.
+    InvestmentUI._renderLinkBanner();
     openModal('investmentOwnersModal');
+  },
+
+  // _linkBannerDismissed — set id holding yang bannernya sudah di-dismiss user DI SESI INI (in-memory,
+  // reset tiap reload app) — keputusan produk sengaja SEMENTARA (bukan disimpan permanen ke D), supaya
+  // kalau user salah tap "bukan ini" banner tidak hilang selamanya walau kandidatnya sebenarnya cocok;
+  // ia cukup buka lagi modal ini di sesi berikutnya utk lihat sarannya lagi.
+  _linkBannerDismissed: {},
+
+  // _findLinkCandidate(holding) — SESI 552: cari 1 kandidat Aset (belum tertaut, `investmentId`
+  // kosong) yang namanya mirip holding ini, 100% REUSE Aset._findInvestmentMigrationCandidates()
+  // (SUDAH ADA dari patch B1-B12/Sesi B4, dipakai jalur 🩺 Data Health Check) — 0 rumus
+  // fuzzy-match baru ditulis di sini. PURE, guard typeof Aset (module aset.js/hasil patch B1-B12
+  // belum tentu selalu dimuat bareng investasi-view.js). Balikin null kalau: module Aset belum
+  // dimuat/fungsinya belum ada, holding tidak ada, tidak ada kandidat cocok utk holding ini, ATAU
+  // banner utk holding ini sudah di-dismiss user di sesi ini.
+  _findLinkCandidate(holding) {
+    if (!holding) return null;
+    if (InvestmentUI._linkBannerDismissed[holding.id]) return null;
+    if (typeof Aset === 'undefined' || typeof Aset._findInvestmentMigrationCandidates !== 'function') return null;
+    const candidates = Aset._findInvestmentMigrationCandidates();
+    return candidates.find((c) => String(c.holdingId) === String(holding.id)) || null;
+  },
+
+  // _renderLinkBanner() — render banner "✅ Samakan Porsi dari Aset Ini & Tautkan" ke
+  // #investmentOwnersLinkBanner (SESI 552) berdasarkan _findLinkCandidate() di atas. Kosongkan
+  // elemen (banner tidak tampil) kalau tidak ada kandidat — dipanggil dari openOwnersModal() &
+  // ulang dari applySamakanPorsiFromAsset()/dismissLinkBanner() supaya banner langsung
+  // hilang setelah ditautkan/di-dismiss tanpa perlu tutup-buka modal lagi.
+  _renderLinkBanner() {
+    const box = document.getElementById('investmentOwnersLinkBanner');
+    if (!box) return;
+    const candidate = InvestmentUI._findLinkCandidate(InvestmentUI._ownersModalHolding);
+    if (!candidate) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div style="background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:12px;line-height:1.5">'
+      + '💡 Ditemukan aset serupa di 📋 Buku Aset: <b>' + escapeHtml(candidate.assetName) + '</b> — kemungkinan instrumen yang sama, belum ditautkan. Tautkan &amp; salin porsi kepemilikannya ke draft di bawah?'
+      + '<button type="button" class="btn btn-primary btn-sm u-mt8" style="width:100%" data-action="InvestmentUI.applySamakanPorsiFromAsset" data-args=\'["' + candidate.assetId + '"]\'>✅ Samakan Porsi dari Aset Ini &amp; Tautkan</button>'
+      + '<div style="text-align:right;margin-top:6px"><span style="font-size:11px;color:var(--text2);cursor:pointer;text-decoration:underline" data-action="InvestmentUI.dismissLinkBanner">Bukan ini, sembunyikan</span></div>'
+      + '</div>';
+  },
+
+  // dismissLinkBanner() — sembunyikan banner utk holding yang sedang dibuka, sisa sesi ini (lihat
+  // catatan _linkBannerDismissed di atas soal kenapa in-memory bukan permanen).
+  dismissLinkBanner() {
+    const h = InvestmentUI._ownersModalHolding;
+    if (h) InvestmentUI._linkBannerDismissed[h.id] = true;
+    InvestmentUI._renderLinkBanner();
+  },
+
+  // applySamakanPorsiFromAsset(assetId) — SESI 552 (Rekomendasi #2 audit S540/B1-B12). Aksi tombol
+  // banner: (1) TAUTKAN — isi `a.investmentId` di record Aset (arsitektur link SATU ARAH dari
+  // Aset -> holding, ditetapkan patch B1-B12 Sesi B1, field ada di SISI ASET bukan holding) & save().
+  // (2) SALIN porsi dari Aset (lewat MultiOwnerEngine.getOwners(a), SUDAH ADA & 100% reuse — sama
+  // fungsi yang membaca a.owners/legacy titipan/ownership) KE DRAFT MODAL INI SAJA
+  // (InvestmentUI._ownersDraft) — SENGAJA TIDAK langsung commit ke holding (Investment.setOwners()
+  // TIDAK dipanggil di sini); user tetap wajib tap "✅ Simpan Porsi" existing utk commit final,
+  // sesuai instruksi eksplisit user di RENCANA-SESI-S552-BANNER-SAMAKAN-PORSI.md (cegah
+  // auto-overwrite diam-diam). Guard: holding harus ada, module Aset & D.assets harus tersedia,
+  // aset harus ketemu by id — kalau salah satu gagal, toast peringatan & tidak ada perubahan.
+  applySamakanPorsiFromAsset(assetId) {
+    const h = InvestmentUI._ownersModalHolding;
+    if (!h) { toast('⚠️ Holding investasi ini tidak ditemukan'); return; }
+    if (typeof D === 'undefined' || !Array.isArray(D.assets)) { toast('⚠️ Data Aset belum siap dimuat'); return; }
+    const a = D.assets.find((x) => String(x.id) === String(assetId));
+    if (!a) { toast('⚠️ Aset tidak ditemukan (mungkin sudah dihapus)'); return; }
+    // (1) Tautkan — pola persis Aset._saveInner() (patch B1-B12): field investmentId di sisi Aset.
+    a.investmentId = h.id;
+    if (typeof save === 'function') save();
+    // (2) Salin porsi Aset -> draft modal ini SAJA (belum commit ke holding).
+    const res = (typeof MultiOwnerEngine !== 'undefined') ? MultiOwnerEngine.getOwners(a) : null;
+    const ownersFromAsset = (res && res.ok && Array.isArray(res.owners)) ? res.owners : [];
+    InvestmentUI._ownersDraft = ownersFromAsset.map((o) => ({
+      ownerId: o.ownerId,
+      ownerName: o.ownerName,
+      porsi: o.porsi,
+      isSelf: !!o.isSelf,
+    }));
+    InvestmentUI._renderOwnersList();
+    InvestmentUI._renderLinkBanner();
+    toast('🔗 Aset ditautkan & porsi disalin ke draft — tap ✅ Simpan Porsi utk konfirmasi final');
   },
 
   // _ownerNameFieldHtml(o,i) — SESI 491 (langkah 3/5 PLAN-owner-registry-multi-session.md),
@@ -168,6 +258,35 @@ const InvestmentUI = {
     el.innerHTML = InvestmentUI._ownerQuotaText(draft[i]);
   },
 
+  // _ownerNominalText(o) — SESI 551. Hitung teks "Nominal (Rp)" READ-ONLY utk 1 baris owner,
+  // basis Investment.holdingValue(h) (nilai pasar terkini holding yang SEDANG dibuka di modal ini
+  // — SAMA fungsi yang sudah dipakai _ownerQuotaText() di atas utk basis draftNominal, 0 rumus
+  // baru) × draft[i].porsi/100. SENGAJA basis holdingValue() (nilai pasar terkini), BUKAN
+  // holdingCost() (basis biaya perolehan) yang dipakai _ownerQuotaText() — field ini murni
+  // menampilkan "porsi X% ini setara berapa Rupiah SEKARANG", konsisten dgn cara Buku Aset
+  // menampilkan Nominal (Rp) dari nilai kini (a.nilai), bukan basis biaya.
+  _ownerNominalText(o) {
+    const holding = InvestmentUI._ownersModalHolding;
+    if (!holding) return '';
+    const value = (typeof Investment !== 'undefined' && typeof Investment.holdingValue === 'function')
+      ? (Investment.holdingValue(holding) || 0) : 0;
+    const porsiNum = typeof o.porsi === 'number' && isFinite(o.porsi) ? o.porsi : 0;
+    const nominal = value * (porsiNum / 100);
+    const money = (typeof fmtFull === 'function') ? fmtFull : ((typeof fmt === 'function') ? fmt : (n) => 'Rp ' + Math.round(n || 0));
+    return money(nominal);
+  },
+
+  // _updateOwnerNominalDisplay(i) — SESI 551. Update HANYA elemen #investOwnerNominal{i} tiap
+  // ketik porsi (dipanggil dari onOwnerPorsiInput()), TANPA render ulang seluruh list — pola sama
+  // persis _updateOwnerQuotaDisplay(i) (S494), supaya fokus/kursor input porsi tidak hilang.
+  _updateOwnerNominalDisplay(i) {
+    const el = document.getElementById('investOwnerNominal' + i);
+    if (!el) return;
+    const draft = Array.isArray(InvestmentUI._ownersDraft) ? InvestmentUI._ownersDraft : [];
+    if (!draft[i]) return;
+    el.textContent = InvestmentUI._ownerNominalText(draft[i]);
+  },
+
   // _renderOwnersList() — render ulang #investmentOwnersList dari InvestmentUI._ownersDraft.
   // Dipanggil tiap ada tambah/hapus baris (addOwnerRow/removeOwnerRow), TIDAK dipanggil tiap
   // karakter diketik di input nama/porsi (lihat onOwnerNameInput/onOwnerPorsiInput di bawah) supaya
@@ -196,6 +315,7 @@ const InvestmentUI = {
         + '<button type="button" class="btn btn-ghost btn-sm" data-action="InvestmentUI.removeOwnerRow" data-args=\'[' + i + ']\' aria-label="Hapus pemilik">✕</button>'
         + '</div>'
         + '<div class="fg u-mb0"><label class="fl" style="margin-bottom:2px">Porsi (%)</label><input type="number" class="fi" id="investOwnerPorsi' + i + '" placeholder="%" inputmode="decimal" value="' + (porsiNum !== null ? porsiNum : '') + '" oninput="InvestmentUI.onOwnerPorsiInput(' + i + ',this.value)"></div>'
+        + '<div class="fg u-mb0" style="margin-top:6px"><label class="fl" style="margin-bottom:2px">Nominal (Rp)</label><div class="fi" id="investOwnerNominal' + i + '" style="background:var(--surface3);color:var(--text2);display:flex;align-items:center">' + InvestmentUI._ownerNominalText(o) + '</div></div>'
         + '<label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:4px;cursor:pointer">'
         + '<input type="checkbox" style="width:14px;height:14px"' + (o.isSelf ? ' checked' : '') + ' onchange="InvestmentUI.onOwnerIsSelfToggle(' + i + ',this.checked)"> 👤 Ini saya (porsi ini dihitung ke Zakat/Pajak milikmu)'
         + '</label>'
@@ -274,6 +394,8 @@ const InvestmentUI = {
     // SESI 494 — "Kuota sisa" per owner terpisah dari validasi total-porsi 100% di atas (soft
     // warning, TIDAK menyentuh saveBtn.disabled — lihat _ownerQuotaText()/_updateOwnerQuotaDisplay()).
     InvestmentUI._updateOwnerQuotaDisplay(i);
+    // SESI 551 — live-update "Nominal (Rp)" read-only tiap ketik %, sama pola kuota di atas.
+    InvestmentUI._updateOwnerNominalDisplay(i);
   },
 
   // onOwnerIsSelfToggle(i,checked) — tandai/lepas baris ke-i draft sbg porsi milik sendiri (dipakai
